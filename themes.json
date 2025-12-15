@@ -1,0 +1,13 @@
+{
+  "Dark Default": {
+    "name": "Dark Default",
+    "primary_bg": "#2e2e2e",
+    "secondary_bg": "#222000",
+    "tertiary_bg": "#3a3a3a",
+    "text_color": "#eeeeee",
+    "link_color": "#4da6ff",
+    "link_visited": "#b366ff",
+    "link_hover": "#66ccff",
+    "border_color": "#444444"
+  }
+}

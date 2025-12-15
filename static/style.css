@@ -1,0 +1,283 @@
+/* * DYNAMICALLY INJECTED THEME VARIABLES
+ * These variables are DEFINED by the Rust backend via an inline <style> block 
+ * in the HTML <head> based on the user's saved/current theme.
+ * This file (style.css) merely CONSUMES them using var(--name).
+ *
+ * NOTE: The explicit :root block with default values has been removed from this 
+ * file to ensure the dynamically injected styles always take precedence.
+ */
+
+
+/* -------------------------------------- */
+/* Global Styles (Using Variables) */
+/* -------------------------------------- */
+
+a {
+    color: var(--link-color);
+    text-decoration: none;
+}
+a:visited {
+    color: var(--link-visited);
+}
+a:hover {
+    color: var(--link-hover);
+    text-decoration: underline;
+}
+
+
+body {
+    font-family: sans-serif;
+    margin: 0;
+    background: var(--primary-bg);
+    color: var(--text-color);
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+h1 { font-weight: normal; margin: 10px; }
+h2 { margin: 10px; }
+
+/* Form Styles */
+form {
+    display: flex;
+    flex-direction: column;
+    margin: 10px;
+    flex: 1; 
+}
+
+/* Editor (Notes/SQL) Styles */
+.editor-container {
+    display: flex;
+    flex: 1;
+    border: 1px solid var(--border-color);
+    background: var(--secondary-bg);
+    border-radius: 4px;
+    overflow: hidden;
+}
+.line-numbers {
+    background: var(--border-color);
+    color: var(--text-color); 
+    padding: 4px 6px;
+    text-align: right;
+    user-select: none;
+    font-family: monospace;
+    font-size: 14px;
+    line-height: 1.4em;
+    overflow: hidden;
+}
+textarea {
+    flex: 1;
+    background: var(--secondary-bg);
+    color: var(--text-color);
+    border: none;
+    resize: none;
+    padding: 4px;
+    font-family: monospace;
+    font-size: 14px;
+    line-height: 1.4em;
+    outline: none;
+    overflow: auto;
+}
+
+/* Button Styles */
+button {
+    margin-top: 10px;
+    padding: 6px 12px;
+    background: var(--tertiary-bg); 
+    color: var(--text-color);
+    border: none;
+    cursor: pointer;
+    align-self: flex-start;
+    border-radius: 4px;
+    transition: background 0.2s;
+}
+button:hover { background: var(--border-color); } 
+
+/* List Styles (Notes) */
+ul {
+    list-style: none;
+    padding: 0 10px;
+    overflow-y: auto;
+    max-height: 30vh;
+}
+li {
+    background: var(--tertiary-bg);
+    margin: 5px 0;
+    padding: 8px;
+    border-radius: 4px;
+    white-space: pre-wrap;
+    border: 1px solid transparent;
+}
+
+/* Table Styles (Shortcuts) */
+table.grid {
+    width: calc(100% - 20px);
+    margin: 10px;
+    border-collapse: collapse;
+    background: var(--secondary-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+table.grid th, table.grid td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 14px;
+    line-height: 1.4em;
+}
+
+table.grid th {
+    background: var(--tertiary-bg);
+    color: var(--text-color);
+    font-weight: normal;
+}
+
+table.grid tr:nth-child(even) td {
+    background: var(--primary-bg); 
+}
+
+table.grid tr:hover td {
+    background: var(--border-color); 
+}
+
+/* Link Overrides */
+table.grid a {
+    color: var(--link-color);
+    text-decoration: none;
+}
+table.grid a:hover {
+    color: var(--link-hover);
+    text-decoration: underline;
+}
+
+ul li a {
+    color: var(--link-color);
+}
+ul li a:hover {
+    color: var(--link-hover);
+}
+
+/* Navigation Bar */
+.tools {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px;
+    background: var(--secondary-bg);
+    border-bottom: 1px solid var(--border-color);
+}
+.tool-buttons, .right-buttons {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+.nav-button {
+    margin: 0;
+    padding: 8px 15px;
+}
+
+#toggle-arrow {
+  color: var(--text-color);
+  transition: color 0.2s;
+}
+#toggle-arrow:hover {
+  color: var(--link-hover);
+}
+
+/* Modal Styles */
+#addShortcutModal {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--secondary-bg);
+    padding: 0;
+    color: var(--text-color);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+.modal-content {
+    padding: 20px;
+    min-width: 300px;
+}
+.close-btn {
+    color: var(--text-color);
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+}
+.close-btn:hover {
+    color: var(--link-hover);
+}
+.modal-form label {
+    display: block;
+    margin-top: 10px;
+    font-weight: bold;
+}
+.modal-form input[type="text"], 
+.modal-form input[type="url"] {
+    width: 95%;
+    padding: 8px;
+    margin-top: 5px;
+    border: 1px solid var(--border-color);
+    background: var(--primary-bg);
+    color: var(--text-color);
+    border-radius: 4px;
+}
+.form-actions {
+    margin-top: 20px;
+    display: flex;
+    justify-content: flex-end;
+}
+.form-submit-btn {
+    align-self: unset;
+}
+
+/* Settings Form Specific Styles */
+.settings-form {
+    flex: 0 1 auto; 
+    max-width: 800px;
+    margin: 20px auto;
+    padding: 20px;
+    background: var(--secondary-bg);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+}
+.settings-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px 30px;
+    margin-bottom: 20px;
+}
+.settings-grid label {
+    display: block;
+    margin-bottom: 5px;
+}
+.settings-grid input[type="color"] {
+    width: 100%;
+    height: 40px;
+    border: 1px solid var(--border-color); 
+    padding: 0;
+    margin: 0;
+    cursor: pointer;
+}
+.settings-grid input[type="text"],
+.settings-grid select {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid var(--border-color);
+    background: var(--primary-bg);
+    color: var(--text-color);
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+
+.theme-action-buttons {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 20px;
+}
+.theme-action-buttons button {
+    margin-top: 0;
+}

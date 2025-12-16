@@ -160,6 +160,8 @@ pub fn render_base_page(title: &str, body_content: &str, current_theme: &Theme) 
   <head>
     <meta charset="utf-8">
     <title>{}</title>
+    <!-- Favicon link pointing to the static folder -->
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
     {} 
     <link rel="stylesheet" href="/static/style.css">
   </head>

@@ -1,4 +1,5 @@
-use actix_web::{get, post, web::{self, Data, Form}, HttpResponse, Responder};
+use actix_web::{get, post, web, HttpResponse, Responder};
+use actix_web::web::{Data, Form, Json};
 use std::{collections::HashMap, sync::Arc, fs, io};
 use serde::{Deserialize, Serialize};
 use crate::app_state::AppState;
@@ -238,7 +239,7 @@ fn format_ts(seconds: i64) -> String {
 
 
 #[post("/sql/run")]
-pub async fn sql_run(form: Form<SqlForm>, state: Data<Arc<AppState>>) -> impl Responder {
+pub async fn sql_run(form: Json<SqlForm>, state: Data<Arc<AppState>>) -> impl Responder {
     // Import TypeInfo to check column types manually
     use sqlx::{Row, Column, TypeInfo, postgres::PgPoolOptions, ValueRef, types::JsonValue}; 
     use std::convert::TryInto; 
@@ -265,7 +266,17 @@ pub async fn sql_run(form: Form<SqlForm>, state: Data<Arc<AppState>>) -> impl Re
         }
     };
 
-    let rows = match sqlx::query(&form.sql).fetch_all(&pool).await {
+    // --- Variable Substitution ---
+    let mut final_sql = form.sql.clone();
+    if let Some(vars) = &form.variables {
+        for (key, val) in vars {
+            // Replace {{key}} with val
+            let placeholder = format!("{{{{{}}}}}", key);
+            final_sql = final_sql.replace(&placeholder, val);
+        }
+    }
+
+    let rows = match sqlx::query(&final_sql).fetch_all(&pool).await {
         Ok(r) => r,
         Err(e) => {
             return HttpResponse::Ok()
@@ -431,7 +442,7 @@ pub async fn sql_export(state: Data<Arc<AppState>>) -> impl Responder {
 }
 
 // Helper function to render the SQL query view page content
-fn render_query_view(nickname: &str, table_list: &str, current_theme: &crate::app_state::Theme) -> String {
+fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &crate::app_state::Theme) -> String {
     let saved_queries = load_queries();
     let nickname_safe = htmlescape::encode_minimal(nickname);
     
@@ -440,90 +451,263 @@ fn render_query_view(nickname: &str, table_list: &str, current_theme: &crate::ap
             let sql_safe = htmlescape::encode_minimal(&q.sql);
             let name_safe = htmlescape::encode_minimal(&q.name);
             
-            // FIX: Use standard format! with escaped quotes for stable compilation
+            // Layout change: 'x' button on the left, then the name
             format!(
                 "<li class=\"saved-query-item\">\
-                    <a href=\"#\" data-sql=\"{}\" data-name=\"{}\" class=\"query-link\">{}</a>\
-                    <form method=\"POST\" action=\"/sql/delete\" style=\"display:inline;\">\
+                    <form method=\"POST\" action=\"/sql/delete\" class=\"delete-query-form\">\
                         <input type=\"hidden\" name=\"query_name\" value=\"{}\">\
                         <input type=\"hidden\" name=\"connection\" value=\"{}\">\
                         <button type=\"submit\" class=\"delete-btn\" title=\"Delete\">x</button>\
                     </form>\
+                    <a href=\"#\" data-sql=\"{}\" data-name=\"{}\" class=\"query-link\">{}</a>\
                 </li>",
-                sql_safe, name_safe, name_safe, name_safe, nickname_safe
+                name_safe, nickname_safe, sql_safe, name_safe, name_safe
             )
         })
         .collect::<Vec<_>>()
         .join("\n");
 
-    let page_styles = r#"
+    // Using r###" to avoid termination on "#" in html
+    let page_styles = r###"
 <style>
-    .sql-view-container { display: flex; height: calc(100vh - 70px); position: relative; }
-    #sidebar { width: 200px; background: var(--secondary-bg); color: var(--text-color); padding: 10px; overflow-y: auto; transition: width 0.3s, padding 0.3s; flex-shrink: 0; border-right: 1px solid var(--border-color); }
-    #sidebar h2 { margin: 0; padding-bottom: 5px; border-bottom: 1px solid var(--border-color); }
-    #sidebar ul { list-style: none; padding: 0; margin: 5px 0 0 0; }
-    #sidebar li { padding: 5px 0; cursor: pointer; }
+    .sql-view-container { display: flex; height: calc(100vh - 60px); position: relative; overflow: hidden; }
     
-    /* Updated sidebar styles for saved queries */
-    .saved-query-item { display: flex; justify-content: space-between; align-items: center; padding-right: 5px; }
-    .query-link { flex-grow: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 5px; }
-    .delete-btn { background: none; border: none; color: #ff6b6b; font-weight: bold; padding: 0 5px; margin: 0; cursor: pointer; }
+    #sidebar { 
+        width: 250px; 
+        min-width: 0; 
+        background: var(--secondary-bg); 
+        color: var(--text-color); 
+        padding: 5px; 
+        overflow-y: auto; 
+        flex-shrink: 0; 
+        font-size: 0.9em; 
+    }
+    
+    #sidebar.collapsed {
+        width: 0 !important;
+        padding: 0 !important;
+        overflow: hidden;
+    }
+
+    #sidebar-resizer {
+        width: 5px;
+        background-color: var(--tertiary-bg);
+        border-left: 1px solid var(--border-color);
+        border-right: 1px solid var(--border-color);
+        cursor: col-resize;
+        flex-shrink: 0;
+        z-index: 100;
+        transition: background-color 0.2s;
+    }
+    
+    #sidebar-resizer:hover, #sidebar-resizer.resizing {
+        background-color: var(--link-hover);
+    }
+
+    #output-resizer {
+        height: 5px;
+        background-color: var(--tertiary-bg);
+        border-top: 1px solid var(--border-color);
+        border-bottom: 1px solid var(--border-color);
+        cursor: row-resize;
+        flex-shrink: 0;
+        z-index: 10;
+        transition: background-color 0.2s;
+    }
+    #output-resizer:hover, #output-resizer.resizing {
+        background-color: var(--link-hover);
+    }
+
+    #sidebar h2 { margin: 5px 0 2px 0; padding-bottom: 2px; border-bottom: 1px solid var(--border-color); font-size: 1.1em; white-space: nowrap; overflow: hidden; }
+    #sidebar ul { list-style: none; padding: 0; margin: 0; }
+    #sidebar li { padding: 1px 0; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    
+    .saved-query-item { display: flex; align-items: center; padding-left: 2px; }
+    .delete-query-form { margin: 0; display: inline-flex; }
+    .query-link { flex-grow: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-left: 5px; text-decoration: none; color: var(--text-color); font-size: 0.9em; opacity: 0.9; }
+    .query-link:hover { opacity: 1; text-decoration: underline; color: var(--link-hover); }
+    
+    .delete-btn { background: none; border: none; color: #666; font-weight: bold; padding: 0 5px; margin: 0; cursor: pointer; width: 20px; text-align: center; font-size: 1em;}
     .delete-btn:hover { color: #ff3b3b; background: rgba(255,0,0,0.1); border-radius: 3px; }
     
-    .sidebar-search input { width: 95%; padding: 5px; margin-bottom: 10px; box-sizing: border-box; border: 1px solid var(--border-color); background: var(--primary-bg); color: var(--text-color); border-radius: 4px; }
-    #sidebar ul a { display: block; }
-    .query-save-form { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-color); }
-    .query-save-form input[type="text"] { width: 100%; padding: 5px; margin-bottom: 5px; box-sizing: border-box; border: 1px solid var(--border-color); background: var(--primary-bg); color: var(--text-color); border-radius: 4px; }
-    #toggle-arrow { position: absolute; top: 10px; left: 200px; cursor: pointer; font-size: 18px; user-select: none; background: var(--tertiary-bg); color: var(--text-color); padding: 4px; border-radius: 4px; transition: left 0.3s, background-color 0.2s; line-height: 1; z-index: 10; }
+    .sidebar-search input { width: 100%; padding: 4px; margin-bottom: 5px; box-sizing: border-box; border: 1px solid var(--border-color); background: var(--primary-bg); color: var(--text-color); border-radius: 4px; font-size: 0.9em; }
+    
+    .table-list-item { padding-left: 5px; display: block; color: var(--text-color); text-decoration: none; }
+    .table-list-item:hover { color: var(--link-hover); background-color: var(--tertiary-bg); border-radius: 2px;}
+    
+    .query-save-form { margin-top: 10px; padding-top: 5px; border-top: 1px solid var(--border-color); }
+    .query-save-form input[type="text"] { width: 100%; padding: 4px; margin-bottom: 5px; box-sizing: border-box; border: 1px solid var(--border-color); background: var(--primary-bg); color: var(--text-color); border-radius: 4px; font-size: 0.9em; }
+    .query-save-form button { width: 100%; padding: 4px; cursor: pointer; background: var(--tertiary-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px; font-size: 0.9em;}
+    .query-save-form button:hover { background: var(--link-hover); color: #fff; border-color: var(--link-hover); }
+    
+    #toggle-arrow { position: absolute; top: 10px; left: 250px; cursor: pointer; font-size: 14px; user-select: none; background: var(--tertiary-bg); color: var(--text-color); padding: 6px 2px; border-radius: 0 4px 4px 0; transition: left 0.3s, background-color 0.2s; line-height: 1; z-index: 10; border: 1px solid var(--border-color); border-left: none; }
     #toggle-arrow:hover { background: var(--border-color); }
-    #main { flex: 1; display: flex; flex-direction: column; padding: 10px; }
-    #sql-form { display: flex; flex-direction: column; flex-grow: 1; }
-    .editor-container { flex: 1; min-height: 200px; margin-bottom: 10px; }
-    #sql-editor { height: 100%; }
-    .output { margin-top: 10px; flex-shrink: 0; max-height: 50%; overflow-y: auto; }
-    .action-buttons { display: flex; gap: 10px; flex-shrink: 0; }
-    .action-buttons button { margin-top: 0; }
-    .grid { width: 100%; }
-</style>
-"#;
+    
+    #main { flex: 1; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+    #sql-form { display: flex; flex-direction: column; flex-grow: 1; height: 100%; }
+    
+    .variables-section { padding: 5px; background: var(--secondary-bg); border-bottom: 1px solid var(--border-color); display: flex; flex-wrap: wrap; gap: 5px; align-items: center; flex-shrink: 0; }
+    .var-input-group { display: flex; align-items: center; gap: 5px; background: var(--tertiary-bg);height: 26px; border-radius: 4px; border: 1px solid var(--border-color); box-sizing: border-box; }
+    .var-input-group label { font-size: 0.8em; color: var(--text-color); font-weight: bold; white-space: nowrap; }
+    .var-input-group input { padding: 2px 2px; border: 1px solid var(--border-color); background: var(--primary-bg); color: var(--text-color); border-radius: 2px; font-size: 0.9em; width: 100px; height: 20px; box-sizing: border-box; }
+    .add-var-btn { padding: 0 8px; height: 26px; font-size: 0.8em; cursor: pointer; background: var(--tertiary-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px; line-height: 24px; box-sizing: border-box; }
+    .add-var-btn:hover { background: var(--link-hover); color: white; border-color: var(--link-hover); }
 
-    let body_content = format!(r#"
+    .editor-container { 
+        flex: 1; 
+        min-height: 100px; 
+        margin-bottom: 0; 
+        position: relative; 
+        display: flex; 
+        flex-direction: column; 
+        border-bottom: none; 
+        background-color: var(--primary-bg);
+        padding: 0px;
+    }
+    
+    .editor-layer {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 5px; /* Minimal padding */
+        border: none;
+        font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+        font-size: 14px;
+        line-height: 1.5;
+        box-sizing: border-box;
+        overflow: auto;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+    }
+
+    #sql-backdrop {
+        z-index: 1;
+        pointer-events: none;
+        background-color: transparent;
+        color: var(--text-color);
+    }
+
+    #sql-editor {
+        z-index: 2;
+        background: transparent;
+        color: transparent; /* Hide text, show caret */
+        caret-color: var(--text-color);
+        resize: none;
+        outline: none;
+    }
+    
+    /* Syntax Highlighting Colors */
+    .hl-keyword { color: #ff79c6; font-weight: bold; } /* Pink/Purple */
+    .hl-string { color: #f1fa8c; } /* Yellow */
+    .hl-number { color: #bd93f9; } /* Purple */
+    .hl-comment { color: #6272a4; } /* Grey/Blue */
+    
+    .action-bar { padding: 5px; background: var(--secondary-bg); border-top: 1px solid var(--border-color); display: flex; gap: 10px; flex-shrink: 0; align-items: center; }
+    .action-bar button { margin: 0; cursor: pointer; padding: 5px 15px; background: var(--tertiary-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px; font-weight: bold; font-size: 0.9em; }
+    .action-bar button:hover { background: var(--link-hover); color: #fff; border-color: var(--link-hover); }
+    
+    .output { 
+        height: 300px;
+        flex-shrink: 0;
+        overflow: auto; 
+        background: var(--primary-bg); 
+        padding: 0; /* Remove padding from container to maximize space */
+        margin-top: 0; 
+        font-family: monospace; 
+        font-size: 0.9em; 
+    }
+    .output table { width: 100%; border-collapse: collapse; }
+    .output th, .output td { border: 1px solid var(--border-color); padding: 4px 8px; text-align: left; white-space: nowrap; }
+    .output th { background: var(--tertiary-bg); position: sticky; top: 0; z-index: 1; }
+    .output tr:nth-child(even) { background-color: rgba(255,255,255,0.02); }
+    .output pre { padding: 5px; margin: 0; }
+    
+    /* Autocomplete Suggestions */
+    #autocomplete-list { 
+        position: absolute; 
+        border: 1px solid var(--border-color); 
+        background: var(--tertiary-bg); 
+        z-index: 1000; 
+        max-height: 200px; 
+        overflow-y: auto; 
+        display: none; 
+        box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        border-radius: 4px;
+        min-width: 200px;
+    }
+    #autocomplete-list div { padding: 4px 8px; cursor: pointer; border-bottom: 1px solid var(--border-color); font-size: 0.9em; color: var(--text-color); }
+    #autocomplete-list div:last-child { border-bottom: none; }
+    #autocomplete-list div:hover, #autocomplete-list div.autocomplete-active { 
+        background-color: var(--link-hover); 
+        color: white; 
+    }
+    #autocomplete-list strong { color: #49cc90; }
+    #autocomplete-list div.autocomplete-active strong { color: #fff; }
+</style>
+"###;
+
+    let body_content = format!(r###"
     <div class="sql-view-container">
       <div id="sidebar">
-        <h2>Tables</h2>
         <div class="sidebar-search"><input type="text" id="sidebar-search-input" placeholder="Search tables..."></div>
-        <ul id="table-list">{table_list}</ul>
-        <h2 style="margin-top: 20px;">Saved Queries</h2>
+        <ul id="table-list"></ul>
+    
         <div class="sidebar-search"><input type="text" id="query-search-input" placeholder="Search queries..."></div>
         <ul id="saved-queries-list">{saved_query_list}</ul>
+        
         <form id="save-query-form" method="POST" action="/sql/save" class="query-save-form">
             <input type="text" id="query-name" name="query_name" placeholder="Name query to save" required>
             <input type="hidden" id="query-sql" name="sql">
-            <!-- Add hidden connection input so redirect works -->
             <input type="hidden" name="connection" value="{nickname}">
             <button type="submit">Save Current Query</button>
         </form>
       </div>
-      <span id="toggle-arrow">&#x25C0;</span>
+      
+      <div id="sidebar-resizer" title="Drag to resize, Click to toggle sidebar"></div>
+      
       <div id="main">
-        <form id="sql-form" method="POST" action="/sql/run">
+        <form id="sql-form">
           <input type="hidden" name="connection" value="{nickname}">
-          <div class="editor-container">
-            <textarea id="sql-editor" name="sql" placeholder="SELECT * FROM table_name WHERE..."></textarea>
+          
+          <div class="variables-section" id="variables-section">
+             <!-- Variables injected here -->
+             <button type="button" class="add-var-btn" onclick="addVariable()">+ Var</button>
           </div>
-          <div class="action-buttons">
+
+          <div class="editor-container">
+            <div id="sql-backdrop" class="editor-layer"><div class="highlights"></div></div>
+            <textarea id="sql-editor" class="editor-layer" name="sql" placeholder="SELECT * FROM table_name WHERE..." spellcheck="false"></textarea>
+          </div>
+          
+          <div class="action-bar">
             <button type="submit">Run Query</button>
-            <a href="/sql/export" target="_blank"><button type="button">Save Results as CSV</button></a>
+            <a href="/sql/export" target="_blank"><button type="button">Export CSV</button></a>
+            <button type="button" id="save-sql-file-btn">Save SQL File</button>
           </div>
         </form>
+        
+        <div id="output-resizer" title="Drag to resize output"></div>
         <div class="output" id="output"><pre>Click a table name or enter a query and press 'Run Query'.</pre></div>
       </div>
     </div>
+    
+    <!-- Autocomplete container attached to body for proper floating behavior -->
+    <div id="autocomplete-list"></div>
+    
     <script>
-      const toggleArrow = document.getElementById('toggle-arrow');
+      // Schema Data injected from Rust
+      const dbSchema = {table_schema_json};
+      
       const sidebar = document.getElementById('sidebar');
+      const resizer = document.getElementById('sidebar-resizer');
+      let isResizing = false;
+      let lastDownX = 0;
+      let savedSidebarWidth = 250; // Default width
+
       const mainContent = document.getElementById('main');
-      let collapsed = false;
       const editor = document.getElementById('sql-editor');
       const sidebarSearchInput = document.getElementById('sidebar-search-input');
       const sidebarTableList = document.getElementById('table-list');
@@ -532,53 +716,161 @@ fn render_query_view(nickname: &str, table_list: &str, current_theme: &crate::ap
       const saveQueryForm = document.getElementById('save-query-form');
       const queryNameInput = document.getElementById('query-name');
       const querySqlInput = document.getElementById('query-sql');
+      const variablesSection = document.getElementById('variables-section');
+      const autocompleteList = document.getElementById('autocomplete-list');
+      const saveSqlFileBtn = document.getElementById('save-sql-file-btn');
+      let currentFocus = -1;
+      
+      // Highlighting Elements
+      const backdrop = document.getElementById('sql-backdrop');
+      const highlights = backdrop.querySelector('.highlights');
 
-      toggleArrow.addEventListener('click', () => {{
-        if (!collapsed) {{
-          sidebar.style.width = '0px'; sidebar.style.padding = '0'; toggleArrow.innerHTML = '&#x25B6;'; toggleArrow.style.left = '0px'; mainContent.style.width = '100%'; collapsed = true;
-        }} else {{
-          sidebar.style.width = '200px'; sidebar.style.padding = '10px'; toggleArrow.innerHTML = '&#x25C0;'; toggleArrow.style.left = '200px'; mainContent.style.width = 'auto'; collapsed = false;
-        }}
-      }});
-      toggleArrow.style.left = sidebar.style.width;
-
-      const form = document.getElementById('sql-form');
-      const output = document.getElementById('output');
-      form.addEventListener('submit', async (e) => {{
-        e.preventDefault();
-        output.innerHTML = 'Loading...';
-        const formData = new FormData(form);
-        const body = new URLSearchParams(formData).toString();
-        const resp = await fetch('/sql/run', {{ method: 'POST', headers: {{ 'Content-Type': 'application/x-www-form-urlencoded' }}, body: body }});
-        const html = await resp.text();
-        output.innerHTML = html;
-        queryNameInput.value = '';
-      }});
-
-      sidebarTableList.addEventListener('click', (e) => {{
-          const target = e.target.closest('a');
-          if (target) {{ e.preventDefault(); const table_name = target.textContent; editor.value = "SELECT * FROM \\\"" + table_name + "\\\" LIMIT 100;"; }}
-      }});
-
-      savedQueriesList.addEventListener('click', (e) => {{
-          const target = e.target.closest('a');
-          if (target) {{ e.preventDefault(); const sql = target.getAttribute('data-sql'); const name = target.getAttribute('data-name'); editor.value = sql; queryNameInput.value = name; }}
+      // --- Save SQL File ---
+      saveSqlFileBtn.addEventListener('click', () => {{
+          const content = editor.value;
+          if (!content) return;
+          
+          const blob = new Blob([content], {{ type: 'text/plain' }});
+          const link = document.createElement('a');
+          link.href = URL.createObjectURL(blob);
+          
+          // Try to use the saved query name if available, else default
+          let filename = queryNameInput.value.trim() || 'query';
+          if (!filename.toLowerCase().endsWith('.sql')) filename += '.sql';
+          
+          link.download = filename;
+          link.click();
+          URL.revokeObjectURL(link.href);
       }});
 
-      saveQueryForm.addEventListener('submit', (e) => {{
-          querySqlInput.value = editor.value;
-          if (queryNameInput.value.trim() === '') {{ e.preventDefault(); }}
-      }});
-
-      function filterSidebarTables() {{
-          const filter = sidebarSearchInput.value.toUpperCase();
-          const listItems = sidebarTableList.getElementsByTagName('li');
-          for (let i = 0; i < listItems.length; i++) {{
-              const itemText = listItems[i].textContent || listItems[i].innerText;
-              if (itemText.toUpperCase().indexOf(filter) > -1) {{ listItems[i].style.display = ''; }} else {{ listItems[i].style.display = 'none'; }}
-          }}
+      // --- Sidebar Toggle Button (if exists) ---
+      const toggleArrow = document.getElementById('toggle-arrow');
+      if(toggleArrow) {{
+          toggleArrow.addEventListener('click', () => {{
+            if (!sidebar.classList.contains('collapsed')) {{
+              sidebar.classList.add('collapsed');
+              sidebar.style.width = '';
+            }} else {{
+              sidebar.classList.remove('collapsed');
+              sidebar.style.width = savedSidebarWidth + 'px';
+            }}
+          }});
       }}
 
+      // --- Resizer Logic ---
+      resizer.addEventListener('mousedown', (e) => {{
+          isResizing = true;
+          lastDownX = e.clientX;
+          resizer.classList.add('resizing');
+          document.body.style.cursor = 'col-resize';
+          document.body.style.userSelect = 'none'; 
+      }});
+
+      document.addEventListener('mousemove', (e) => {{
+          if (!isResizing) return;
+          let newWidth = e.clientX;
+          if (newWidth < 10) newWidth = 0; // Snap close
+          if (newWidth > 600) newWidth = 600; // Max width
+          
+          if (newWidth === 0) {{
+             sidebar.classList.add('collapsed');
+             sidebar.style.width = '';
+          }} else {{
+             sidebar.classList.remove('collapsed');
+             sidebar.style.width = newWidth + 'px';
+          }}
+      }});
+
+      document.addEventListener('mouseup', (e) => {{
+          if (!isResizing) return;
+          isResizing = false;
+          resizer.classList.remove('resizing');
+          document.body.style.cursor = '';
+          document.body.style.userSelect = '';
+          
+          // Click detection: if moved less than 5px, toggle
+          if (Math.abs(e.clientX - lastDownX) < 5) {{
+              toggleSidebar();
+          }} else {{
+              if (sidebar.offsetWidth > 0) {{
+                  savedSidebarWidth = sidebar.offsetWidth;
+              }}
+          }}
+      }});
+
+      function toggleSidebar() {{
+          if (sidebar.offsetWidth === 0 || sidebar.classList.contains('collapsed')) {{
+              sidebar.classList.remove('collapsed');
+              sidebar.style.width = savedSidebarWidth + 'px';
+          }} else {{
+              savedSidebarWidth = sidebar.offsetWidth;
+              sidebar.classList.add('collapsed');
+              sidebar.style.width = '';
+          }}
+      }}
+      
+      // --- Output Resizer Logic ---
+      const outputResizer = document.getElementById('output-resizer');
+      const outputPane = document.getElementById('output');
+      let isOutputResizing = false;
+      let lastOutputDownY = 0;
+      let startOutputHeight = 0;
+
+      outputResizer.addEventListener('mousedown', (e) => {{
+          isOutputResizing = true;
+          lastOutputDownY = e.clientY;
+          startOutputHeight = outputPane.offsetHeight;
+          outputResizer.classList.add('resizing');
+          document.body.style.cursor = 'row-resize';
+          document.body.style.userSelect = 'none';
+      }});
+
+      document.addEventListener('mousemove', (e) => {{
+          if (isOutputResizing) {{
+              const dy = lastOutputDownY - e.clientY; // Drag up increases height
+              let newHeight = startOutputHeight + dy;
+              if (newHeight < 50) newHeight = 50; 
+              
+              const containerHeight = mainContent.clientHeight;
+              if (newHeight > containerHeight - 100) newHeight = containerHeight - 100;
+              
+              outputPane.style.height = newHeight + 'px';
+          }}
+      }});
+
+      document.addEventListener('mouseup', (e) => {{
+          if (isOutputResizing) {{
+              isOutputResizing = false;
+              outputResizer.classList.remove('resizing');
+              document.body.style.cursor = '';
+              document.body.style.userSelect = '';
+          }}
+      }});
+
+      // --- Render Sidebar Table List ---
+      function renderTableList() {{
+          const filter = sidebarSearchInput.value.toUpperCase();
+          sidebarTableList.innerHTML = '';
+          
+          Object.keys(dbSchema).sort().forEach(tableName => {{
+              if (tableName.toUpperCase().indexOf(filter) > -1) {{
+                  const li = document.createElement('li');
+                  // Create link for better semantics and hover effect
+                  const a = document.createElement('a');
+                  a.className = 'table-list-item';
+                  a.textContent = tableName;
+                  a.href = '#';
+                  a.title = "Click to SELECT * LIMIT 100";
+                  a.onclick = (e) => {{ e.preventDefault(); editor.value = "SELECT * FROM \\\"" + tableName + "\\\" LIMIT 100;"; handleInput(); }};
+                  li.appendChild(a);
+                  sidebarTableList.appendChild(li);
+              }}
+          }});
+      }}
+      renderTableList();
+      sidebarSearchInput.addEventListener('keyup', renderTableList);
+
+      // --- Saved Queries Filter ---
       function filterSavedQueries() {{
           const filter = querySearchInput.value.toUpperCase();
           const listItems = savedQueriesList.getElementsByTagName('li');
@@ -587,13 +879,343 @@ fn render_query_view(nickname: &str, table_list: &str, current_theme: &crate::ap
               if (itemText.toUpperCase().indexOf(filter) > -1) {{ listItems[i].style.display = 'flex'; }} else {{ listItems[i].style.display = 'none'; }}
           }}
       }}
-
-      sidebarSearchInput.addEventListener('keyup', filterSidebarTables);
       querySearchInput.addEventListener('keyup', filterSavedQueries);
 
-      if (editor.value === "") {{ editor.value = "SELECT 1;"; }}
+      // --- Form Submission (Run Query) ---
+      const form = document.getElementById('sql-form');
+      const output = document.getElementById('output');
+      
+      form.addEventListener('submit', async (e) => {{
+        e.preventDefault();
+        output.innerHTML = '<pre style="padding:10px;">Loading...</pre>';
+        
+        const variables = {{}};
+        const varInputs = variablesSection.querySelectorAll('input');
+        varInputs.forEach(input => {{
+            if(input.name && input.value) {{
+                variables[input.name] = input.value;
+            }}
+        }});
+
+        const payload = {{
+            sql: editor.value,
+            connection: form.querySelector('input[name="connection"]').value,
+            variables: variables
+        }};
+
+        try {{
+            const resp = await fetch('/sql/run', {{ 
+                method: 'POST', 
+                headers: {{ 'Content-Type': 'application/json' }}, 
+                body: JSON.stringify(payload) 
+            }});
+            const html = await resp.text();
+            output.innerHTML = html;
+        }} catch(e) {{
+            output.innerHTML = '<pre style="padding:10px; color:#ff6b6b;">Error: ' + e.message + '</pre>';
+        }}
+      }});
+
+      // --- Load Saved Query ---
+      savedQueriesList.addEventListener('click', (e) => {{
+          const target = e.target.closest('a');
+          if (target) {{ 
+              e.preventDefault(); 
+              const sql = target.getAttribute('data-sql'); 
+              const name = target.getAttribute('data-name'); 
+              editor.value = sql; 
+              queryNameInput.value = name; 
+              scanForVariables(); // Update inputs
+              handleInput(); // Trigger Highlight
+          }}
+      }});
+
+      saveQueryForm.addEventListener('submit', (e) => {{
+          querySqlInput.value = editor.value;
+          if (queryNameInput.value.trim() === '') {{ e.preventDefault(); }}
+      }});
+
+      // --- Variables Logic ---
+      function addVariable(name = '', value = '') {{
+          const div = document.createElement('div');
+          div.className = 'var-input-group';
+          const label = document.createElement('label');
+          label.innerText = name || 'New Var';
+          const input = document.createElement('input');
+          input.type = 'text';
+          input.name = name;
+          input.value = value;
+          input.placeholder = 'Value';
+          
+          if(!name) {{
+             input.placeholder = 'Name';
+             input.onchange = (e) => {{ input.name = e.target.value; label.innerText = e.target.value; }};
+          }}
+          
+          div.appendChild(label);
+          div.appendChild(input);
+          
+          // Insert before the button
+          const btn = variablesSection.querySelector('.add-var-btn');
+          variablesSection.insertBefore(div, btn);
+      }}
+      window.addVariable = addVariable;
+
+      function scanForVariables() {{
+          const regex = /{{{{([^}}]+)}}}}/g;
+          const text = editor.value;
+          let match;
+          const foundVars = new Set();
+          
+          while ((match = regex.exec(text)) !== null) {{
+              foundVars.add(match[1]);
+          }}
+          
+          const currentInputs = Array.from(variablesSection.querySelectorAll('input'));
+          const currentValues = {{}};
+          currentInputs.forEach(i => currentValues[i.name] = i.value);
+          
+          // Clear existing vars but keep button
+          const existingGroups = variablesSection.querySelectorAll('.var-input-group');
+          existingGroups.forEach(g => g.remove());
+          
+          foundVars.forEach(v => {{
+              addVariable(v, currentValues[v] || '');
+          }});
+      }}
+      
+      // --- Syntax Highlighting Logic ---
+      const escapeHtml = (unsafe) => {{
+          return unsafe
+               .replace(/&/g, "&amp;")
+               .replace(/</g, "&lt;")
+               .replace(/>/g, "&gt;")
+               .replace(/"/g, "&quot;");
+      }};
+
+      const applyHighlights = (text) => {{
+          let html = escapeHtml(text);
+          
+          const tokens = [];
+          const pushToken = (text, type) => {{
+              const id = "___TOKEN" + tokens.length + "___";
+              tokens.push({{ id, text, type }});
+              return id;
+          }};
+          
+          // 1. Hide comments
+          html = html.replace(/(--.*$)/gm, (m) => pushToken(m, 'hl-comment'));
+          
+          // 2. Hide strings
+          html = html.replace(/('([^'\\]|\\.)*')/g, (m) => pushToken(m, 'hl-string'));
+          
+          // 3. Highlight Keywords (Case Insensitive)
+          const keywords = ["SELECT", "FROM", "WHERE", "INSERT", "INTO", "VALUES", "UPDATE", "SET", "DELETE", "CREATE", "TABLE", "DROP", "ALTER", "INDEX", "JOIN", "INNER", "OUTER", "LEFT", "RIGHT", "ON", "GROUP", "BY", "ORDER", "LIMIT", "OFFSET", "AND", "OR", "NOT", "NULL", "AS", "DISTINCT", "COUNT", "SUM", "AVG", "MAX", "MIN", "LIKE", "ILIKE", "IN", "IS", "EXISTS", "CASE", "WHEN", "THEN", "ELSE", "END", "HAVING", "UNION", "ALL"];
+          
+          const rxKeyword = new RegExp(`\\b(${{keywords.join('|')}})\\b`, 'gi');
+          html = html.replace(rxKeyword, '<span class="hl-keyword">$1</span>');
+          
+          // 4. Highlight Numbers
+          html = html.replace(/\b(\d+)\b/g, '<span class="hl-number">$1</span>');
+          
+          // 5. Restore tokens
+          tokens.forEach(t => {{
+              html = html.replace(t.id, `<span class="${{t.type}}">${{t.text}}</span>`);
+          }});
+          
+          if (text[text.length-1] === "\n") {{
+              html += " "; 
+          }}
+          
+          return html;
+      }};
+
+      const handleInput = () => {{
+          const text = editor.value;
+          highlights.innerHTML = applyHighlights(text);
+          scanForVariables();
+      }};
+
+      const syncScroll = () => {{
+          backdrop.scrollTop = editor.scrollTop;
+          backdrop.scrollLeft = editor.scrollLeft;
+      }};
+
+      editor.addEventListener('input', handleInput);
+      editor.addEventListener('scroll', syncScroll);
+      if (editor.value) handleInput();
+
+
+      // --- Autocomplete Helper: Get Caret Coordinates ---
+      function getCaretCoordinates() {{
+        const div = document.createElement('div');
+        const style = window.getComputedStyle(editor);
+        for (const prop of style) {{
+          div.style[prop] = style.getPropertyValue(prop);
+        }}
+        div.style.position = 'absolute';
+        div.style.top = '0';
+        div.style.left = '0';
+        div.style.visibility = 'hidden';
+        div.style.height = 'auto';
+        div.style.width = editor.offsetWidth + 'px';
+        div.style.overflow = 'hidden';
+        div.style.whiteSpace = 'pre-wrap';
+
+        const text = editor.value.substring(0, editor.selectionStart);
+        div.textContent = text;
+        const span = document.createElement('span');
+        span.textContent = '.';
+        div.appendChild(span);
+        
+        document.body.appendChild(div);
+        
+        const coordinates = {{
+          top: span.offsetTop + parseInt(style.borderTopWidth) + parseInt(style.paddingTop) - editor.scrollTop,
+          left: span.offsetLeft + parseInt(style.borderLeftWidth) + parseInt(style.paddingLeft) - editor.scrollLeft,
+          lineHeight: parseInt(style.lineHeight) || 20 
+        }};
+        document.body.removeChild(div);
+        return coordinates;
+      }}
+
+      // --- Autocomplete Logic ---
+      editor.addEventListener('input', function(e) {{
+          const val = this.value;
+          const cursorPosition = this.selectionStart;
+          const textBeforeCursor = val.substring(0, cursorPosition);
+          
+          const words = textBeforeCursor.split(/[\s,()]+/);
+          const currentWord = words[words.length - 1];
+          
+          if (!currentWord) {{
+              closeAutocomplete();
+              return;
+          }}
+
+          let matches = [];
+          
+          // Case 1: Dot notation (Table.Column)
+          if (currentWord.includes('.')) {{
+              const parts = currentWord.split('.');
+              const tableName = parts[0];
+              const colPrefix = parts[1] || '';
+              
+              const realTableName = Object.keys(dbSchema).find(t => t.toUpperCase() === tableName.toUpperCase());
+              
+              if (realTableName && dbSchema[realTableName]) {{
+                  matches = dbSchema[realTableName]
+                      .filter(col => col.toUpperCase().startsWith(colPrefix.toUpperCase()))
+                      .map(col => ({{ display: col, insert: col, type: 'column' }}));
+              }}
+          }} 
+          // Case 2: Table Suggestions
+          else {{
+              matches = Object.keys(dbSchema)
+                  .filter(t => t.toUpperCase().startsWith(currentWord.toUpperCase()))
+                  .map(t => ({{ display: t, insert: t, type: 'table' }}));
+          }}
+
+          if (matches.length > 0) {{
+              currentFocus = -1;
+              showAutocomplete(matches, currentWord);
+          }} else {{
+              closeAutocomplete();
+          }}
+      }});
+
+      function showAutocomplete(matches, currentWord) {{
+          autocompleteList.innerHTML = "";
+          const coords = getCaretCoordinates();
+          const rect = editor.getBoundingClientRect();
+          
+          autocompleteList.style.display = "block";
+          autocompleteList.style.left = (rect.left + coords.left + window.scrollX) + "px";
+          autocompleteList.style.top = (rect.top + coords.top + coords.lineHeight + window.scrollY) + "px";
+          
+          matches.forEach(match => {{
+              const div = document.createElement("div");
+              div.innerHTML = `<strong>${{match.display.substr(0, currentWord.length)}}</strong>${{match.display.substr(currentWord.length)}} <small style='float:right; opacity:0.6;'>${{match.type}}</small>`;
+              div.addEventListener("click", function(e) {{
+                  insertAtCursor(editor, match.insert, currentWord);
+                  closeAutocomplete();
+              }});
+              autocompleteList.appendChild(div);
+          }});
+      }}
+
+      function closeAutocomplete() {{
+          autocompleteList.innerHTML = "";
+          autocompleteList.style.display = "none";
+      }}
+      
+      document.addEventListener("click", function (e) {{
+          if (e.target !== editor) {{ closeAutocomplete(); }}
+      }});
+
+      editor.addEventListener('keydown', function(e) {{
+          const list = document.getElementById('autocomplete-list');
+          if (!list || list.style.display === 'none') return;
+          
+          const items = list.getElementsByTagName('div');
+          
+          if (e.key === 'ArrowDown') {{
+              currentFocus++;
+              addActive(items);
+              e.preventDefault(); 
+          }} else if (e.key === 'ArrowUp') {{
+              currentFocus--;
+              addActive(items);
+              e.preventDefault(); 
+          }} else if (e.key === 'Enter') {{
+              e.preventDefault(); 
+              if (currentFocus > -1) {{
+                  if (items[currentFocus]) items[currentFocus].click();
+              }}
+          }} else if (e.key === 'Escape') {{
+              closeAutocomplete();
+          }}
+      }});
+
+      function addActive(items) {{
+          if (!items) return;
+          removeActive(items);
+          if (currentFocus >= items.length) currentFocus = 0;
+          if (currentFocus < 0) currentFocus = (items.length - 1);
+          items[currentFocus].classList.add('autocomplete-active');
+          items[currentFocus].scrollIntoView({{block: 'nearest'}});
+      }}
+
+      function removeActive(items) {{
+          for (let i = 0; i < items.length; i++) {{
+              items[i].classList.remove('autocomplete-active');
+          }}
+      }}
+
+      function insertAtCursor(field, value, typedWord) {{
+          let prefix = "";
+          if (typedWord.includes('.')) {{
+             prefix = typedWord.split('.')[0] + '.';
+          }}
+          
+          const valToInsert = value; 
+          
+          const cursorPos = field.selectionStart;
+          const textBefore = field.value.substring(0, cursorPos);
+          const textAfter = field.value.substring(cursorPos);
+          
+          const cleanBefore = textBefore.substring(0, textBefore.length - (typedWord.length - prefix.length));
+          
+          field.value = cleanBefore + valToInsert + textAfter;
+          field.selectionStart = field.selectionEnd = cleanBefore.length + valToInsert.length;
+          field.focus();
+          
+          handleInput();
+      }}
+
+      if (editor.value === "") {{ editor.value = "SELECT 1;"; handleInput(); }}
     </script>
-    "#, nickname = nickname_safe, table_list = table_list, saved_query_list = saved_query_list);
+    "###, nickname = nickname_safe, table_schema_json = table_schema_json, saved_query_list = saved_query_list);
 
     render_base_page(
         &format!("SQL View: {}", nickname),
@@ -630,24 +1252,37 @@ pub async fn sql_view(path: web::Path<String>, state: web::Data<Arc<AppState>>) 
         }
     };
 
-    let rows = match sqlx::query("SELECT table_name FROM information_schema.tables WHERE table_schema='public'").fetch_all(&pool).await {
+    // --- NEW: Fetch Full Schema (Tables AND Columns) ---
+    // Postgres specific query to get table and column names
+    let schema_query = r#"
+        SELECT table_name, column_name 
+        FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        ORDER BY table_name, ordinal_position
+    "#;
+
+    let rows = match sqlx::query(schema_query).fetch_all(&pool).await {
         Ok(r) => r,
         Err(e) => {
             let current_theme = state.current_theme.lock().unwrap();
-            let error_content = format!(r#"<h1>SQL Error</h1><pre class="error-message">Failed to list tables: {e}</pre>"#, e = htmlescape::encode_minimal(&e.to_string()));
+            let error_content = format!(r#"<h1>SQL Error</h1><pre class="error-message">Failed to fetch schema: {e}</pre>"#, e = htmlescape::encode_minimal(&e.to_string()));
             return HttpResponse::InternalServerError().body(render_base_page("SQL Error", &error_content, &current_theme));
         }
     };
 
-    let tables: Vec<String> = rows.into_iter().filter_map(|row| row.try_get::<String, _>("table_name").ok()).collect();
+    // Construct HashMap<TableName, Vec<ColumnName>>
+    let mut schema_map: HashMap<String, Vec<String>> = HashMap::new();
+    
+    for row in rows {
+        let table: String = row.get("table_name");
+        let col: String = row.get("column_name");
+        schema_map.entry(table).or_default().push(col);
+    }
 
-    let table_list = tables.iter().map(|t| {
-        let safe = htmlescape::encode_minimal(t);
-        format!("<li><a href=\"#\">{}</a></li>", safe)
-    }).collect::<Vec<_>>().join("\n");
+    let schema_json = serde_json::to_string(&schema_map).unwrap_or_else(|_| "{}".to_string());
         
     let current_theme = state.current_theme.lock().unwrap();
     HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")
-        .body(render_query_view(&nickname, &table_list, &current_theme))
+        .body(render_query_view(&nickname, &schema_json, &current_theme))
 }

@@ -433,15 +433,14 @@ fn render_note_page(notes: &[Note], current_theme: &Theme) -> String {
 
     let content = format!(
         r#"
-    <h1>Quick Notes & Markdown Editor</h1>
     <form method="POST" action="/note">
         <div class="toolbar">
             <input type="file" id="file-input" style="display: none;" accept=".txt,.md,.json,.rs,.js,.html">
-            <button type="button" id="open-file-btn" class="utility-btn">📂 Open File</button>
             <input type="text" id="subject" name="subject" placeholder="Subject / Filename" value="" class="subject-input" />
+            <button type="button" id="open-file-btn" class="utility-btn">📂 Open File</button>
             <button type="button" id="toggle-preview-btn" class="utility-btn">Preview Markdown</button>
             <button type="button" id="download-btn" class="utility-btn">💾 Save to Disk</button>
-            <button type="button" id="email-btn" class="utility-btn">📧 Email</button>
+            <button type="button" id="email-btn" class="utility-btn">📧 Gmail</button>
         </div>
 
         <div class="editor-container">

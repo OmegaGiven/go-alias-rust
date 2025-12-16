@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct DbConnection {
@@ -23,4 +24,5 @@ pub struct AddConnForm {
 pub struct SqlForm {
     pub sql: String,
     pub connection: String,
+    pub variables: Option<HashMap<String, String>>,
 }

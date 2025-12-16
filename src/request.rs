@@ -319,8 +319,6 @@ fn render_request_page(current_theme: &Theme) -> String {
         </div>
         
         <div class="main-area">
-            <h1>Request Builder</h1>
-            
             <!-- Request Bar -->
             <div class="request-bar">
                 <select id="method" class="method-select">

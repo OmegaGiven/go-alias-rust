@@ -2,11 +2,7 @@
  * These variables are DEFINED by the Rust backend via an inline <style> block 
  * in the HTML <head> based on the user's saved/current theme.
  * This file (style.css) merely CONSUMES them using var(--name).
- *
- * NOTE: The explicit :root block with default values has been removed from this 
- * file to ensure the dynamically injected styles always take precedence.
  */
-
 
 /* -------------------------------------- */
 /* Global Styles (Using Variables) */
@@ -23,7 +19,6 @@ a:hover {
     color: var(--link-hover);
     text-decoration: underline;
 }
-
 
 body {
     font-family: sans-serif;
@@ -280,4 +275,151 @@ ul li a:hover {
 }
 .theme-action-buttons button {
     margin-top: 0;
+}
+
+/* -------------------------------------- */
+/* Inspector Tool Styles (Scoped)         */
+/* -------------------------------------- */
+
+.inspector-container {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 20px;
+    height: calc(100vh - 100px);
+}
+
+.inspector-container .input-section {
+    background: var(--secondary-bg);
+    padding: 20px;
+    border-radius: 0;
+    border: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    overflow: hidden;
+}
+
+.inspector-container .toolbar {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.inspector-container .control-row {
+    display: flex;
+    gap: 15px;
+    margin-top: 15px;
+    align-items: end;
+    flex-wrap: wrap;
+    border-top: 1px solid var(--border-color);
+    padding-top: 15px;
+}
+
+.inspector-container .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.inspector-container label { 
+    font-weight: bold; 
+    font-size: 0.9em; 
+    color: var(--text-color); 
+}
+
+.inspector-container input[type="number"], 
+.inspector-container input[type="file"] {
+    padding: 8px;
+    background: var(--primary-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    border-radius: 0;
+}
+
+/* Specific textarea override for inspector */
+.inspector-container textarea {
+    flex-grow: 1;
+    width: 100%;
+    background: var(--primary-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    border-radius: 0;
+    padding: 10px;
+    font-family: monospace;
+    resize: none;
+    box-sizing: border-box;
+    white-space: pre; 
+    overflow: auto;
+}
+
+/* Scoped button style for Inspector (Sharp corners) */
+.inspector-container button {
+    padding: 8px 16px;
+    background: var(--tertiary-bg);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    border-radius: 0;
+    cursor: pointer;
+    font-weight: bold;
+    margin-top: 0; /* Reset global button margin */
+}
+
+.inspector-container button:hover { 
+    background: var(--link-hover); 
+    color: #fff; 
+    border-color: var(--link-hover); 
+}
+
+.inspector-container .result-section {
+    background: var(--secondary-bg);
+    padding: 20px;
+    border-radius: 0;
+    border: 1px solid var(--border-color);
+    display: none;
+    flex-shrink: 0;
+}
+
+.inspector-container .context-display {
+    font-family: monospace;
+    background: var(--primary-bg);
+    padding: 15px;
+    border-radius: 0;
+    overflow-x: auto;
+    white-space: pre;
+    margin-bottom: 10px;
+    border: 1px solid var(--border-color);
+    font-size: 1.1em;
+    line-height: 1.5;
+}
+
+.inspector-container .highlight-char {
+    background-color: #ff4444;
+    color: white;
+    font-weight: bold;
+    padding: 2px 4px;
+    border-radius: 0;
+    border: 1px solid #cc0000;
+}
+
+.inspector-container .char-info {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 10px;
+    font-size: 0.9em;
+    background: var(--tertiary-bg);
+    padding: 10px;
+    border-radius: 0;
+}
+.inspector-container .info-label { color: #888; font-weight: bold; text-align: right;}
+
+.inspector-container .checkbox-group {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.9em;
 }

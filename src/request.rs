@@ -193,7 +193,7 @@ fn render_request_page(current_theme: &Theme) -> String {
         height: calc(100vh - 120px); /* Increased offset to account for header/margins */
         overflow: hidden; 
         border: 1px solid var(--border-color); 
-        border-radius: 8px;
+        border-radius: 0; /* Removed rounded corners */
         background-color: var(--secondary-bg);
     }
     
@@ -222,7 +222,7 @@ fn render_request_page(current_theme: &Theme) -> String {
     
     .saved-req-item { display: flex; align-items: center; padding: 8px 5px; border-bottom: 1px solid var(--border-color); }
     .saved-req-item:last-child { border-bottom: none; }
-    .req-method { font-size: 0.7em; font-weight: bold; padding: 2px 5px; border-radius: 3px; margin-right: 8px; min-width: 35px; text-align: center; color: #fff;}
+    .req-method { font-size: 0.7em; font-weight: bold; padding: 2px 5px; border-radius: 0; margin-right: 8px; min-width: 35px; text-align: center; color: #fff;}
     .req-method.get { background-color: #61affe; }
     .req-method.post { background-color: #49cc90; }
     .req-method.put { background-color: #fca130; }
@@ -237,15 +237,15 @@ fn render_request_page(current_theme: &Theme) -> String {
     
     /* Request Bar */
     .request-bar { display: flex; gap: 10px; margin-bottom: 15px; flex-shrink: 0; }
-    .method-select { padding: 10px; background: var(--tertiary-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px; font-weight: bold; }
-    .url-input { flex-grow: 1; padding: 10px; background: var(--primary-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px; }
-    .send-btn { padding: 10px 20px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+    .method-select { padding: 10px; background: var(--tertiary-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 0; font-weight: bold; }
+    .url-input { flex-grow: 1; padding: 10px; background: var(--primary-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 0; }
+    .send-btn { padding: 10px 20px; background-color: #007bff; color: white; border: none; border-radius: 0; cursor: pointer; font-weight: bold; }
     .send-btn:hover { background-color: #0056b3; }
-    .save-btn { padding: 10px; background-color: var(--tertiary-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer; }
+    .save-btn { padding: 10px; background-color: var(--tertiary-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 0; cursor: pointer; }
     
     /* Tabs */
     .tabs { display: flex; gap: 5px; border-bottom: 1px solid var(--border-color); margin-bottom: 10px; flex-shrink: 0; }
-    .tab { padding: 8px 15px; cursor: pointer; border: 1px solid transparent; border-bottom: none; border-radius: 4px 4px 0 0; color: var(--text-color); opacity: 0.7; }
+    .tab { padding: 8px 15px; cursor: pointer; border: 1px solid transparent; border-bottom: none; border-radius: 0; color: var(--text-color); opacity: 0.7; }
     .tab.active { background-color: var(--secondary-bg); border-color: var(--border-color); opacity: 1; font-weight: bold; }
     
     .input-container {
@@ -260,13 +260,13 @@ fn render_request_page(current_theme: &Theme) -> String {
     .tab-content.active { display: flex; }
     
     textarea.code-editor {
-        width: 100%; height: 100%; background: var(--secondary-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; padding: 10px; font-family: monospace; box-sizing: border-box; resize: none;
+        width: 100%; height: 100%; background: var(--secondary-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 0; padding: 10px; font-family: monospace; box-sizing: border-box; resize: none;
     }
 
     /* Key-Value Tables (Params & Headers) */
     .kv-table { width: 100%; border-collapse: collapse; }
     .kv-row { display: flex; gap: 10px; margin-bottom: 5px; }
-    .kv-input { flex: 1; padding: 8px; background: var(--primary-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px; }
+    .kv-input { flex: 1; padding: 8px; background: var(--primary-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 0; }
     .kv-remove { background: none; border: none; color: #f93e3e; font-weight: bold; cursor: pointer; padding: 0 10px; }
     .add-row-btn { width: auto; align-self: flex-start; margin-top: 5px; padding: 5px 10px; font-size: 0.9em; }
     
@@ -274,11 +274,11 @@ fn render_request_page(current_theme: &Theme) -> String {
     .kv-input.key.readonly { background-color: var(--tertiary-bg); color: #aaa; }
 
     /* Auth Section */
-    .auth-section { display: flex; flex-direction: column; gap: 10px; padding: 10px; background: var(--secondary-bg); border-radius: 4px; border: 1px solid var(--border-color); }
+    .auth-section { display: flex; flex-direction: column; gap: 10px; padding: 10px; background: var(--secondary-bg); border-radius: 0; border: 1px solid var(--border-color); }
     .auth-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap;}
     .auth-row label { width: 120px; flex-shrink: 0;}
-    .auth-row input, .auth-row select { flex: 1; padding: 8px; background: var(--primary-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px; }
-    .oauth-btn { background-color: #fca130; color: #000; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+    .auth-row input, .auth-row select { flex: 1; padding: 8px; background: var(--primary-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 0; }
+    .oauth-btn { background-color: #fca130; color: #000; border: none; padding: 8px 12px; border-radius: 0; cursor: pointer; font-weight: bold; }
     .oauth-btn:hover { background-color: #e59029; }
     .token-display { width: 100%; margin-top: 5px; }
 
@@ -299,12 +299,12 @@ fn render_request_page(current_theme: &Theme) -> String {
     .status-badge.error { color: #f93e3e; }
     
     /* Debug Info */
-    #request-debug-info { margin-bottom: 10px; color: #888; font-family: monospace; font-size: 0.8em; white-space: pre-wrap; overflow-x: auto; display: none; background: var(--tertiary-bg); padding: 10px; border-radius: 4px; border: 1px solid var(--border-color); flex-shrink: 0;}
+    #request-debug-info { margin-bottom: 10px; color: #888; font-family: monospace; font-size: 0.8em; white-space: pre-wrap; overflow-x: auto; display: none; background: var(--tertiary-bg); padding: 10px; border-radius: 0; border: 1px solid var(--border-color); flex-shrink: 0;}
 
-    #response-body { flex: 1; white-space: pre-wrap; overflow: auto; font-family: monospace; background: var(--secondary-bg); padding: 10px; border-radius: 4px; border: 1px solid var(--border-color); min-height: 0; }
+    #response-body { flex: 1; white-space: pre-wrap; overflow: auto; font-family: monospace; background: var(--secondary-bg); padding: 10px; border-radius: 0; border: 1px solid var(--border-color); min-height: 0; }
     
     /* Save Modal */
-    .save-controls { display: flex; gap: 10px; align-items: center; background: var(--secondary-bg); padding: 10px; border-radius: 4px; border: 1px solid var(--border-color); margin-bottom: 10px; display: none; flex-shrink: 0; }
+    .save-controls { display: flex; gap: 10px; align-items: center; background: var(--secondary-bg); padding: 10px; border-radius: 0; border: 1px solid var(--border-color); margin-bottom: 10px; display: none; flex-shrink: 0; }
     .save-controls input { flex-grow: 1; padding: 5px; }
 </style>
 "#;
@@ -675,7 +675,7 @@ fn render_request_page(current_theme: &Theme) -> String {
                         msgDiv.innerHTML = `
                             <div style="color: #49cc90; margin-bottom: 5px;">Token received!</div>
                             <div style="display:flex; gap:5px; width:100%; margin-top:5px;">
-                                <input type="text" id="token-input-field" value="${{fetchedOAuthToken}}" readonly style="flex-grow:1; padding:5px; background:var(--primary-bg); color:var(--text-color); border:1px solid var(--border-color); border-radius:4px;">
+                                <input type="text" id="token-input-field" value="${{fetchedOAuthToken}}" readonly style="flex-grow:1; padding:5px; background:var(--primary-bg); color:var(--text-color); border:1px solid var(--border-color); border-radius:0;">
                                 <button type="button" class="save-btn" onclick="copyToClipboard('token-input-field')" style="padding:5px 10px;">Copy</button>
                             </div>
                         `;

@@ -25,22 +25,131 @@ fn render_theme_variables(theme: &Theme) -> String {
 
 pub fn nav_bar_html() -> String {
     r#"
-    <div class="tools">
-      <div class="tool-buttons">
-        <a href="/"><button class="nav-button">Home (Shortcuts)</button></a>
-        <a href="/sql"><button class="nav-button">SQL Manager</button></a>
-        <a href="/note"><button class="nav-button">Notes</button></a>
-        <a href="/board"><button class="nav-button">Task Board</button></a>
-        <a href="/calculator"><button class="nav-button">Calculator</button></a>
-        <a href="/paint"><button class="nav-button">Paint</button></a>
-        <a href="/requests"><button class="nav-button">Requests</button></a>
-        <a href="/formatter"><button class="nav-button">Formatter</button></a> <!-- NEW BUTTON -->
+    <style>
+        .modern-nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: var(--secondary-bg);
+            border-bottom: 1px solid var(--border-color);
+            padding: 0 20px;
+            height: 30px; 
+            min-height: 30px; /* Force fixed height */
+            max-height: 30px; /* Prevent expansion */
+            user-select: none;
+            box-sizing: border-box;
+            overflow: hidden; /* Ensure nothing pushes the box open */
+        }
+        
+        .nav-left, .nav-right {
+            display: flex;
+            align-items: center;
+            height: 100%;
+            gap: 5px; /* Reduced gap slightly to fit more items */
+        }
+        
+        /* High specificity selector to override global styles */
+        .modern-nav .nav-link-item {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 15px;
+            height: 100%;
+            color: var(--text-color);
+            text-decoration: none !important;
+            font-size: 1rem;
+            opacity: 0.8;
+            transition: background-color 0.2s ease, opacity 0.2s ease;
+            border-bottom: 3px solid transparent;
+            box-sizing: border-box;
+            background: transparent;
+            border-top: 3px solid transparent;
+            cursor: pointer;
+            white-space: nowrap;
+            margin: 0 !important; /* Critical: Remove global button margins */
+            line-height: normal;
+        }
+        
+        /* Specific reset for the button version to match <a> tags exactly */
+        .modern-nav button.nav-link-item {
+            border: none;
+            font-family: inherit;
+            font-size: 1rem;
+            appearance: none;
+            background: transparent;
+            outline: none;
+        }
+
+        .nav-link-item:hover {
+            background-color: var(--tertiary-bg);
+            opacity: 1;
+            color: var(--text-color);
+        }
+        
+        .nav-link-item.active {
+            background-color: var(--tertiary-bg);
+            opacity: 1;
+            font-weight: bold;
+            border-bottom-color: var(--link-color);
+        }
+        
+        /* Connection indicator */
+        .conn-link { position: relative; }
+        .conn-link::after {
+            content: '';
+            position: absolute;
+            top: 15px; /* Fixed position relative to 60px height */
+            right: 5px;
+            width: 8px;
+            height: 8px;
+            background-color: #49cc90;
+            border-radius: 50%;
+            opacity: 0.6;
+            box-shadow: 0 0 4px rgba(73, 204, 144, 0.4);
+        }
+        
+        #optional-button-placeholder {
+            display: flex;
+            align-items: center;
+            height: 100%;
+        }
+    </style>
+
+    <div class="modern-nav">
+      <div class="nav-left">
+        <a href="/" class="nav-link-item">Home</a>
+        <a href="/sql" class="nav-link-item">SQL</a>
+        <a href="/note" class="nav-link-item">Notes</a>
+        <a href="/board" class="nav-link-item">Board</a>
+        <a href="/paint" class="nav-link-item">Paint</a>
+        <a href="/requests" class="nav-link-item">Requests</a>
+        <a href="/inspector" class="nav-link-item">Inspector</a>
+        <a href="/connection" class="nav-link-item conn-link">Connection</a>
       </div>
-      <div class="right-buttons">
+      <div class="nav-right">
         <div id="optional-button-placeholder"></div>
-        <a href="/settings"><button class="nav-button">Settings</button></a> 
+        <a href="/settings" class="nav-link-item">Settings</a> 
       </div>
     </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const path = window.location.pathname;
+            const links = document.querySelectorAll('.nav-link-item');
+            
+            links.forEach(link => {
+                const href = link.getAttribute('href');
+                if (!href) return;
+                
+                // Active state logic: Exact match or sub-path match
+                if (href === '/' && path === '/') {
+                    link.classList.add('active');
+                } else if (href !== '/' && path.startsWith(href)) {
+                    link.classList.add('active');
+                }
+            });
+        });
+    </script>
     "#.to_string()
 }
 
@@ -68,9 +177,7 @@ pub fn render_base_page(title: &str, body_content: &str, current_theme: &Theme) 
 
 pub fn render_add_shortcut_button() -> String {
     r#"
-    <div class="add-shortcut-container">
-        <button class="nav-button add-button" id="addShortcutBtn">+ Add Shortcut</button>
-    </div>
+    <button class="nav-link-item" id="addShortcutBtn">+ Add Shortcut</button>
     "#.to_string()
 }
 
@@ -148,9 +255,6 @@ pub fn render_settings_page(current_theme: &Theme, saved_themes: &HashMap<String
 
     format!(
         r#"
-    <h1>Theme Settings</h1>
-    <p>Customize the look and feel of your alias service.</p>
-
     <form action="/save_theme" method="POST" class="settings-form">
         <h2>Active Theme: {current_theme_name}</h2>
         <input type="hidden" id="original_name" name="original_name" value="{current_theme_name}">
@@ -206,7 +310,6 @@ pub fn render_settings_page(current_theme: &Theme, saved_themes: &HashMap<String
         </div>
 
         <div class="theme-action-buttons">
-            <button type="button" id="applyChangesBtn">Apply Changes (Preview)</button>
             <button type="submit" name="action" value="save" class="form-submit-btn">Save / Update Theme</button>
             <button type="submit" name="action" value="apply_only" class="form-submit-btn">Apply Theme Only</button>
         </div>

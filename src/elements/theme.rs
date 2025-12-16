@@ -62,9 +62,11 @@ fn save_current_theme(path: &str, theme: &Theme) -> io::Result<()> {
 // Struct to capture the theme form data
 #[derive(Deserialize)]
 pub struct ThemeForm {
-    // FIX: Renamed to start with '_' to silence the 'field is never read' warning.
-    // This field is passed by the form but not currently used in the handler logic.
-    pub _original_name: String, 
+    // FIX: Changed to Option to prevent "missing field" errors if the frontend
+    // doesn't send this hidden input correctly.
+    #[serde(rename = "original_name")]
+    pub _original_name: Option<String>, 
+    
     pub theme_name: String,
     pub primary_bg: String,
     pub secondary_bg: String,
@@ -74,8 +76,11 @@ pub struct ThemeForm {
     pub link_visited: String,
     pub link_hover: String,
     pub border_color: String,
-    pub load_theme_name: Option<String>, 
-    pub action: String,                  
+    
+    pub load_theme_name: Option<String>,
+    
+    // Action is optional because JS submissions might not include button values
+    pub action: Option<String>,                  
 }
 
 
@@ -146,14 +151,16 @@ pub async fn save_theme(
     }
 
     // 4. Handle saving to saved_themes if action is "save"
-    if form.action == "save" {
-        let mut saved_themes = state.saved_themes.lock().unwrap();
-        saved_themes.insert(new_theme.name.clone(), new_theme);
+    if let Some(action) = &form.action {
+        if action == "save" {
+            let mut saved_themes = state.saved_themes.lock().unwrap();
+            saved_themes.insert(new_theme.name.clone(), new_theme);
 
-        // Persist all saved themes
-        if let Err(e) = save_themes(THEMES_FILE, &saved_themes) {
-            eprintln!("Failed to save themes list: {}", e);
-            return HttpResponse::InternalServerError().body("Failed to save themes list.");
+            // Persist all saved themes
+            if let Err(e) = save_themes(THEMES_FILE, &saved_themes) {
+                eprintln!("Failed to save themes list: {}", e);
+                return HttpResponse::InternalServerError().body("Failed to save themes list.");
+            }
         }
     }
 

@@ -4,7 +4,6 @@ use serde::{Serialize, Deserialize};
 
 use crate::sql::DbConnection;
 
-// NEW STRUCT: Note
 // This struct stores both the subject and the content of a saved note.
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Note {
@@ -26,11 +25,41 @@ pub struct Theme {
     pub border_color: String,  // e.g., #444 (Borders/Dividers)
 }
 
+// NEW: Structure for P2P Room Signaling
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct RoomState {
+    pub id: String,
+    pub host_offer: Option<String>,
+    pub guest_answer: Option<String>,
+    pub host_ice: Vec<String>,
+    pub guest_ice: Vec<String>,
+    // Key: Tool Name (e.g., "paint", "board"), Value: "rw" (Read/Write), "r" (Read Only), "none"
+    pub permissions: HashMap<String, String>, 
+}
+
+impl RoomState {
+    pub fn new(id: String) -> Self {
+        let mut permissions = HashMap::new();
+        // Default permissions - Host can toggle these in Manage Connection tab
+        permissions.insert("paint".to_string(), "rw".to_string());
+        permissions.insert("board".to_string(), "rw".to_string());
+        permissions.insert("sql".to_string(), "none".to_string()); // Default sensitive tools to none
+        
+        Self {
+            id,
+            host_offer: None,
+            guest_answer: None,
+            host_ice: Vec::new(),
+            guest_ice: Vec::new(),
+            permissions,
+        }
+    }
+}
+
 pub struct AppState {
     pub shortcuts: Mutex<HashMap<String, String>>,
     pub hidden_shortcuts: Mutex<HashMap<String, String>>,
     pub work_shortcuts: Mutex<HashMap<String, String>>,
-    // UPDATED: Use Vec<Note> instead of Vec<String>
     pub notes: Mutex<Vec<Note>>,
 
     // THEME STATE
@@ -40,4 +69,7 @@ pub struct AppState {
     // SQL service state
     pub connections: Mutex<Vec<DbConnection>>,
     pub last_results: Mutex<Vec<HashMap<String, String>>>,
+    
+    // NEW: P2P Signaling State
+    pub rooms: Mutex<HashMap<String, RoomState>>,
 }

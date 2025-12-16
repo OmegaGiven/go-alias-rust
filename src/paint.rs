@@ -15,17 +15,14 @@ pub async fn paint_get(state: Data<Arc<AppState>>) -> impl Responder {
 }
 
 fn render_paint_page(current_theme: &Theme) -> String {
-    // CSS uses single braces { } in raw string, so we format! with {{ }} escaping if needed, 
-    // or just use a raw string if we aren't injecting variables. 
-    // Since we aren't injecting into CSS here, a plain raw string is fine, but format! expects escaping.
-    // We'll use a simple raw string for CSS since no variables are injected.
     let style = r#"
 <style>
     .paint-app {
         display: flex;
         flex-direction: column;
-        gap: 10px;
+        gap: 0; /* Removed gap */
         height: calc(100vh - 80px); /* Fill remaining screen height */
+        padding: 0; /* Removed padding */
     }
     
     .toolbar {
@@ -34,9 +31,10 @@ fn render_paint_page(current_theme: &Theme) -> String {
         align-items: center;
         padding: 8px;
         background-color: var(--secondary-bg);
-        border: 1px solid var(--border-color);
-        border-radius: 8px;
+        border-bottom: 1px solid var(--border-color); /* Only bottom border */
+        border-radius: 0; /* Removed rounded corners */
         flex-wrap: wrap;
+        flex-shrink: 0;
     }
     
     .tool-group {
@@ -53,27 +51,31 @@ fn render_paint_page(current_theme: &Theme) -> String {
     
     .canvas-container {
         flex-grow: 1;
-        background-color: #000000; /* Default to black for dark theme preference */
-        border: 1px solid var(--border-color);
-        border-radius: 8px;
-        overflow: hidden;
+        background-color: #1a1a1a; 
+        border: none; /* Removed border */
+        border-radius: 0; /* Removed rounded corners */
+        overflow: auto; /* Allow scrolling for large canvases */
         position: relative;
-        cursor: crosshair;
+        display: grid;
+        place-items: center; /* Center the canvas */
     }
     
-    canvas {
+    /* Scope styles to avoid affecting global nav bar */
+    .paint-app canvas {
         display: block;
-        touch-action: none; /* Prevent scrolling while drawing on touch devices */
+        touch-action: none;
+        background-color: #000; /* Actual canvas bg */
+        box-shadow: 0 0 10px rgba(0,0,0,0.5);
     }
 
-    label {
+    .paint-app label {
         font-weight: bold;
         margin-right: 3px;
         color: var(--text-color);
         font-size: 0.9rem;
     }
 
-    input[type="color"] {
+    .paint-app input[type="color"] {
         border: none;
         width: 30px;
         height: 30px;
@@ -82,12 +84,22 @@ fn render_paint_page(current_theme: &Theme) -> String {
         padding: 0;
     }
 
-    input[type="range"] {
+    .paint-app input[type="range"] {
         cursor: pointer;
         height: 10px;
     }
     
-    button {
+    .paint-app input[type="number"] {
+        background: var(--primary-bg);
+        border: 1px solid var(--border-color);
+        color: var(--text-color);
+        border-radius: 4px;
+        padding: 4px;
+        width: 60px;
+    }
+
+    /* Scope button styles specifically to paint-app to fix nav bar issue */
+    .paint-app button {
         padding: 4px 8px;
         font-size: 0.9rem;
         cursor: pointer;
@@ -97,7 +109,7 @@ fn render_paint_page(current_theme: &Theme) -> String {
         border-radius: 4px;
         transition: background-color 0.2s;
     }
-    button:hover {
+    .paint-app button:hover {
         background-color: var(--link-hover);
         color: white;
         border-color: var(--link-hover);
@@ -112,7 +124,6 @@ fn render_paint_page(current_theme: &Theme) -> String {
 </style>
     "#;
 
-    // FIX: Use r##" delimiters so that "#" inside color strings doesn't end the string early.
     let html_content = r##"
     <div class="paint-app">
         <div class="toolbar">
@@ -120,14 +131,22 @@ fn render_paint_page(current_theme: &Theme) -> String {
             <input type="file" id="image-loader" accept="image/png, image/jpeg, image/jpg" style="display: none;">
 
             <div class="tool-group">
+                <label>Dimensions:</label>
+                <input type="number" id="canvas-width" value="800" title="Width">
+                <span style="color:var(--text-color);">x</span>
+                <input type="number" id="canvas-height" value="600" title="Height">
+                <button id="resize-btn" title="Update canvas size (clears if confirmed)">Set</button>
+            </div>
+
+            <div class="tool-group">
                 <label for="color">Brush:</label>
                 <input type="color" id="color" value="#ffffff">
             </div>
 
             <div class="tool-group">
-                <label for="bg-color">Background:</label>
+                <label for="bg-color">BG:</label>
                 <input type="color" id="bg-color" value="#000000">
-                <button id="fill-btn" title="Fill entire canvas with background color">Fill</button>
+                <button id="fill-btn" title="Fill entire canvas">Fill</button>
             </div>
             
             <div class="tool-group">
@@ -170,6 +189,10 @@ fn render_paint_page(current_theme: &Theme) -> String {
         const sizePicker = document.getElementById('size');
         const sizeVal = document.getElementById('size-val');
         
+        const widthInput = document.getElementById('canvas-width');
+        const heightInput = document.getElementById('canvas-height');
+        const resizeBtn = document.getElementById('resize-btn');
+
         const fillBtn = document.getElementById('fill-btn');
         const clearBtn = document.getElementById('clear-btn');
         const eraserBtn = document.getElementById('eraser-btn');
@@ -184,29 +207,20 @@ fn render_paint_page(current_theme: &Theme) -> String {
         let backgroundColor = '#000000';
 
         // --- Initialization ---
-        function resizeCanvas() {
-            // Save current content
-            const tempCanvas = document.createElement('canvas');
-            const tempCtx = tempCanvas.getContext('2d');
-            tempCanvas.width = canvas.width;
-            tempCanvas.height = canvas.height;
-            tempCtx.drawImage(canvas, 0, 0);
-
-            // Resize
-            canvas.width = container.clientWidth;
-            canvas.height = container.clientHeight;
-
-            // Restore content
-            ctx.drawImage(tempCanvas, 0, 0);
+        function initCanvas(w, h) {
+            // Set canvas dimensions
+            canvas.width = w;
+            canvas.height = h;
             
-            // Update styles after resize
-            updateContextStyles();
-        }
-
-        // Fill the canvas with the current background color
-        function fillCanvas() {
+            // Update inputs to match
+            widthInput.value = w;
+            heightInput.value = h;
+            
+            // Fill with default background
             ctx.fillStyle = backgroundColor;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            updateContextStyles();
         }
 
         function updateContextStyles() {
@@ -217,35 +231,78 @@ fn render_paint_page(current_theme: &Theme) -> String {
             ctx.strokeStyle = isEraser ? backgroundColor : colorPicker.value;
         }
 
-        window.addEventListener('resize', resizeCanvas);
-        
-        // Initial setup
-        setTimeout(() => {
-            resizeCanvas();
-            fillCanvas(); // Start with black background
-        }, 10); 
+        // --- Initial Setup ---
+        // Start with 800x600 default
+        initCanvas(800, 600);
+
+        // --- Resize Logic ---
+        resizeBtn.addEventListener('click', () => {
+            const w = parseInt(widthInput.value);
+            const h = parseInt(heightInput.value);
+            
+            if (w && h) {
+                if (confirm("Resizing will clear the current drawing. Continue?")) {
+                    // Create temp canvas to try and preserve content
+                    const tempCanvas = document.createElement('canvas');
+                    tempCanvas.width = canvas.width;
+                    tempCanvas.height = canvas.height;
+                    const tempCtx = tempCanvas.getContext('2d');
+                    tempCtx.drawImage(canvas, 0, 0);
+                    
+                    // Resize
+                    canvas.width = w;
+                    canvas.height = h;
+                    
+                    // Refill background
+                    ctx.fillStyle = backgroundColor;
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    
+                    // Draw old content back (top-left aligned)
+                    ctx.drawImage(tempCanvas, 0, 0);
+                    
+                    updateContextStyles();
+                }
+            } else {
+                alert("Invalid dimensions");
+            }
+        });
+
+        // Fill the canvas with the current background color
+        function fillCanvas() {
+            ctx.fillStyle = backgroundColor;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
 
         // --- Drawing Logic ---
+        function getPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            // Handle scale if CSS width != internal width
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            
+            return {
+                x: (e.clientX - rect.left) * scaleX,
+                y: (e.clientY - rect.top) * scaleY
+            };
+        }
+
         function draw(e) {
             if (!isDrawing) return;
             
-            // Calculate mouse position relative to canvas
-            const rect = canvas.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
+            const pos = getPos(e);
 
             ctx.beginPath();
             ctx.moveTo(lastX, lastY);
-            ctx.lineTo(x, y);
+            ctx.lineTo(pos.x, pos.y);
             ctx.stroke();
 
-            [lastX, lastY] = [x, y];
+            [lastX, lastY] = [pos.x, pos.y];
         }
 
         canvas.addEventListener('mousedown', (e) => {
             isDrawing = true;
-            const rect = canvas.getBoundingClientRect();
-            [lastX, lastY] = [e.clientX - rect.left, e.clientY - rect.top];
+            const pos = getPos(e);
+            [lastX, lastY] = [pos.x, pos.y];
             draw(e); 
         });
 
@@ -266,36 +323,26 @@ fn render_paint_page(current_theme: &Theme) -> String {
             reader.onload = (event) => {
                 const img = new Image();
                 img.onload = () => {
-                    if(confirm('Load image? This will clear the current canvas.')) {
+                    if(confirm('Load image? This will replace the current canvas.')) {
+                        // Resize canvas to match image?
+                        if(confirm('Resize canvas to match image dimensions?')) {
+                            canvas.width = img.width;
+                            canvas.height = img.height;
+                            widthInput.value = img.width;
+                            heightInput.value = img.height;
+                        }
+                        
                         // Clear with background color first
                         fillCanvas();
                         
-                        // Calculate scaling to fit image within canvas if it's too large
-                        let dw = img.width;
-                        let dh = img.height;
-                        
-                        // Scale down if larger than canvas
-                        const hRatio = canvas.width / img.width;
-                        const vRatio = canvas.height / img.height;
-                        const ratio  = Math.min(hRatio, vRatio);
-                        
-                        // Only scale down, don't scale up small images (unless desired)
-                        if (ratio < 1) {
-                            dw = img.width * ratio;
-                            dh = img.height * ratio;
-                        }
-                        
-                        // Center the image
-                        const dx = (canvas.width - dw) / 2;
-                        const dy = (canvas.height - dh) / 2;
-                        
-                        ctx.drawImage(img, dx, dy, dw, dh);
+                        // Draw image
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        updateContextStyles();
                     }
                 };
                 img.src = event.target.result;
             };
             reader.readAsDataURL(file);
-            // Reset input value so the same file can be selected again if needed
             imageLoader.value = '';
         });
 
@@ -309,13 +356,11 @@ fn render_paint_page(current_theme: &Theme) -> String {
 
         bgColorPicker.addEventListener('change', (e) => {
             backgroundColor = e.target.value;
-            // Update container color for consistency
-            container.style.backgroundColor = backgroundColor;
-            updateContextStyles(); // Update eraser color
+            updateContextStyles(); 
         });
 
         fillBtn.addEventListener('click', () => {
-            if(confirm('This will fill the entire canvas with the background color, erasing your drawing. Continue?')) {
+            if(confirm('Fill entire canvas?')) {
                 fillCanvas();
             }
         });

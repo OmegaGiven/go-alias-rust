@@ -8,7 +8,9 @@ mod calculator; // NEW: Module for the calculator page
 mod paint;      // NEW: Module for the paint tool
 mod request;    // NEW: Module for request builder
 mod board;      // NEW: Module for Task Board
-mod formatter;  // NEW: Module for Formatter Tools
+mod inspector;  // NEW: Module for Formatter Tools
+mod signaling;  // NEW: P2P Signaling
+mod manage_connections; // NEW: Connection UI
 
 use actix_files::Files;
 use actix_web::{
@@ -29,7 +31,9 @@ use calculator::calculator_get;
 use paint::paint_get; 
 use request::{request_get, request_save, request_delete, request_run};
 use board::{board_get, board_data_get, board_add_column, board_delete_column, board_save_task, board_move_task, board_delete_task, board_reorder_columns};
-use formatter::formatter_get; // Import Formatter
+use inspector::inspector_get; // Fixed: Importing the function, not just the module
+use signaling::{signal_create, signal_offer, signal_get_offer, signal_answer, signal_get_answer, signal_ice, signal_get_ice, signal_permissions, signal_get_permissions};
+use manage_connections::connection_page;
 
 use elements::theme::{get_settings, save_theme};
 use elements::shortcut::{add_shortcut, delete_shortcut}; 
@@ -140,6 +144,9 @@ async fn main() -> std::io::Result<()> {
         // SQL service state
         connections: Mutex::new(Vec::new()),
         last_results: Mutex::new(Vec::new()),
+        
+        // P2P State
+        rooms: Mutex::new(HashMap::new()),
     });
 
     // Build server
@@ -165,8 +172,18 @@ async fn main() -> std::io::Result<()> {
             .service(board_move_task)
             .service(board_delete_task)
             .service(board_reorder_columns)
-            // Register Formatter
-            .service(formatter_get)
+            .service(inspector_get)
+            // Register Signaling & Connection UI
+            .service(connection_page)
+            .service(signal_create)
+            .service(signal_offer)
+            .service(signal_get_offer)
+            .service(signal_answer)
+            .service(signal_get_answer)
+            .service(signal_ice)
+            .service(signal_get_ice)
+            .service(signal_permissions)
+            .service(signal_get_permissions)
             
             .route("/note/delete", web::post().to(note_delete))
             .service(sql::sql_get)

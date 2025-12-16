@@ -4,19 +4,19 @@ use std::sync::Arc;
 use crate::app_state::{AppState, Theme};
 use crate::base_page::render_base_page;
 
-#[get("/formatter")]
-pub async fn formatter_get(state: Data<Arc<AppState>>) -> impl Responder {
+#[get("/inspector")]
+pub async fn inspector_get(state: Data<Arc<AppState>>) -> impl Responder {
     let current_theme = state.current_theme.lock().unwrap();
     
     HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")
-        .body(render_formatter_page(&current_theme))
+        .body(render_inspector_page(&current_theme))
 }
 
-fn render_formatter_page(current_theme: &Theme) -> String {
+fn render_inspector_page(current_theme: &Theme) -> String {
     let style = r#"
 <style>
-    .formatter-container {
+    .inspector-container {
         display: flex;
         flex-direction: column;
         gap: 20px;
@@ -26,10 +26,12 @@ fn render_formatter_page(current_theme: &Theme) -> String {
         height: calc(100vh - 100px);
     }
     
-    .input-section {
+    /* SCOPED: Only affects elements INSIDE the inspector container */
+    
+    .inspector-container .input-section {
         background: var(--secondary-bg);
         padding: 20px;
-        border-radius: 8px;
+        border-radius: 0; 
         border: 1px solid var(--border-color);
         display: flex;
         flex-direction: column;
@@ -37,7 +39,7 @@ fn render_formatter_page(current_theme: &Theme) -> String {
         overflow: hidden;
     }
     
-    .toolbar {
+    .inspector-container .toolbar {
         display: flex;
         gap: 15px;
         margin-bottom: 10px;
@@ -45,7 +47,7 @@ fn render_formatter_page(current_theme: &Theme) -> String {
         flex-wrap: wrap;
     }
     
-    .control-row {
+    .inspector-container .control-row {
         display: flex;
         gap: 15px;
         margin-top: 15px;
@@ -55,62 +57,72 @@ fn render_formatter_page(current_theme: &Theme) -> String {
         padding-top: 15px;
     }
     
-    .form-group {
+    .inspector-container .form-group {
         display: flex;
         flex-direction: column;
         gap: 5px;
     }
     
-    label { font-weight: bold; font-size: 0.9em; color: var(--text-color); }
+    .inspector-container label { 
+        font-weight: bold; 
+        font-size: 0.9em; 
+        color: var(--text-color); 
+    }
     
-    input[type="number"], input[type="file"] {
+    .inspector-container input[type="number"], 
+    .inspector-container input[type="file"] {
         padding: 8px;
         background: var(--primary-bg);
         border: 1px solid var(--border-color);
         color: var(--text-color);
-        border-radius: 4px;
+        border-radius: 0; 
     }
     
-    textarea {
+    .inspector-container textarea {
         flex-grow: 1;
         width: 100%;
         background: var(--primary-bg);
         border: 1px solid var(--border-color);
         color: var(--text-color);
-        border-radius: 4px;
+        border-radius: 0;
         padding: 10px;
         font-family: monospace;
         resize: none;
         box-sizing: border-box;
-        white-space: pre; /* Default to no wrap for accuracy */
+        white-space: pre; 
         overflow: auto;
     }
     
-    button {
+    /* This specific selector prevents the button styles from hitting the Nav Bar */
+    .inspector-container button {
         padding: 8px 16px;
         background: var(--tertiary-bg);
         color: var(--text-color);
         border: 1px solid var(--border-color);
-        border-radius: 4px;
+        border-radius: 0; /* Sharp corners for inspector only */
         cursor: pointer;
         font-weight: bold;
     }
-    button:hover { background: var(--link-hover); color: #fff; border-color: var(--link-hover); }
+    .inspector-container button:hover { 
+        background: var(--link-hover); 
+        color: #fff; 
+        border-color: var(--link-hover); 
+    }
     
-    .result-section {
+    .inspector-container .result-section {
         background: var(--secondary-bg);
         padding: 20px;
-        border-radius: 8px;
+        border-radius: 0;
         border: 1px solid var(--border-color);
         display: none;
         flex-shrink: 0;
     }
     
-    .context-display {
+    .inspector-container .context-display {
         font-family: monospace;
         background: var(--primary-bg);
         padding: 15px;
-        border-radius: 4px;
+        border-radius: 0;
         overflow-x: auto;
         white-space: pre;
         margin-bottom: 10px;
@@ -119,27 +131,27 @@ fn render_formatter_page(current_theme: &Theme) -> String {
         line-height: 1.5;
     }
     
-    .highlight-char {
+    .inspector-container .highlight-char {
         background-color: #ff4444;
         color: white;
         font-weight: bold;
         padding: 2px 4px;
-        border-radius: 2px;
+        border-radius: 0;
         border: 1px solid #cc0000;
     }
     
-    .char-info {
+    .inspector-container .char-info {
         display: grid;
         grid-template-columns: auto 1fr;
         gap: 10px;
         font-size: 0.9em;
         background: var(--tertiary-bg);
         padding: 10px;
-        border-radius: 4px;
+        border-radius: 0;
     }
-    .info-label { color: #888; font-weight: bold; text-align: right;}
+    .inspector-container .info-label { color: #888; font-weight: bold; text-align: right;}
     
-    .checkbox-group {
+    .inspector-container .checkbox-group {
         display: flex;
         align-items: center;
         gap: 5px;
@@ -149,7 +161,7 @@ fn render_formatter_page(current_theme: &Theme) -> String {
     "#;
 
     let content = r#"
-    <div class="formatter-container">
+    <div class="inspector-container">
         <h1>Line & Column Inspector</h1>
         
         <div class="input-section">
@@ -323,5 +335,5 @@ fn render_formatter_page(current_theme: &Theme) -> String {
     </script>
     "#;
 
-    render_base_page("Formatter Tools", &format!("{}{}", style, content), current_theme)
+    render_base_page("Inspector", &format!("{}{}", style, content), current_theme)
 }

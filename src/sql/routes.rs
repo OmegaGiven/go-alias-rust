@@ -23,13 +23,13 @@ struct SavedQuery {
 struct SaveQueryForm {
     query_name: String,
     sql: String,
-    connection: String, // Added to handle redirect back to view
+    connection: String, 
 }
 
 #[derive(Deserialize)]
 struct DeleteQueryForm {
     query_name: String,
-    connection: String, // Added to handle redirect back to view
+    connection: String, 
 }
 
 fn load_queries() -> Vec<SavedQuery> {
@@ -44,7 +44,6 @@ fn save_queries(queries: &[SavedQuery]) -> io::Result<()> {
     fs::write(QUERIES_FILE, data)
 }
 
-// Helper to remove a query by name
 fn delete_query(name: &str) -> io::Result<()> {
     let mut queries = load_queries();
     if let Some(pos) = queries.iter().position(|q| q.name == name) {
@@ -56,7 +55,6 @@ fn delete_query(name: &str) -> io::Result<()> {
 // --- END: Saved Query Structures and Persistence ---
 
 
-// Helper function to render the connection list page content
 fn render_connection_list(conns: &[DbConnection], current_theme: &crate::app_state::Theme) -> String {
     let conn_links = conns.iter()
         .map(|c| format!(
@@ -133,7 +131,7 @@ fn render_connection_list(conns: &[DbConnection], current_theme: &crate::app_sta
 
 
 #[get("/sql")]
-pub async fn sql_get(state: Data<Arc<AppState>>) -> impl Responder {
+pub async fn sql_get(state: web::Data<Arc<AppState>>) -> impl Responder {
     {
         let mut conns = state.connections.lock().unwrap();
         if conns.is_empty() {
@@ -149,7 +147,7 @@ pub async fn sql_get(state: Data<Arc<AppState>>) -> impl Responder {
 }
 
 #[post("/sql/add")]
-pub async fn sql_add(form: Form<AddConnForm>, state: Data<Arc<AppState>>) -> impl Responder {
+pub async fn sql_add(form: web::Form<AddConnForm>, state: web::Data<Arc<AppState>>) -> impl Responder {
     let new_conn = DbConnection {
         host: form.host.clone(),
         db_name: form.db_name.clone(),
@@ -172,7 +170,7 @@ pub async fn sql_add(form: Form<AddConnForm>, state: Data<Arc<AppState>>) -> imp
 }
 
 #[post("/sql/save")]
-pub async fn sql_save(form: Form<SaveQueryForm>) -> impl Responder {
+pub async fn sql_save(form: web::Form<SaveQueryForm>) -> impl Responder {
     let mut queries = load_queries();
     
     if let Some(idx) = queries.iter().position(|q| q.name == form.query_name) {
@@ -193,9 +191,8 @@ pub async fn sql_save(form: Form<SaveQueryForm>) -> impl Responder {
     HttpResponse::Found().append_header(("Location", location)).finish()
 }
 
-// --- NEW HANDLER: Delete SQL Query ---
 #[post("/sql/delete")]
-pub async fn sql_delete(form: Form<DeleteQueryForm>) -> impl Responder {
+pub async fn sql_delete(form: web::Form<DeleteQueryForm>) -> impl Responder {
     if let Err(e) = delete_query(&form.query_name) {
         eprintln!("Failed to delete query: {e}");
     }
@@ -239,9 +236,9 @@ fn format_ts(seconds: i64) -> String {
 
 
 #[post("/sql/run")]
-pub async fn sql_run(form: Json<SqlForm>, state: Data<Arc<AppState>>) -> impl Responder {
+pub async fn sql_run(form: web::Json<SqlForm>, state: web::Data<Arc<AppState>>) -> impl Responder {
     // Import TypeInfo to check column types manually
-    use sqlx::{Row, Column, TypeInfo, postgres::PgPoolOptions, ValueRef, types::JsonValue}; 
+    use sqlx::{Row, Column, TypeInfo, postgres::PgPoolOptions, types::JsonValue, ValueRef}; 
     use std::convert::TryInto; 
 
     let conn_opt = {
@@ -407,7 +404,7 @@ pub async fn sql_run(form: Json<SqlForm>, state: Data<Arc<AppState>>) -> impl Re
 }
 
 #[get("/sql/export")]
-pub async fn sql_export(state: Data<Arc<AppState>>) -> impl Responder {
+pub async fn sql_export(state: web::Data<Arc<AppState>>) -> impl Responder {
     let results = state.last_results.lock().unwrap();
     let mut wtr = csv::Writer::from_writer(vec![]);
 
@@ -441,7 +438,6 @@ pub async fn sql_export(state: Data<Arc<AppState>>) -> impl Responder {
         .body(data)
 }
 
-// Helper function to render the SQL query view page content
 fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &crate::app_state::Theme) -> String {
     let saved_queries = load_queries();
     let nickname_safe = htmlescape::encode_minimal(nickname);
@@ -451,7 +447,6 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
             let sql_safe = htmlescape::encode_minimal(&q.sql);
             let name_safe = htmlescape::encode_minimal(&q.name);
             
-            // Layout change: 'x' button on the left, then the name
             format!(
                 "<li class=\"saved-query-item\">\
                     <form method=\"POST\" action=\"/sql/delete\" class=\"delete-query-form\">\
@@ -467,7 +462,6 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
         .collect::<Vec<_>>()
         .join("\n");
 
-    // Using r###" to avoid termination on "#" in html
     let page_styles = r###"
 <style>
     .sql-view-container { display: flex; height: calc(100vh - 60px); position: relative; overflow: hidden; }
@@ -490,7 +484,7 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
     }
 
     #sidebar-resizer {
-        width: 5px;
+        width: 6px;
         background-color: var(--tertiary-bg);
         border-left: 1px solid var(--border-color);
         border-right: 1px solid var(--border-color);
@@ -504,8 +498,9 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
         background-color: var(--link-hover);
     }
 
+    /* Output resizer style */
     #output-resizer {
-        height: 5px;
+        height: 6px;
         background-color: var(--tertiary-bg);
         border-top: 1px solid var(--border-color);
         border-bottom: 1px solid var(--border-color);
@@ -547,11 +542,14 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
     #sql-form { display: flex; flex-direction: column; flex-grow: 1; height: 100%; }
     
     .variables-section { padding: 5px; background: var(--secondary-bg); border-bottom: 1px solid var(--border-color); display: flex; flex-wrap: wrap; gap: 5px; align-items: center; flex-shrink: 0; }
-    .var-input-group { display: flex; align-items: center; gap: 5px; background: var(--tertiary-bg);height: 26px; border-radius: 4px; border: 1px solid var(--border-color); box-sizing: border-box; }
+    .var-input-group { display: flex; align-items: center; gap: 5px; background: var(--tertiary-bg); padding: 0 5px; height: 26px; border-radius: 4px; border: 1px solid var(--border-color); box-sizing: border-box; }
     .var-input-group label { font-size: 0.8em; color: var(--text-color); font-weight: bold; white-space: nowrap; }
-    .var-input-group input { padding: 2px 2px; border: 1px solid var(--border-color); background: var(--primary-bg); color: var(--text-color); border-radius: 2px; font-size: 0.9em; width: 100px; height: 20px; box-sizing: border-box; }
-    .add-var-btn { padding: 0 8px; height: 26px; font-size: 0.8em; cursor: pointer; background: var(--tertiary-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px; line-height: 24px; box-sizing: border-box; }
+    .var-input-group input { padding: 2px 4px; border: 1px solid var(--border-color); background: var(--primary-bg); color: var(--text-color); border-radius: 2px; font-size: 0.9em; width: 100px; height: 20px; box-sizing: border-box; }
+    .add-var-btn { padding: 0 8px; height: 26px; font-size: 0.8em; cursor: pointer; background: var(--tertiary-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px; line-height: 24px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; margin: 0; }
     .add-var-btn:hover { background: var(--link-hover); color: white; border-color: var(--link-hover); }
+    
+    .var-del-btn { cursor: pointer; color: #888; font-weight: bold; margin-left: 5px; font-size: 1.1em; line-height: 1; }
+    .var-del-btn:hover { color: #ff6b6b; }
 
     .editor-container { 
         flex: 1; 
@@ -562,7 +560,6 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
         flex-direction: column; 
         border-bottom: none; 
         background-color: var(--primary-bg);
-        padding: 0px;
     }
     
     .editor-layer {
@@ -599,30 +596,35 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
         outline: none;
     }
     
-    /* Syntax Highlighting Colors */
-    .hl-keyword { color: #ff79c6; font-weight: bold; } /* Pink/Purple */
-    .hl-string { color: #f1fa8c; } /* Yellow */
-    .hl-number { color: #bd93f9; } /* Purple */
-    .hl-comment { color: #6272a4; } /* Grey/Blue */
+    .hl-keyword { color: #ff79c6; font-weight: bold; }
+    .hl-string { color: #f1fa8c; }
+    .hl-number { color: #bd93f9; }
+    .hl-comment { color: #6272a4; }
     
-    .action-bar { padding: 5px; background: var(--secondary-bg); border-top: 1px solid var(--border-color); display: flex; gap: 10px; flex-shrink: 0; align-items: center; }
+    .action-bar { padding: 2px 5px; background: var(--secondary-bg); border-top: 1px solid var(--border-color); display: flex; gap: 10px; flex-shrink: 0; align-items: center; }
     .action-bar button { margin: 0; cursor: pointer; padding: 5px 15px; background: var(--tertiary-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px; font-weight: bold; font-size: 0.9em; }
     .action-bar button:hover { background: var(--link-hover); color: #fff; border-color: var(--link-hover); }
+    
+    /* Result Tools (Filter/Export) */
+    .result-tools { padding: 4px 5px; background: var(--secondary-bg); border-bottom: 1px solid var(--border-color); display: flex; gap: 10px; align-items: center; flex-shrink: 0; }
+    .result-tools input { padding: 3px 6px; border: 1px solid var(--border-color); background: var(--primary-bg); color: var(--text-color); border-radius: 3px; font-size: 0.9em; flex-grow: 1; max-width: 300px;}
+    .result-tools label { font-size: 0.85em; color: var(--text-color); display: flex; align-items: center; gap: 3px; cursor: pointer; }
     
     .output { 
         height: 300px;
         flex-shrink: 0;
         overflow: auto; 
         background: var(--primary-bg); 
-        padding: 0; /* Remove padding from container to maximize space */
+        padding: 0; 
         margin-top: 0; 
         font-family: monospace; 
         font-size: 0.9em; 
     }
     .output table { width: 100%; border-collapse: collapse; }
-    .output th, .output td { border: 1px solid var(--border-color); padding: 4px 8px; text-align: left; white-space: nowrap; }
-    .output th { background: var(--tertiary-bg); position: sticky; top: 0; z-index: 1; }
+    .output th, .output td { border: 1px solid var(--border-color); padding: 4px 8px; text-align: left; white-space: nowrap; user-select: none; }
+    .output th { background: var(--tertiary-bg); position: sticky; top: 0; z-index: 1; cursor: pointer; }
     .output tr:nth-child(even) { background-color: rgba(255,255,255,0.02); }
+    .output tr.selected-row { background-color: rgba(73, 204, 144, 0.2); }
     .output pre { padding: 5px; margin: 0; }
     
     /* Autocomplete Suggestions */
@@ -649,12 +651,15 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
 </style>
 "###;
 
+    // Using r###" to avoid termination on "#" in html
     let body_content = format!(r###"
     <div class="sql-view-container">
       <div id="sidebar">
+        <h2>Tables & Columns</h2>
         <div class="sidebar-search"><input type="text" id="sidebar-search-input" placeholder="Search tables..."></div>
         <ul id="table-list"></ul>
-    
+        
+        <h2 style="margin-top: 15px;">Saved Queries</h2>
         <div class="sidebar-search"><input type="text" id="query-search-input" placeholder="Search queries..."></div>
         <ul id="saved-queries-list">{saved_query_list}</ul>
         
@@ -684,12 +689,18 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
           
           <div class="action-bar">
             <button type="submit">Run Query</button>
-            <a href="/sql/export" target="_blank"><button type="button">Export CSV</button></a>
+            <button type="button" id="clear-editor-btn" style="background-color: var(--tertiary-bg); opacity: 0.8;">Clear</button>
             <button type="button" id="save-sql-file-btn">Save SQL File</button>
+            <a href="/sql/export" target="_blank" title="Download all latest results from server"><button type="button">Export All (Server)</button></a>
           </div>
         </form>
         
         <div id="output-resizer" title="Drag to resize output"></div>
+        <div class="result-tools">
+            <input type="text" id="output-filter" placeholder="Filter results...">
+            <label><input type="checkbox" id="export-headers" checked> Headers</label>
+            <button type="button" id="export-client-btn" class="add-var-btn" style="width:auto;">Export Selected CSV</button>
+        </div>
         <div class="output" id="output"><pre>Click a table name or enter a query and press 'Run Query'.</pre></div>
       </div>
     </div>
@@ -698,14 +709,13 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
     <div id="autocomplete-list"></div>
     
     <script>
-      // Schema Data injected from Rust
       const dbSchema = {table_schema_json};
       
       const sidebar = document.getElementById('sidebar');
       const resizer = document.getElementById('sidebar-resizer');
       let isResizing = false;
       let lastDownX = 0;
-      let savedSidebarWidth = 250; // Default width
+      let savedSidebarWidth = 250;
 
       const mainContent = document.getElementById('main');
       const editor = document.getElementById('sql-editor');
@@ -721,11 +731,23 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
       const saveSqlFileBtn = document.getElementById('save-sql-file-btn');
       let currentFocus = -1;
       
-      // Highlighting Elements
       const backdrop = document.getElementById('sql-backdrop');
       const highlights = backdrop.querySelector('.highlights');
 
-      // --- Save SQL File ---
+      const connectionNickname = "{nickname}";
+      const varsStorageKey = "sql_vars_" + connectionNickname;
+
+      // --- Clear Button Logic ---
+      const clearBtn = document.getElementById('clear-editor-btn');
+      if (clearBtn) {{
+          clearBtn.addEventListener('click', () => {{
+              if(editor.value.trim() === '') return;
+              editor.value = '';
+              handleInput();
+              editor.focus();
+          }});
+      }}
+
       saveSqlFileBtn.addEventListener('click', () => {{
           const content = editor.value;
           if (!content) return;
@@ -734,7 +756,6 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
           const link = document.createElement('a');
           link.href = URL.createObjectURL(blob);
           
-          // Try to use the saved query name if available, else default
           let filename = queryNameInput.value.trim() || 'query';
           if (!filename.toLowerCase().endsWith('.sql')) filename += '.sql';
           
@@ -743,7 +764,6 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
           URL.revokeObjectURL(link.href);
       }});
 
-      // --- Sidebar Toggle Button (if exists) ---
       const toggleArrow = document.getElementById('toggle-arrow');
       if(toggleArrow) {{
           toggleArrow.addEventListener('click', () => {{
@@ -757,7 +777,6 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
           }});
       }}
 
-      // --- Resizer Logic ---
       resizer.addEventListener('mousedown', (e) => {{
           isResizing = true;
           lastDownX = e.clientX;
@@ -769,8 +788,8 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
       document.addEventListener('mousemove', (e) => {{
           if (!isResizing) return;
           let newWidth = e.clientX;
-          if (newWidth < 10) newWidth = 0; // Snap close
-          if (newWidth > 600) newWidth = 600; // Max width
+          if (newWidth < 10) newWidth = 0;
+          if (newWidth > 600) newWidth = 600;
           
           if (newWidth === 0) {{
              sidebar.classList.add('collapsed');
@@ -788,7 +807,6 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
           document.body.style.cursor = '';
           document.body.style.userSelect = '';
           
-          // Click detection: if moved less than 5px, toggle
           if (Math.abs(e.clientX - lastDownX) < 5) {{
               toggleSidebar();
           }} else {{
@@ -809,7 +827,6 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
           }}
       }}
       
-      // --- Output Resizer Logic ---
       const outputResizer = document.getElementById('output-resizer');
       const outputPane = document.getElementById('output');
       let isOutputResizing = false;
@@ -827,7 +844,7 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
 
       document.addEventListener('mousemove', (e) => {{
           if (isOutputResizing) {{
-              const dy = lastOutputDownY - e.clientY; // Drag up increases height
+              const dy = lastOutputDownY - e.clientY;
               let newHeight = startOutputHeight + dy;
               if (newHeight < 50) newHeight = 50; 
               
@@ -847,7 +864,6 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
           }}
       }});
 
-      // --- Render Sidebar Table List ---
       function renderTableList() {{
           const filter = sidebarSearchInput.value.toUpperCase();
           sidebarTableList.innerHTML = '';
@@ -855,7 +871,6 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
           Object.keys(dbSchema).sort().forEach(tableName => {{
               if (tableName.toUpperCase().indexOf(filter) > -1) {{
                   const li = document.createElement('li');
-                  // Create link for better semantics and hover effect
                   const a = document.createElement('a');
                   a.className = 'table-list-item';
                   a.textContent = tableName;
@@ -870,7 +885,6 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
       renderTableList();
       sidebarSearchInput.addEventListener('keyup', renderTableList);
 
-      // --- Saved Queries Filter ---
       function filterSavedQueries() {{
           const filter = querySearchInput.value.toUpperCase();
           const listItems = savedQueriesList.getElementsByTagName('li');
@@ -881,7 +895,6 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
       }}
       querySearchInput.addEventListener('keyup', filterSavedQueries);
 
-      // --- Form Submission (Run Query) ---
       const form = document.getElementById('sql-form');
       const output = document.getElementById('output');
       
@@ -896,6 +909,11 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
                 variables[input.name] = input.value;
             }}
         }});
+        
+        // Save variables to LocalStorage on submit
+        try {{
+            localStorage.setItem(varsStorageKey, JSON.stringify(variables));
+        }} catch(e) {{ console.error("Could not save vars", e); }}
 
         const payload = {{
             sql: editor.value,
@@ -911,12 +929,138 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
             }});
             const html = await resp.text();
             output.innerHTML = html;
+            
+            const table = output.querySelector('table');
+            if(table) makeTableInteractable(table);
         }} catch(e) {{
             output.innerHTML = '<pre style="padding:10px; color:#ff6b6b;">Error: ' + e.message + '</pre>';
         }}
       }});
+      
+      // Client-Side Export Logic
+      document.getElementById('export-client-btn').addEventListener('click', () => {{
+          const table = output.querySelector('table');
+          if(!table) return alert('No results to export');
+          
+          const includeHeaders = document.getElementById('export-headers').checked;
+          const rows = Array.from(table.querySelectorAll('tr'));
+          const selectedRows = Array.from(table.querySelectorAll('tr.selected-row'));
+          
+          // Use selected rows if any, otherwise all visible rows (respecting filter)
+          let targetRows = selectedRows.length > 0 ? selectedRows : rows.filter(r => r.style.display !== 'none');
+          
+          // Ensure we don't duplicate headers if they happen to be selected or in the list
+          // Actually, 'rows' includes the header row usually in thead. 
+          // Let's grab headers separately.
+          const theadRow = table.querySelector('thead tr');
+          const tbodyRows = Array.from(table.querySelectorAll('tbody tr'));
+          
+          let csvContent = "";
+          
+          if(includeHeaders && theadRow) {{
+              const headers = Array.from(theadRow.children).map(th => `"${{th.innerText.replace(/"/g, '""')}}"`);
+              csvContent += headers.join(",") + "\n";
+          }}
+          
+          // Filter body rows based on selection or visibility
+          let rowsToExport = [];
+          if(selectedRows.length > 0) {{
+               rowsToExport = selectedRows;
+          }} else {{
+               rowsToExport = tbodyRows.filter(r => r.style.display !== 'none');
+          }}
+          
+          rowsToExport.forEach(row => {{
+              const cols = Array.from(row.children).map(td => `"${{td.innerText.replace(/"/g, '""')}}"`);
+              csvContent += cols.join(",") + "\n";
+          }});
+          
+          const blob = new Blob([csvContent], {{ type: 'text/csv;charset=utf-8;' }});
+          const link = document.createElement("a");
+          const url = URL.createObjectURL(blob);
+          link.setAttribute("href", url);
+          link.setAttribute("download", "export.csv");
+          link.style.visibility = 'hidden';
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+      }});
+      
+      // Filtering Logic
+      document.getElementById('output-filter').addEventListener('input', (e) => {{
+          const term = e.target.value.toLowerCase();
+          const table = output.querySelector('table');
+          if(!table) return;
+          const rows = table.querySelectorAll('tbody tr');
+          
+          rows.forEach(row => {{
+              const text = row.innerText.toLowerCase();
+              row.style.display = text.includes(term) ? '' : 'none';
+          }});
+      }});
 
-      // --- Load Saved Query ---
+      function makeTableInteractable(table) {{
+        const ths = table.querySelectorAll('th');
+        const tbody = table.querySelector('tbody');
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        
+        rows.forEach((row, i) => {{
+            row.dataset.originalIndex = i;
+            // Row Selection
+            row.addEventListener('click', () => {{
+                row.classList.toggle('selected-row');
+            }});
+        }});
+
+        let currentSortCol = -1;
+        let currentSortDir = 'none'; 
+
+        ths.forEach((th, colIndex) => {{
+            th.addEventListener('click', () => {{
+                if (currentSortCol === colIndex) {{
+                    if (currentSortDir === 'none') currentSortDir = 'asc';
+                    else if (currentSortDir === 'asc') currentSortDir = 'desc';
+                    else currentSortDir = 'none';
+                }} else {{
+                    currentSortCol = colIndex;
+                    currentSortDir = 'asc';
+                }}
+
+                ths.forEach(h => h.innerHTML = h.innerHTML.replace(/ [▲▼]$/, '')); 
+                if (currentSortDir === 'asc') th.innerHTML += ' ▲';
+                if (currentSortDir === 'desc') th.innerHTML += ' ▼';
+
+                const newRows = Array.from(rows);
+                if (currentSortDir !== 'none') {{
+                    newRows.sort((rowA, rowB) => {{
+                        const cellA = rowA.children[colIndex].innerText.trim();
+                        const cellB = rowB.children[colIndex].innerText.trim();
+                        
+                        const numA = parseFloat(cellA.replace(/[$,]/g, ''));
+                        const numB = parseFloat(cellB.replace(/[$,]/g, ''));
+                        
+                        let comparison = 0;
+                        if (!isNaN(numA) && !isNaN(numB) && !/[a-zA-Z]/.test(cellA) && !/[a-zA-Z]/.test(cellB)) {{
+                            comparison = numA - numB;
+                        }} else {{
+                            comparison = cellA.localeCompare(cellB, undefined, {{ numeric: true, sensitivity: 'base' }});
+                        }}
+                        
+                        return currentSortDir === 'asc' ? comparison : -comparison;
+                    }});
+                }} else {{
+                    newRows.sort((a, b) => a.dataset.originalIndex - b.dataset.originalIndex);
+                }}
+
+                tbody.innerHTML = '';
+                newRows.forEach(row => tbody.appendChild(row));
+                
+                // Re-apply filter after sort
+                document.getElementById('output-filter').dispatchEvent(new Event('input'));
+            }});
+        }});
+      }}
+
       savedQueriesList.addEventListener('click', (e) => {{
           const target = e.target.closest('a');
           if (target) {{ 
@@ -925,8 +1069,8 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
               const name = target.getAttribute('data-name'); 
               editor.value = sql; 
               queryNameInput.value = name; 
-              scanForVariables(); // Update inputs
-              handleInput(); // Trigger Highlight
+              scanForVariables(); 
+              handleInput(); 
           }}
       }});
 
@@ -935,7 +1079,6 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
           if (queryNameInput.value.trim() === '') {{ e.preventDefault(); }}
       }});
 
-      // --- Variables Logic ---
       function addVariable(name = '', value = '') {{
           const div = document.createElement('div');
           div.className = 'var-input-group';
@@ -952,10 +1095,18 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
              input.onchange = (e) => {{ input.name = e.target.value; label.innerText = e.target.value; }};
           }}
           
+          const closeBtn = document.createElement('span');
+          closeBtn.className = 'var-del-btn';
+          closeBtn.innerHTML = '&times;';
+          closeBtn.title = 'Remove Variable';
+          closeBtn.onclick = function() {{
+              div.remove();
+          }};
+
           div.appendChild(label);
           div.appendChild(input);
+          div.appendChild(closeBtn); 
           
-          // Insert before the button
           const btn = variablesSection.querySelector('.add-var-btn');
           variablesSection.insertBefore(div, btn);
       }}
@@ -973,18 +1124,27 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
           
           const currentInputs = Array.from(variablesSection.querySelectorAll('input'));
           const currentValues = {{}};
-          currentInputs.forEach(i => currentValues[i.name] = i.value);
+          currentInputs.forEach(i => {{
+             if (i.name) currentValues[i.name] = i.value;
+          }});
           
-          // Clear existing vars but keep button
+          // Fetch stored values
+          let storedValues = {{}};
+          try {{
+             const raw = localStorage.getItem(varsStorageKey);
+             if(raw) storedValues = JSON.parse(raw);
+          }} catch(e) {{}}
+
           const existingGroups = variablesSection.querySelectorAll('.var-input-group');
           existingGroups.forEach(g => g.remove());
           
           foundVars.forEach(v => {{
-              addVariable(v, currentValues[v] || '');
+              // Priority: Current UI input > Stored Value > Empty
+              const val = currentValues[v] || storedValues[v] || '';
+              addVariable(v, val);
           }});
       }}
       
-      // --- Syntax Highlighting Logic ---
       const escapeHtml = (unsafe) => {{
           return unsafe
                .replace(/&/g, "&amp;")
@@ -1003,22 +1163,17 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
               return id;
           }};
           
-          // 1. Hide comments
           html = html.replace(/(--.*$)/gm, (m) => pushToken(m, 'hl-comment'));
           
-          // 2. Hide strings
           html = html.replace(/('([^'\\]|\\.)*')/g, (m) => pushToken(m, 'hl-string'));
           
-          // 3. Highlight Keywords (Case Insensitive)
           const keywords = ["SELECT", "FROM", "WHERE", "INSERT", "INTO", "VALUES", "UPDATE", "SET", "DELETE", "CREATE", "TABLE", "DROP", "ALTER", "INDEX", "JOIN", "INNER", "OUTER", "LEFT", "RIGHT", "ON", "GROUP", "BY", "ORDER", "LIMIT", "OFFSET", "AND", "OR", "NOT", "NULL", "AS", "DISTINCT", "COUNT", "SUM", "AVG", "MAX", "MIN", "LIKE", "ILIKE", "IN", "IS", "EXISTS", "CASE", "WHEN", "THEN", "ELSE", "END", "HAVING", "UNION", "ALL"];
           
           const rxKeyword = new RegExp(`\\b(${{keywords.join('|')}})\\b`, 'gi');
           html = html.replace(rxKeyword, '<span class="hl-keyword">$1</span>');
           
-          // 4. Highlight Numbers
           html = html.replace(/\b(\d+)\b/g, '<span class="hl-number">$1</span>');
           
-          // 5. Restore tokens
           tokens.forEach(t => {{
               html = html.replace(t.id, `<span class="${{t.type}}">${{t.text}}</span>`);
           }});
@@ -1046,7 +1201,6 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
       if (editor.value) handleInput();
 
 
-      // --- Autocomplete Helper: Get Caret Coordinates ---
       function getCaretCoordinates() {{
         const div = document.createElement('div');
         const style = window.getComputedStyle(editor);
@@ -1079,7 +1233,6 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
         return coordinates;
       }}
 
-      // --- Autocomplete Logic ---
       editor.addEventListener('input', function(e) {{
           const val = this.value;
           const cursorPosition = this.selectionStart;
@@ -1095,7 +1248,6 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
 
           let matches = [];
           
-          // Case 1: Dot notation (Table.Column)
           if (currentWord.includes('.')) {{
               const parts = currentWord.split('.');
               const tableName = parts[0];
@@ -1109,7 +1261,6 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
                       .map(col => ({{ display: col, insert: col, type: 'column' }}));
               }}
           }} 
-          // Case 2: Table Suggestions
           else {{
               matches = Object.keys(dbSchema)
                   .filter(t => t.toUpperCase().startsWith(currentWord.toUpperCase()))

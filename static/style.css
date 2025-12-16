@@ -36,7 +36,7 @@ h2 { margin: 10px; }
 form {
     display: flex;
     flex-direction: column;
-    margin: 10px;
+    margin: 1px;
     flex: 1; 
 }
 

@@ -15,7 +15,7 @@ mod manage_connections; // NEW: Connection UI
 use actix_files::Files;
 use actix_web::{
     get, 
-    web::{self, Data}, 
+    web::{Data}, 
     App, HttpResponse, HttpServer, Responder,
 };
 use std::{
@@ -26,12 +26,16 @@ use std::{
 };
 
 use app_state::AppState;
-use note::{note_get, note_post, note_delete};
+// Updated import to include note_ls, note_read, and new search/bookmark handlers
+use note::{
+    note_get, note_post, note_delete, note_ls, note_read, 
+    note_search, note_bookmarks_get, note_bookmark_add, note_bookmark_delete
+};
 use calculator::calculator_get;
 use paint::paint_get; 
 use request::{request_get, request_save, request_delete, request_run};
 use board::{board_get, board_data_get, board_add_column, board_delete_column, board_save_task, board_move_task, board_delete_task, board_reorder_columns};
-use inspector::inspector_get; // Fixed: Importing the function, not just the module
+use inspector::inspector_get; 
 use signaling::{signal_create, signal_offer, signal_get_offer, signal_answer, signal_get_answer, signal_ice, signal_get_ice, signal_permissions, signal_get_permissions};
 use manage_connections::connection_page;
 
@@ -156,6 +160,12 @@ async fn main() -> std::io::Result<()> {
             .service(index)
             .service(note_get)
             .service(note_post)
+            .service(note_ls)
+            .service(note_read)
+            .service(note_search)           // NEW
+            .service(note_bookmarks_get)    // NEW
+            .service(note_bookmark_add)     // NEW
+            .service(note_bookmark_delete)  // NEW
             .service(calculator_get)
             .service(paint_get) 
             // Register Request Builder handlers
@@ -185,7 +195,7 @@ async fn main() -> std::io::Result<()> {
             .service(signal_permissions)
             .service(signal_get_permissions)
             
-            .route("/note/delete", web::post().to(note_delete))
+            .service(note_delete) 
             .service(sql::sql_get)
             .service(sql::sql_add)
             .service(sql::sql_run)

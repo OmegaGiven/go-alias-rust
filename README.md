@@ -1,4 +1,4 @@
-Build Instructions
+# Build Instructions
 1. add the following file
   shortcuts.json
   the content is the following format

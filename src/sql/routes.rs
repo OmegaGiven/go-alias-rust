@@ -8,6 +8,8 @@ use crate::sql::{
     find_connection, render_table,
     encrypt_and_save, load_and_decrypt,
 };
+// Added ValueRef to fix .is_null() error
+use sqlx::{Row, Column, TypeInfo, postgres::PgPoolOptions, sqlite::SqlitePoolOptions, types::JsonValue, ValueRef}; 
 
 // --- NEW: Saved Query Structures and Persistence ---
 const QUERIES_FILE: &str = "saved_queries.json";
@@ -56,12 +58,20 @@ fn delete_query(name: &str) -> io::Result<()> {
 
 fn render_connection_list(conns: &[DbConnection], current_theme: &crate::app_state::Theme) -> String {
     let conn_links = conns.iter()
-        .map(|c| format!(
-            r#"<li><a href="/sql/{nick}">{nick} ({db}@{host})</a></li>"#,
-            nick = htmlescape::encode_minimal(&c.nickname),
-            db = htmlescape::encode_minimal(&c.db_name),
-            host = htmlescape::encode_minimal(&c.host)
-        ))
+        .map(|c| {
+            // Differentiate display based on type
+            let display_text = if c.db_type == "sqlite" {
+                format!("{nick} (SQLite: {path})", nick = c.nickname, path = c.host)
+            } else {
+                format!("{nick} ({db}@{host})", nick = c.nickname, db = c.db_name, host = c.host)
+            };
+
+            format!(
+                r#"<li><a href="/sql/{nick}">{display_text}</a></li>"#,
+                nick = htmlescape::encode_minimal(&c.nickname),
+                display_text = htmlescape::encode_minimal(&display_text)
+            )
+        })
         .collect::<Vec<_>>()
         .join("\n");
 
@@ -69,16 +79,55 @@ fn render_connection_list(conns: &[DbConnection], current_theme: &crate::app_sta
     <div class="sql-connections-page">
         <h1>SQL Connection Manager</h1>
         
-        <div class="connection-form-container">
-            <h2>Add New / Update Connection</h2>
-            <form method="POST" action="/sql/add" class="connection-form">
-              <input name="nickname" placeholder="Nickname (e.g., prod_db)" required>
-              <input name="host" placeholder="Host (e.g., localhost:5432)" required>
-              <input name="db_name" placeholder="Database Name" required>
-              <input name="user" placeholder="User" required>
-              <input name="password" type="password" placeholder="Password" required>
-              <button type="submit">Save Connection</button>
-            </form>
+        <div class="forms-container">
+            <!-- Left: Add Existing -->
+            <div class="connection-form-container">
+                <h2>Add Connection</h2>
+                <form method="POST" action="/sql/add" class="connection-form">
+                  
+                  <label for="db_type" style="display:block; margin-bottom:5px;">Database Type:</label>
+                  <select name="db_type" id="db_type" onchange="toggleFields()" style="margin-bottom:10px; width:100%; padding:10px;">
+                      <option value="postgres">Postgres</option>
+                      <option value="sqlite">SQLite (Existing File)</option>
+                  </select>
+    
+                  <input name="nickname" placeholder="Nickname (e.g., prod_db)" required>
+                  
+                  <!-- Shared field: Host for PG, File Path for SQLite -->
+                  <input name="host" id="host_input" placeholder="Host (e.g., localhost:5432)" required>
+                  
+                  <div id="pg_fields">
+                      <input name="db_name" placeholder="Database Name">
+                      <input name="user" placeholder="User">
+                      <input name="password" type="password" placeholder="Password">
+                  </div>
+                  
+                  <button type="submit">Save Connection</button>
+                </form>
+            </div>
+
+            <!-- Right: Create New SQLite -->
+            <div class="connection-form-container">
+                <h2>Create New SQLite DB</h2>
+                <form method="POST" action="/sql/add" class="connection-form" onsubmit="prepareCreate(event)">
+                    <input type="hidden" name="db_type" value="sqlite">
+                    <input type="hidden" name="db_name" value="">
+                    <input type="hidden" name="user" value="">
+                    <input type="hidden" name="password" value="">
+                    <!-- These will be populated by JS -->
+                    <input type="hidden" name="host" id="create_host">
+                    <input type="hidden" name="nickname" id="create_nick">
+
+                    <label style="display:block; margin-bottom:5px;">New Filename:</label>
+                    <input id="new_filename" placeholder="e.g., my_new_project" required>
+                    
+                    <button type="submit" style="background-color: var(--link-color); color: var(--primary-bg); font-weight: bold;">Create & Save</button>
+                    <p style="font-size:0.85em; opacity:0.8; margin-top:10px; line-height: 1.4;">
+                        This will register a new SQLite database file. 
+                        The file will be created automatically when you first open it.
+                    </p>
+                </form>
+            </div>
         </div>
         
         <div class="saved-connections-list">
@@ -86,19 +135,63 @@ fn render_connection_list(conns: &[DbConnection], current_theme: &crate::app_sta
             <ul>{conn_links}</ul>
         </div>
     </div>
+    
+    <script>
+        function toggleFields() {{
+            const type = document.getElementById('db_type').value;
+            const pgFields = document.getElementById('pg_fields');
+            const hostInput = document.getElementById('host_input');
+            const inputs = pgFields.querySelectorAll('input');
+
+            if (type === 'sqlite') {{
+                pgFields.style.display = 'none';
+                hostInput.placeholder = "File Path (e.g., ./my_data.db)";
+                inputs.forEach(i => i.removeAttribute('required'));
+            }} else {{
+                pgFields.style.display = 'block';
+                hostInput.placeholder = "Host (e.g., localhost:5432)";
+            }}
+        }}
+        
+        function prepareCreate(e) {{
+            const input = document.getElementById('new_filename');
+            let val = input.value.trim();
+            if (!val) {{ e.preventDefault(); return; }}
+            
+            // Auto append extension if missing
+            if (!val.toLowerCase().endsWith('.db') && !val.toLowerCase().endsWith('.sqlite')) {{
+                val += '.db';
+            }}
+            
+            // Set hidden fields for the shared /sql/add endpoint
+            document.getElementById('create_host').value = val;
+            document.getElementById('create_nick').value = val;
+        }}
+
+        // Run on load
+        toggleFields();
+    </script>
+
     <style>
         .sql-connections-page {{
-            max-width: 800px;
+            max-width: 900px;
             margin: 0 auto;
         }}
+        .forms-container {{
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }}
         .connection-form-container {{
+            flex: 1;
+            min-width: 300px;
             background-color: var(--secondary-bg);
             padding: 20px;
             border-radius: 8px;
-            margin-bottom: 20px;
             border: 1px solid var(--border-color);
         }}
-        .connection-form input {{
+        .connection-form input, .connection-form select {{
             width: 100%;
             padding: 10px;
             margin-bottom: 10px;
@@ -111,6 +204,15 @@ fn render_connection_list(conns: &[DbConnection], current_theme: &crate::app_sta
         .connection-form button {{
             width: 100%;
             padding: 10px;
+            cursor: pointer;
+            background-color: var(--tertiary-bg);
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+        }}
+        .connection-form button:hover {{
+            background-color: var(--link-hover);
+            color: #fff;
         }}
         .saved-connections-list ul {{
             list-style-type: none;
@@ -148,6 +250,7 @@ pub async fn sql_get(state: web::Data<Arc<AppState>>) -> impl Responder {
 #[post("/sql/add")]
 pub async fn sql_add(form: web::Form<AddConnForm>, state: web::Data<Arc<AppState>>) -> impl Responder {
     let new_conn = DbConnection {
+        db_type: form.db_type.clone().unwrap_or_else(|| "postgres".to_string()),
         host: form.host.clone(),
         db_name: form.db_name.clone(),
         user: form.user.clone(),
@@ -236,8 +339,6 @@ fn format_ts(seconds: i64) -> String {
 
 #[post("/sql/run")]
 pub async fn sql_run(form: web::Json<SqlForm>, state: web::Data<Arc<AppState>>) -> impl Responder {
-    // Import TypeInfo to check column types manually
-    use sqlx::{Row, Column, TypeInfo, postgres::PgPoolOptions, types::JsonValue, ValueRef}; 
     use std::convert::TryInto; 
 
     let conn_opt = {
@@ -252,16 +353,7 @@ pub async fn sql_run(form: web::Json<SqlForm>, state: web::Data<Arc<AppState>>) 
     }
 
     let conn = conn_opt.unwrap();
-    let dsn = format!("postgres://{}:{}@{}/{}", conn.user, conn.password, conn.host, conn.db_name);
-    let pool = match PgPoolOptions::new().max_connections(5).connect(&dsn).await {
-        Ok(p) => p,
-        Err(e) => {
-            return HttpResponse::Ok()
-                .content_type("text/html; charset=utf-8")
-                .body(format!("<div style=\"color:var(--link-hover);\">DB connect error: {}</div>", htmlescape::encode_minimal(&e.to_string())));
-        }
-    };
-
+    
     // --- Variable Substitution ---
     let mut final_sql = form.sql.clone();
     if let Some(vars) = &form.variables {
@@ -272,124 +364,188 @@ pub async fn sql_run(form: web::Json<SqlForm>, state: web::Data<Arc<AppState>>) 
         }
     }
 
-    let rows = match sqlx::query(&final_sql).fetch_all(&pool).await {
-        Ok(r) => r,
-        Err(e) => {
-            return HttpResponse::Ok()
-                .content_type("text/html; charset=utf-8")
-                .body(format!("<div style=\"color:var(--link-hover);\">Query error: {}</div></div>", htmlescape::encode_minimal(&e.to_string())));
-        }
-    };
-
-    let headers: Vec<String> = rows.get(0)
-        .map(|row| row.columns().iter().map(|col| col.name().to_string()).collect())
-        .unwrap_or_default();
-
+    let mut headers: Vec<String> = Vec::new();
     let mut data_rows: Vec<Vec<String>> = Vec::new();
     let mut results_vec_for_export: Vec<HashMap<String, String>> = Vec::new();
-    
-    for row in rows {
-        let mut ordered_row_data: Vec<String> = Vec::new();
-        let mut map_for_export: HashMap<String, String> = HashMap::new();
 
-        let get_display_val = |row: &sqlx::postgres::PgRow, idx: usize| -> String {
-            let col = row.column(idx);
-            let type_name = col.type_info().name();
+    // --- EXECUTION BRANCHING ---
+    if conn.db_type == "sqlite" {
+        // --- SQLITE EXECUTION ---
+        // mode=rwc ensures it creates the file if it doesn't exist
+        let dsn = format!("sqlite:{}?mode=rwc", conn.host);
+        
+        let pool = match SqlitePoolOptions::new().max_connections(1).connect(&dsn).await {
+            Ok(p) => p,
+            Err(e) => return HttpResponse::Ok().body(format!("SQLite Error: {}", e)),
+        };
 
-            // 1. Try standard string/text decoding first
-            if let Ok(s) = row.try_get::<String, usize>(idx) { 
-                return s; 
+        let rows = match sqlx::query(&final_sql).fetch_all(&pool).await {
+            Ok(r) => r,
+            Err(e) => return HttpResponse::Ok().body(format!("Query Error: {}", e)),
+        };
+
+        if !rows.is_empty() {
+            headers = rows[0].columns().iter().map(|c| c.name().to_string()).collect();
+        }
+
+        for row in rows {
+            let mut ordered_row_data: Vec<String> = Vec::new();
+            let mut map_for_export: HashMap<String, String> = HashMap::new();
+
+            for (idx, col) in row.columns().iter().enumerate() {
+                let name = col.name().to_string();
+                
+                // Generic SQLite displayer
+                let val_str = if let Ok(s) = row.try_get::<String, _>(idx) {
+                    s
+                } else if let Ok(i) = row.try_get::<i64, _>(idx) {
+                    i.to_string()
+                } else if let Ok(f) = row.try_get::<f64, _>(idx) {
+                    f.to_string()
+                } else if let Ok(b) = row.try_get::<Vec<u8>, _>(idx) {
+                    format!("<blob len={}>", b.len())
+                } else if row.try_get_raw(idx).map(|r| r.is_null()).unwrap_or(true) {
+                    "".to_string()
+                } else {
+                    "?".to_string()
+                };
+
+                ordered_row_data.push(val_str.clone());
+                map_for_export.insert(name, val_str);
             }
+            data_rows.push(ordered_row_data);
+            results_vec_for_export.push(map_for_export);
+        }
 
-            // 2. Handle specific types manually via raw bytes
-            if let Ok(raw_val) = row.try_get_raw(idx) {
-                if raw_val.is_null() {
-                    return "".to_string();
+    } else {
+        // --- POSTGRES EXECUTION ---
+        let dsn = format!("postgres://{}:{}@{}/{}", conn.user, conn.password, conn.host, conn.db_name);
+        let pool = match PgPoolOptions::new().max_connections(5).connect(&dsn).await {
+            Ok(p) => p,
+            Err(e) => {
+                return HttpResponse::Ok()
+                    .content_type("text/html; charset=utf-8")
+                    .body(format!("<div style=\"color:var(--link-hover);\">DB connect error: {}</div>", htmlescape::encode_minimal(&e.to_string())));
+            }
+        };
+
+        let rows = match sqlx::query(&final_sql).fetch_all(&pool).await {
+            Ok(r) => r,
+            Err(e) => {
+                return HttpResponse::Ok()
+                    .content_type("text/html; charset=utf-8")
+                    .body(format!("<div style=\"color:var(--link-hover);\">Query error: {}</div></div>", htmlescape::encode_minimal(&e.to_string())));
+            }
+        };
+
+        headers = rows.get(0)
+            .map(|row| row.columns().iter().map(|col| col.name().to_string()).collect())
+            .unwrap_or_default();
+
+        
+        for row in rows {
+            let mut ordered_row_data: Vec<String> = Vec::new();
+            let mut map_for_export: HashMap<String, String> = HashMap::new();
+
+            let get_display_val = |row: &sqlx::postgres::PgRow, idx: usize| -> String {
+                let col = row.column(idx);
+                let type_name = col.type_info().name();
+
+                // 1. Try standard string/text decoding first
+                if let Ok(s) = row.try_get::<String, usize>(idx) { 
+                    return s; 
                 }
 
-                if let Ok(bytes) = raw_val.as_bytes() {
-                    match type_name {
-                        "TIMESTAMPTZ" | "TIMESTAMP" => {
-                            // 8 bytes: int64 microseconds since 2000-01-01
-                            if bytes.len() == 8 {
-                                let micros = i64::from_be_bytes(bytes.try_into().unwrap_or([0; 8]));
-                                // Convert Postgres epoch (2000-01-01) to Unix epoch
-                                let seconds = (micros / 1_000_000) + 946_684_800; 
-                                // Use the helper to format it to "YYYY-MM-DD HH:MM:SS"
-                                return format_ts(seconds);
-                            }
-                        },
-                        "DATE" => {
-                            // 4 bytes: int32 days since 2000-01-01
-                            if bytes.len() == 4 {
-                                let days = i32::from_be_bytes(bytes.try_into().unwrap_or([0; 4]));
-                                let seconds = (days as i64) * 86400 + 946_684_800;
-                                // Format showing only date part
-                                return format_ts(seconds).split_whitespace().next().unwrap_or("").to_string();
-                            }
-                        },
-                        "UUID" => {
-                            // 16 bytes
-                            if bytes.len() == 16 {
-                                let b = bytes;
-                                return format!("{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-                                    b[0],b[1],b[2],b[3], b[4],b[5], b[6],b[7], b[8],b[9], b[10],b[11],b[12],b[13],b[14],b[15]);
-                            }
-                        },
-                        "BOOL" | "BOOL[]" => {
-                             // 1 byte
-                             if !bytes.is_empty() {
-                                 return if bytes[0] != 0 { "true".to_string() } else { "false".to_string() };
-                             }
-                        },
-                        "MONEY" => {
-                            // 8 bytes: int64 cents
-                            if bytes.len() == 8 {
-                                let cents = i64::from_be_bytes(bytes.try_into().unwrap_or([0; 8]));
-                                return format!("${:.2}", cents as f64 / 100.0);
-                            }
-                        },
-                        _ => {
-                            // Generic UTF-8 Fallback: If bytes are valid UTF-8, show them.
-                            // This handles CITEXT, NAME, BPCHAR, XML, etc.
-                            if let Ok(s) = std::str::from_utf8(bytes) {
-                                return s.to_string();
+                // 2. Handle specific types manually via raw bytes
+                if let Ok(raw_val) = row.try_get_raw(idx) {
+                    if raw_val.is_null() {
+                        return "".to_string();
+                    }
+
+                    if let Ok(bytes) = raw_val.as_bytes() {
+                        match type_name {
+                            "TIMESTAMPTZ" | "TIMESTAMP" => {
+                                // 8 bytes: int64 microseconds since 2000-01-01
+                                if bytes.len() == 8 {
+                                    let micros = i64::from_be_bytes(bytes.try_into().unwrap_or([0; 8]));
+                                    // Convert Postgres epoch (2000-01-01) to Unix epoch
+                                    let seconds = (micros / 1_000_000) + 946_684_800; 
+                                    // Use the helper to format it to "YYYY-MM-DD HH:MM:SS"
+                                    return format_ts(seconds);
+                                }
+                            },
+                            "DATE" => {
+                                // 4 bytes: int32 days since 2000-01-01
+                                if bytes.len() == 4 {
+                                    let days = i32::from_be_bytes(bytes.try_into().unwrap_or([0; 4]));
+                                    let seconds = (days as i64) * 86400 + 946_684_800;
+                                    // Format showing only date part
+                                    return format_ts(seconds).split_whitespace().next().unwrap_or("").to_string();
+                                }
+                            },
+                            "UUID" => {
+                                // 16 bytes. FIXED FORMAT STRING HERE:
+                                if bytes.len() == 16 {
+                                    let b = bytes;
+                                    return format!("{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+                                        b[0],b[1],b[2],b[3], b[4],b[5], b[6],b[7], b[8],b[9], b[10],b[11],b[12],b[13],b[14],b[15]);
+                                }
+                            },
+                            "BOOL" | "BOOL[]" => {
+                                // 1 byte
+                                if !bytes.is_empty() {
+                                    return if bytes[0] != 0 { "true".to_string() } else { "false".to_string() };
+                                }
+                            },
+                            "MONEY" => {
+                                // 8 bytes: int64 cents
+                                if bytes.len() == 8 {
+                                    let cents = i64::from_be_bytes(bytes.try_into().unwrap_or([0; 8]));
+                                    return format!("${:.2}", cents as f64 / 100.0);
+                                }
+                            },
+                            _ => {
+                                // Generic UTF-8 Fallback: If bytes are valid UTF-8, show them.
+                                // This handles CITEXT, NAME, BPCHAR, XML, etc.
+                                if let Ok(s) = std::str::from_utf8(bytes) {
+                                    return s.to_string();
+                                }
                             }
                         }
                     }
                 }
+
+                // 3. Try generic primitive decoding
+                if let Ok(i) = row.try_get::<i32, usize>(idx) { return i.to_string(); }
+                if let Ok(i) = row.try_get::<i16, usize>(idx) { return i.to_string(); }
+                if let Ok(i) = row.try_get::<i64, usize>(idx) { return i.to_string(); }
+                
+                // Floats
+                if let Ok(f) = row.try_get::<f64, usize>(idx) { return f.to_string(); }
+                
+                // Booleans
+                if let Ok(b) = row.try_get::<bool, usize>(idx) { return b.to_string(); }
+                
+                // 4. Try JSON
+                if let Ok(json) = row.try_get::<JsonValue, usize>(idx) {
+                    let s = json.to_string();
+                    return s.trim_matches('"').to_string();
+                }
+
+                // Fallback with Type Name for debugging
+                format!("[Complex: {}]", type_name)
+            };
+
+            for (idx, col) in row.columns().iter().enumerate() {
+                let name = col.name().to_string();
+                let display_val = get_display_val(&row, idx);
+                ordered_row_data.push(display_val.clone());
+                map_for_export.insert(name, display_val);
             }
-
-            // 3. Try generic primitive decoding
-            if let Ok(i) = row.try_get::<i32, usize>(idx) { return i.to_string(); }
-            if let Ok(i) = row.try_get::<i16, usize>(idx) { return i.to_string(); }
-            if let Ok(i) = row.try_get::<i64, usize>(idx) { return i.to_string(); }
-            
-            // Floats
-            if let Ok(f) = row.try_get::<f64, usize>(idx) { return f.to_string(); }
-            
-            // Booleans
-            if let Ok(b) = row.try_get::<bool, usize>(idx) { return b.to_string(); }
-            
-            // 4. Try JSON
-            if let Ok(json) = row.try_get::<JsonValue, usize>(idx) {
-                let s = json.to_string();
-                return s.trim_matches('"').to_string();
-            }
-
-            // Fallback with Type Name for debugging
-            format!("[Complex: {}]", type_name)
-        };
-
-        for (idx, col) in row.columns().iter().enumerate() {
-            let name = col.name().to_string();
-            let display_val = get_display_val(&row, idx);
-            ordered_row_data.push(display_val.clone());
-            map_for_export.insert(name, display_val);
+            data_rows.push(ordered_row_data);
+            results_vec_for_export.push(map_for_export);
         }
-        data_rows.push(ordered_row_data);
-        results_vec_for_export.push(map_for_export);
-    }
+    } // End Postgres Branch
 
     {
         let mut last = state.last_results.lock().unwrap();
@@ -908,11 +1064,6 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
                 variables[input.name] = input.value;
             }}
         }});
-        
-        // Save variables to LocalStorage on submit
-        try {{
-            localStorage.setItem(varsStorageKey, JSON.stringify(variables));
-        }} catch(e) {{ console.error("Could not save vars", e); }}
 
         const payload = {{
             sql: editor.value,
@@ -1123,24 +1274,13 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
           
           const currentInputs = Array.from(variablesSection.querySelectorAll('input'));
           const currentValues = {{}};
-          currentInputs.forEach(i => {{
-             if (i.name) currentValues[i.name] = i.value;
-          }});
+          currentInputs.forEach(i => {{ if(i.name) currentValues[i.name] = i.value; }});
           
-          // Fetch stored values
-          let storedValues = {{}};
-          try {{
-             const raw = localStorage.getItem(varsStorageKey);
-             if(raw) storedValues = JSON.parse(raw);
-          }} catch(e) {{}}
-
           const existingGroups = variablesSection.querySelectorAll('.var-input-group');
           existingGroups.forEach(g => g.remove());
           
           foundVars.forEach(v => {{
-              // Priority: Current UI input > Stored Value > Empty
-              const val = currentValues[v] || storedValues[v] || '';
-              addVariable(v, val);
+              addVariable(v, currentValues[v] || '');
           }});
       }}
       
@@ -1374,6 +1514,7 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
     )
 }
 
+// Ensure sql_view is pub so it can be exported
 #[get("/sql/{nickname}")]
 pub async fn sql_view(path: web::Path<String>, state: web::Data<Arc<AppState>>) -> impl Responder {
     use sqlx::{Row, postgres::PgPoolOptions};
@@ -1392,41 +1533,66 @@ pub async fn sql_view(path: web::Path<String>, state: web::Data<Arc<AppState>>) 
         }
     };
 
-    let dsn = format!("postgres://{}:{}@{}/{}", conn.user, conn.password, conn.host, conn.db_name);
-    let pool = match PgPoolOptions::new().max_connections(5).connect(&dsn).await {
-        Ok(p) => p,
-        Err(e) => {
-            let current_theme = state.current_theme.lock().unwrap();
-            let error_content = format!(r#"<h1>DB Connection Error</h1><pre class="error-message">Could not connect to {nickname}: {e}</pre>"#, nickname = htmlescape::encode_minimal(&nickname), e = htmlescape::encode_minimal(&e.to_string()));
-            return HttpResponse::InternalServerError().body(render_base_page("Connection Error", &error_content, &current_theme));
-        }
-    };
-
-    // --- NEW: Fetch Full Schema (Tables AND Columns) ---
-    // Postgres specific query to get table and column names
-    let schema_query = r#"
-        SELECT table_name, column_name 
-        FROM information_schema.columns 
-        WHERE table_schema = 'public' 
-        ORDER BY table_name, ordinal_position
-    "#;
-
-    let rows = match sqlx::query(schema_query).fetch_all(&pool).await {
-        Ok(r) => r,
-        Err(e) => {
-            let current_theme = state.current_theme.lock().unwrap();
-            let error_content = format!(r#"<h1>SQL Error</h1><pre class="error-message">Failed to fetch schema: {e}</pre>"#, e = htmlescape::encode_minimal(&e.to_string()));
-            return HttpResponse::InternalServerError().body(render_base_page("SQL Error", &error_content, &current_theme));
-        }
-    };
-
-    // Construct HashMap<TableName, Vec<ColumnName>>
     let mut schema_map: HashMap<String, Vec<String>> = HashMap::new();
-    
-    for row in rows {
-        let table: String = row.get("table_name");
-        let col: String = row.get("column_name");
-        schema_map.entry(table).or_default().push(col);
+
+    if conn.db_type == "sqlite" {
+        // SQLite Schema Fetching
+        let dsn = format!("sqlite:{}?mode=rwc", conn.host);
+        let pool = match SqlitePoolOptions::new().max_connections(1).connect(&dsn).await {
+            Ok(p) => p,
+            Err(e) => {
+                let current_theme = state.current_theme.lock().unwrap();
+                let error = format!("SQLite Connect Error: {}", e);
+                return HttpResponse::InternalServerError().body(render_base_page("Error", &error, &current_theme));
+            }
+        };
+
+        // 1. Get Tables
+        let table_query = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'";
+        if let Ok(rows) = sqlx::query(table_query).fetch_all(&pool).await {
+            for row in rows {
+                let table_name: String = row.get("name");
+                schema_map.insert(table_name.clone(), Vec::new());
+                
+                // 2. Get Columns for each table
+                let col_query = format!("PRAGMA table_info(\"{}\")", table_name);
+                if let Ok(cols) = sqlx::query(&col_query).fetch_all(&pool).await {
+                    for col_row in cols {
+                        let col_name: String = col_row.get("name");
+                        if let Some(vec) = schema_map.get_mut(&table_name) {
+                            vec.push(col_name);
+                        }
+                    }
+                }
+            }
+        }
+
+    } else {
+        // Postgres Schema Fetching
+        let dsn = format!("postgres://{}:{}@{}/{}", conn.user, conn.password, conn.host, conn.db_name);
+        let pool = match PgPoolOptions::new().max_connections(5).connect(&dsn).await {
+            Ok(p) => p,
+            Err(e) => {
+                let current_theme = state.current_theme.lock().unwrap();
+                let error_content = format!(r#"<h1>DB Connection Error</h1><pre class="error-message">Could not connect to {nickname}: {e}</pre>"#, nickname = htmlescape::encode_minimal(&nickname), e = htmlescape::encode_minimal(&e.to_string()));
+                return HttpResponse::InternalServerError().body(render_base_page("Connection Error", &error_content, &current_theme));
+            }
+        };
+
+        let schema_query = r#"
+            SELECT table_name, column_name 
+            FROM information_schema.columns 
+            WHERE table_schema = 'public' 
+            ORDER BY table_name, ordinal_position
+        "#;
+
+        if let Ok(rows) = sqlx::query(schema_query).fetch_all(&pool).await {
+            for row in rows {
+                let table: String = row.get("table_name");
+                let col: String = row.get("column_name");
+                schema_map.entry(table).or_default().push(col);
+            }
+        }
     }
 
     let schema_json = serde_json::to_string(&schema_map).unwrap_or_else(|_| "{}".to_string());

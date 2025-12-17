@@ -17,7 +17,7 @@ aes-gcm = "0.10"
 rand = "0.8"
 
 # Database (Postgres example) — uses Tokio runtime
-sqlx = { version = "0.7", features = ["postgres", "runtime-tokio-rustls"] }
+sqlx = { version = "0.7", features = ["postgres", "runtime-tokio-rustls", "sqlite", "runtime-tokio-native-tls"] }
 
 # CSV export
 csv = "1"

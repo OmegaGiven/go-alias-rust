@@ -1,0 +1,23 @@
+[package]
+name = "go_service"
+version = "0.1.0"
+edition = "2024"
+
+
+[dependencies]
+actix-web = "4"
+actix-files = "0.6"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+htmlescape = "0.3"
+
+# Encryption + randomness
+aes-gcm = "0.10"
+rand = "0.8"
+
+# Database (Postgres example) — uses Tokio runtime
+sqlx = { version = "0.7", features = ["postgres", "runtime-tokio-rustls"] }
+
+# CSV export
+csv = "1"

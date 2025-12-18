@@ -11,9 +11,14 @@ or if you have to set privilages for the localhost port it uses (the run.sh file
 cargo build
 sudo setcap 'cap_net_bind_service=+ep' target/debug/go_service
 target/debug/go_service
-3. edit to add your own alias as localhost, i personally like go but you can use anything.
+3. edit to add your own alias as localhost, i personally like "go" but you can use anything.
 file found at
 /etc/hosts
+
+here is what my mac system looks like:
+127.0.0.1	localhost go
+255.255.255.255	broadcasthost
+::1             localhost go
 
 
 ## USAGE: In browser type localhost or whatever alas you may use for localhost/alias

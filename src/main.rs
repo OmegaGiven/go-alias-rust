@@ -152,6 +152,10 @@ async fn main() -> std::io::Result<()> {
         
         // P2P State
         rooms: Mutex::new(HashMap::new()),
+
+        // SQL Connection Pools
+        sqlite_pools: Mutex::new(HashMap::new()),
+        pg_pools: Mutex::new(HashMap::new()),
     });
 
     // Build server

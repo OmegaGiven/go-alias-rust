@@ -72,4 +72,8 @@ pub struct AppState {
     
     // NEW: P2P Signaling State
     pub rooms: Mutex<HashMap<String, RoomState>>,
+
+    // SQL Connection Pooling
+    pub sqlite_pools: Mutex<HashMap<String, sqlx::SqlitePool>>,
+    pub pg_pools: Mutex<HashMap<String, sqlx::PgPool>>,
 }

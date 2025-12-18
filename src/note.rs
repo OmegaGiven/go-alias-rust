@@ -139,7 +139,8 @@ pub async fn note_post(
         }
     }
     
-    save_notes(&notes).ok();
+    let notes_to_save = notes.clone();
+    web::block(move || save_notes(&notes_to_save)).await.ok();
     
     HttpResponse::SeeOther()
         .append_header(("Location", "/note"))
@@ -156,7 +157,8 @@ pub async fn note_delete(
 
     if index < notes.len() {
         notes.remove(index);
-        save_notes(&notes).ok();
+        let notes_to_save = notes.clone();
+        web::block(move || save_notes(&notes_to_save)).await.ok();
         println!("Note deleted at index: {}", index);
     } else {
         eprintln!("Attempted to delete note with out-of-bounds index: {}", index);
@@ -170,74 +172,91 @@ pub async fn note_delete(
 // --- NEW: File System Handlers ---
 #[post("/note/ls")]
 pub async fn note_ls(form: web::Json<LsForm>) -> impl Responder {
-    // Determine the path to read. Default to current working directory if "." or empty.
-    let path_to_read = if form.path.is_empty() || form.path == "." {
-        std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf())
-    } else {
-        Path::new(&form.path).to_path_buf()
-    };
+    let res = web::block(move || {
+        // Determine the path to read. Default to current working directory if "." or empty.
+        let path_to_read = if form.path.is_empty() || form.path == "." {
+            std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf())
+        } else {
+            Path::new(&form.path).to_path_buf()
+        };
 
-    // Canonicalize to get the absolute path (resolves symlinks, .., etc.)
-    let absolute_path = match fs::canonicalize(&path_to_read) {
-        Ok(p) => p,
-        Err(_) => path_to_read.clone(), // Fallback if canonicalize fails
-    };
+        // Canonicalize to get the absolute path (resolves symlinks, .., etc.)
+        let absolute_path = match fs::canonicalize(&path_to_read) {
+            Ok(p) => p,
+            Err(_) => path_to_read.clone(), // Fallback if canonicalize fails
+        };
 
-    let current_path_str = absolute_path.to_string_lossy().to_string();
-    let mut entries = Vec::new();
-    
-    if let Ok(read_dir) = fs::read_dir(&absolute_path) {
-        for entry in read_dir.flatten() {
-            if let Ok(meta) = entry.metadata() {
-                let file_name = entry.file_name().to_string_lossy().to_string();
-                
-                if !form.show_hidden && file_name.starts_with('.') {
-                    continue;
+        let current_path_str = absolute_path.to_string_lossy().to_string();
+        let mut entries = Vec::new();
+        
+        if let Ok(read_dir) = fs::read_dir(&absolute_path) {
+            for entry in read_dir.flatten() {
+                if let Ok(meta) = entry.metadata() {
+                    let file_name = entry.file_name().to_string_lossy().to_string();
+                    
+                    if !form.show_hidden && file_name.starts_with('.') {
+                        continue;
+                    }
+
+                    let is_dir = meta.is_dir();
+                    // Construct the full absolute path for this entry
+                    let full_path = absolute_path.join(&file_name).to_string_lossy().to_string();
+                    
+                    entries.push(FileEntry {
+                        name: file_name,
+                        is_dir,
+                        path: full_path,
+                    });
                 }
-
-                let is_dir = meta.is_dir();
-                // Construct the full absolute path for this entry
-                let full_path = absolute_path.join(&file_name).to_string_lossy().to_string();
-                
-                entries.push(FileEntry {
-                    name: file_name,
-                    is_dir,
-                    path: full_path,
-                });
             }
         }
-    }
-    
-    // Sort: Directories first, then alphabetical
-    entries.sort_by(|a, b| {
-        if a.is_dir == b.is_dir {
-            a.name.to_lowercase().cmp(&b.name.to_lowercase())
-        } else {
-            b.is_dir.cmp(&a.is_dir)
-        }
-    });
+        
+        // Sort: Directories first, then alphabetical
+        entries.sort_by(|a, b| {
+            if a.is_dir == b.is_dir {
+                a.name.to_lowercase().cmp(&b.name.to_lowercase())
+            } else {
+                b.is_dir.cmp(&a.is_dir)
+            }
+        });
 
-    HttpResponse::Ok().json(LsResponse {
-        current_path: current_path_str,
-        entries,
-    })
+        Ok::<LsResponse, io::Error>(LsResponse {
+            current_path: current_path_str,
+            entries,
+        })
+    }).await;
+
+    match res {
+        Ok(Ok(data)) => HttpResponse::Ok().json(data),
+        _ => HttpResponse::InternalServerError().body("Error listing directory"),
+    }
 }
+
 
 #[post("/note/read")]
 pub async fn note_read(form: web::Json<ReadForm>) -> impl Responder {
-    match fs::read_to_string(&form.path) {
-        Ok(content) => HttpResponse::Ok().body(content),
-        Err(e) => HttpResponse::BadRequest().body(format!("Error reading file: {}", e)),
+    let path = form.path.clone();
+    let res = web::block(move || fs::read_to_string(&path)).await;
+    match res {
+        Ok(Ok(content)) => HttpResponse::Ok().body(content),
+        Ok(Err(e)) => HttpResponse::BadRequest().body(format!("Error reading file: {}", e)),
+        _ => HttpResponse::InternalServerError().body("Blocked error"),
     }
 }
 
+
 #[post("/note/save_file")]
 pub async fn note_save_file(form: web::Json<SaveFileForm>) -> impl Responder {
-    match fs::write(&form.path, &form.content) {
-        Ok(_) => HttpResponse::Ok().body("File saved successfully"),
-        Err(e) => HttpResponse::BadRequest().body(format!("Error saving file: {}", e)),
+    let path = form.path.clone();
+    let content = form.content.clone();
+    let res = web::block(move || fs::write(&path, &content)).await;
+    match res {
+        Ok(Ok(_)) => HttpResponse::Ok().body("File saved successfully"),
+        Ok(Err(e)) => HttpResponse::BadRequest().body(format!("Error saving file: {}", e)),
+        _ => HttpResponse::InternalServerError().finish(),
     }
 }
+
 
 // Helper for recursive search
 fn recursive_search(dir: &Path, query: &str, results: &mut Vec<FileEntry>, count: &mut usize) {
@@ -272,23 +291,30 @@ fn recursive_search(dir: &Path, query: &str, results: &mut Vec<FileEntry>, count
 
 #[post("/note/search")]
 pub async fn note_search(form: web::Json<SearchForm>) -> impl Responder {
-    let start_path = if form.path.is_empty() || form.path == "." {
-        std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf())
-    } else {
-        Path::new(&form.path).to_path_buf()
-    };
-    
-    let mut results = Vec::new();
-    let mut count = 0;
-    
-    recursive_search(&start_path, &form.query, &mut results, &mut count);
-    
-    // Return same structure as LS, but current_path is the search root
-    HttpResponse::Ok().json(LsResponse {
-        current_path: start_path.to_string_lossy().to_string(),
-        entries: results,
-    })
+    let res = web::block(move || {
+        let start_path = if form.path.is_empty() || form.path == "." {
+            std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf())
+        } else {
+            Path::new(&form.path).to_path_buf()
+        };
+        
+        let mut results = Vec::new();
+        let mut count = 0;
+        
+        recursive_search(&start_path, &form.query, &mut results, &mut count);
+        
+        Ok::<LsResponse, io::Error>(LsResponse {
+            current_path: start_path.to_string_lossy().to_string(),
+            entries: results,
+        })
+    }).await;
+
+    match res {
+        Ok(Ok(data)) => HttpResponse::Ok().json(data),
+        _ => HttpResponse::InternalServerError().body("Search error"),
+    }
 }
+
 
 #[get("/note/bookmarks")]
 pub async fn note_bookmarks_get() -> impl Responder {

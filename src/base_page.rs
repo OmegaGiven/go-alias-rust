@@ -24,7 +24,10 @@ fn render_theme_variables(theme: &Theme) -> String {
 }
 
 pub fn nav_bar_html() -> String {
-    r#"
+    use std::sync::OnceLock;
+    static NAV_BAR: OnceLock<String> = OnceLock::new();
+    NAV_BAR.get_or_init(|| {
+        r#"
     <style>
         .modern-nav {
             display: flex;
@@ -152,6 +155,7 @@ pub fn nav_bar_html() -> String {
         });
     </script>
     "#.to_string()
+    }).clone()
 }
 
 pub fn render_base_page(title: &str, body_content: &str, current_theme: &Theme) -> String {

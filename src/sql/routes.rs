@@ -380,12 +380,23 @@ pub async fn sql_run(form: web::Json<SqlForm>, state: web::Data<Arc<AppState>>) 
     // --- EXECUTION BRANCHING ---
     if conn.db_type == "sqlite" {
         // --- SQLITE EXECUTION ---
-        // mode=rwc ensures it creates the file if it doesn't exist
         let dsn = format!("sqlite:{}?mode=rwc", conn.host);
         
-        let pool = match SqlitePoolOptions::new().max_connections(1).connect(&dsn).await {
-            Ok(p) => p,
-            Err(e) => return HttpResponse::Ok().body(format!("SQLite Error: {}", e)),
+        let pool = {
+            let mut pools = state.sqlite_pools.lock().unwrap();
+            if let Some(p) = pools.get(&dsn) {
+                p.clone()
+            } else {
+                let p = match SqlitePoolOptions::new()
+                    .max_connections(1)
+                    .connect(&dsn).await 
+                {
+                    Ok(p) => p,
+                    Err(e) => return HttpResponse::Ok().body(format!("SQLite Connect Error: {}", e)),
+                };
+                pools.insert(dsn.clone(), p.clone());
+                p
+            }
         };
 
         let rows = match sqlx::query(&final_sql).fetch_all(&pool).await {
@@ -429,12 +440,25 @@ pub async fn sql_run(form: web::Json<SqlForm>, state: web::Data<Arc<AppState>>) 
     } else {
         // --- POSTGRES EXECUTION ---
         let dsn = format!("postgres://{}:{}@{}/{}", conn.user, conn.password, conn.host, conn.db_name);
-        let pool = match PgPoolOptions::new().max_connections(5).connect(&dsn).await {
-            Ok(p) => p,
-            Err(e) => {
-                return HttpResponse::Ok()
-                    .content_type("text/html; charset=utf-8")
-                    .body(format!("<div style=\"color:var(--link-hover);\">DB connect error: {}</div>", htmlescape::encode_minimal(&e.to_string())));
+        
+        let pool = {
+            let mut pools = state.pg_pools.lock().unwrap();
+            if let Some(p) = pools.get(&dsn) {
+                p.clone()
+            } else {
+                let p = match PgPoolOptions::new()
+                    .max_connections(5)
+                    .connect(&dsn).await 
+                {
+                    Ok(p) => p,
+                    Err(e) => {
+                        return HttpResponse::Ok()
+                            .content_type("text/html; charset=utf-8")
+                            .body(format!("<div style=\"color:var(--link-hover);\">DB connect error: {}</div>", htmlescape::encode_minimal(&e.to_string())));
+                    }
+                };
+                pools.insert(dsn.clone(), p.clone());
+                p
             }
         };
 
@@ -465,7 +489,20 @@ pub async fn sql_run(form: web::Json<SqlForm>, state: web::Data<Arc<AppState>>) 
                     return s; 
                 }
 
-                // 2. Handle specific types manually via raw bytes
+                // 2. Try generic primitive decoding BEFORE binary/raw fallbacks
+                // This prevents misinterpreting numeric/binary data as UTF-8
+                if let Ok(i) = row.try_get::<i32, usize>(idx) { return i.to_string(); }
+                if let Ok(i) = row.try_get::<i16, usize>(idx) { return i.to_string(); }
+                if let Ok(i) = row.try_get::<i64, usize>(idx) { return i.to_string(); }
+                
+                // Floats
+                if let Ok(f) = row.try_get::<f64, usize>(idx) { return f.to_string(); }
+                if let Ok(f) = row.try_get::<f32, usize>(idx) { return f.to_string(); }
+                
+                // Booleans
+                if let Ok(b) = row.try_get::<bool, usize>(idx) { return b.to_string(); }
+
+                // 3. Handle specific types manually via raw bytes IF string decoding failed
                 if let Ok(raw_val) = row.try_get_raw(idx) {
                     if raw_val.is_null() {
                         return "".to_string();
@@ -474,48 +511,34 @@ pub async fn sql_run(form: web::Json<SqlForm>, state: web::Data<Arc<AppState>>) 
                     if let Ok(bytes) = raw_val.as_bytes() {
                         match type_name {
                             "TIMESTAMPTZ" | "TIMESTAMP" => {
-                                // 8 bytes: int64 microseconds since 2000-01-01
                                 if bytes.len() == 8 {
                                     let micros = i64::from_be_bytes(bytes.try_into().unwrap_or([0; 8]));
-                                    // Convert Postgres epoch (2000-01-01) to Unix epoch
                                     let seconds = (micros / 1_000_000) + 946_684_800; 
-                                    // Use the helper to format it to "YYYY-MM-DD HH:MM:SS"
                                     return format_ts(seconds);
                                 }
                             },
                             "DATE" => {
-                                // 4 bytes: int32 days since 2000-01-01
                                 if bytes.len() == 4 {
                                     let days = i32::from_be_bytes(bytes.try_into().unwrap_or([0; 4]));
                                     let seconds = (days as i64) * 86400 + 946_684_800;
-                                    // Format showing only date part
                                     return format_ts(seconds).split_whitespace().next().unwrap_or("").to_string();
                                 }
                             },
                             "UUID" => {
-                                // 16 bytes. FIXED FORMAT STRING HERE:
                                 if bytes.len() == 16 {
                                     let b = bytes;
                                     return format!("{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
                                         b[0],b[1],b[2],b[3], b[4],b[5], b[6],b[7], b[8],b[9], b[10],b[11],b[12],b[13],b[14],b[15]);
                                 }
                             },
-                            "BOOL" | "BOOL[]" => {
-                                // 1 byte
-                                if !bytes.is_empty() {
-                                    return if bytes[0] != 0 { "true".to_string() } else { "false".to_string() };
-                                }
-                            },
                             "MONEY" => {
-                                // 8 bytes: int64 cents
                                 if bytes.len() == 8 {
                                     let cents = i64::from_be_bytes(bytes.try_into().unwrap_or([0; 8]));
                                     return format!("${:.2}", cents as f64 / 100.0);
                                 }
                             },
                             _ => {
-                                // Generic UTF-8 Fallback: If bytes are valid UTF-8, show them.
-                                // This handles CITEXT, NAME, BPCHAR, XML, etc.
+                                // Generic UTF-8 Fallback ONLY if we haven't found a better match
                                 if let Ok(s) = std::str::from_utf8(bytes) {
                                     return s.to_string();
                                 }
@@ -524,17 +547,6 @@ pub async fn sql_run(form: web::Json<SqlForm>, state: web::Data<Arc<AppState>>) 
                     }
                 }
 
-                // 3. Try generic primitive decoding
-                if let Ok(i) = row.try_get::<i32, usize>(idx) { return i.to_string(); }
-                if let Ok(i) = row.try_get::<i16, usize>(idx) { return i.to_string(); }
-                if let Ok(i) = row.try_get::<i64, usize>(idx) { return i.to_string(); }
-                
-                // Floats
-                if let Ok(f) = row.try_get::<f64, usize>(idx) { return f.to_string(); }
-                
-                // Booleans
-                if let Ok(b) = row.try_get::<bool, usize>(idx) { return b.to_string(); }
-                
                 // 4. Try JSON
                 if let Ok(json) = row.try_get::<JsonValue, usize>(idx) {
                     let s = json.to_string();
@@ -742,7 +754,7 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
     .output th, .output td { border: 1px solid var(--border-color); padding: 4px 8px; text-align: left; white-space: nowrap; user-select: none; }
     .output th { background: var(--tertiary-bg); position: sticky; top: 0; z-index: 1; cursor: pointer; }
     .output tr:nth-child(even) { background-color: rgba(255,255,255,0.02); }
-    .output tr.selected-row { background-color: rgba(73, 204, 144, 0.2); }
+    .output tr.selected-row td { background-color: rgba(73, 204, 144, 0.4) !important; color: #fff; }
     .output pre { padding: 5px; margin: 0; }
     
     /* Autocomplete Suggestions */
@@ -824,6 +836,7 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
             <span id="row-count" style="font-size: 0.9em; margin: 0 10px; color: var(--text-color);"></span>
             <label><input type="checkbox" id="export-headers" checked> Headers</label>
             <button type="button" id="export-client-btn" class="add-var-btn" style="width:auto;">Export Select CSV</button>
+            <button type="button" id="clear-selection-btn" class="add-var-btn" style="width:auto; background-color: var(--tertiary-bg); display: none;">Clear (0)</button>
             <a href="/sql/export" target="_blank" title="Download all latest results from server" style="text-decoration:none;"><button type="button" class="add-var-btn" style="width:auto;">Export All</button></a>
         </div>
         <div class="output" id="output"><pre>Click a table name or enter a query and press 'Run Query'.</pre></div>
@@ -1099,6 +1112,30 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
           if(countSpan) countSpan.innerText = visibleCount + " rows";
       }});
 
+      let isSelecting = false;
+      let selectionMode = true;
+
+      function updateSelectionCount() {{
+          const selected = document.querySelectorAll('.output tr.selected-row').length;
+          const btn = document.getElementById('clear-selection-btn');
+          if (btn) {{
+              if (selected > 0) {{
+                  btn.style.display = 'inline-block';
+                  btn.innerText = `Clear (${{selected}})`;
+              }} else {{
+                  btn.style.display = 'none';
+              }}
+          }}
+      }}
+
+      const clearSelectionBtn = document.getElementById('clear-selection-btn');
+      if (clearSelectionBtn) {{
+          clearSelectionBtn.addEventListener('click', () => {{
+              document.querySelectorAll('.output tr.selected-row').forEach(row => row.classList.remove('selected-row'));
+              updateSelectionCount();
+          }});
+      }}
+
       function makeTableInteractable(table) {{
         const ths = table.querySelectorAll('th');
         const tbody = table.querySelector('tbody');
@@ -1106,11 +1143,36 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
         
         rows.forEach((row, i) => {{
             row.dataset.originalIndex = i;
-            // Row Selection
-            row.addEventListener('click', () => {{
-                row.classList.toggle('selected-row');
-            }});
         }});
+
+        tbody.addEventListener('mousedown', (e) => {{
+            const tr = e.target.closest('tr');
+            if (tr) {{
+                isSelecting = true;
+                selectionMode = !tr.classList.contains('selected-row');
+                tr.classList.toggle('selected-row', selectionMode);
+                updateSelectionCount();
+                e.preventDefault(); // Prevent text selection while dragging
+            }}
+        }});
+
+        tbody.addEventListener('mouseover', (e) => {{
+            if (isSelecting) {{
+                const tr = e.target.closest('tr');
+                if (tr) {{
+                    tr.classList.toggle('selected-row', selectionMode);
+                    updateSelectionCount();
+                }}
+            }}
+        }});
+
+        // Global mouseup to stop selection even if released outside table
+        if (!window._selectionHandlerBound) {{
+            window.addEventListener('mouseup', () => {{
+                isSelecting = false;
+            }});
+            window._selectionHandlerBound = true;
+        }}
 
         let currentSortCol = -1;
         let currentSortDir = 'none'; 
@@ -1322,6 +1384,24 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
         return coordinates;
       }}
 
+      function getAliases(sql) {{
+        const aliases = {{}};
+        // Match: FROM table alias OR JOIN table alias
+        // Also supports: table AS alias
+        const regex = /\b(?:FROM|JOIN)\s+([a-zA-Z0-9_]+)(?:\s+AS)?\s+([a-zA-Z0-9_]+)\b/gi;
+        let match;
+        while ((match = regex.exec(sql)) !== null) {{
+            const table = match[1];
+            const alias = match[2];
+            // Don't treat common SQL keywords as aliases if they appear after a table
+            const keywords = ["WHERE", "JOIN", "INNER", "LEFT", "RIGHT", "ON", "GROUP", "BY", "ORDER", "LIMIT", "OFFSET", "AND", "OR"];
+            if (!keywords.includes(alias.toUpperCase())) {{
+                aliases[alias.toLowerCase()] = table;
+            }}
+        }}
+        return aliases;
+      }}
+
       editor.addEventListener('input', function(e) {{
           const val = this.value;
           const cursorPosition = this.selectionStart;
@@ -1339,21 +1419,39 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
           
           if (currentWord.includes('.')) {{
               const parts = currentWord.split('.');
-              const tableName = parts[0];
+              const prefix = parts[0];
               const colPrefix = parts[1] || '';
               
-              const realTableName = Object.keys(dbSchema).find(t => t.toUpperCase() === tableName.toUpperCase());
+              // 1. Try to find a direct table match
+              let targetTable = Object.keys(dbSchema).find(t => t.toUpperCase() === prefix.toUpperCase());
               
-              if (realTableName && dbSchema[realTableName]) {{
-                  matches = dbSchema[realTableName]
+              // 2. If no direct match, try to resolve as an alias
+              if (!targetTable) {{
+                  const aliases = getAliases(val);
+                  const aliasedTable = aliases[prefix.toLowerCase()];
+                  if (aliasedTable) {{
+                      targetTable = Object.keys(dbSchema).find(t => t.toUpperCase() === aliasedTable.toUpperCase());
+                  }}
+              }}
+              
+              if (targetTable && dbSchema[targetTable]) {{
+                  matches = dbSchema[targetTable]
                       .filter(col => col.toUpperCase().startsWith(colPrefix.toUpperCase()))
                       .map(col => ({{ display: col, insert: col, type: 'column' }}));
               }}
           }} 
           else {{
+              // Standard table suggestions
               matches = Object.keys(dbSchema)
                   .filter(t => t.toUpperCase().startsWith(currentWord.toUpperCase()))
                   .map(t => ({{ display: t, insert: t, type: 'table' }}));
+
+              // Keyword suggestions (optional but helpful)
+              const keywords = ["SELECT", "FROM", "WHERE", "INSERT", "UPDATE", "DELETE", "JOIN", "ORDER BY", "GROUP BY", "LIMIT", "CREATE TABLE", "DROP TABLE"];
+              const kwMatches = keywords
+                  .filter(k => k.startsWith(currentWord.toUpperCase()) && currentWord.length >= 2)
+                  .map(k => ({{ display: k, insert: k, type: 'keyword' }}));
+              matches = [...matches, ...kwMatches];
           }}
 
           if (matches.length > 0) {{
@@ -1490,7 +1588,7 @@ pub async fn sql_view(path: web::Path<String>, state: web::Data<Arc<AppState>>) 
         }
     };
 
-    let schema_map = match fetch_schema_map(&conn).await {
+    let schema_map = match fetch_schema_map(&conn, &state).await {
         Ok(map) => map,
         Err(e) => {
              // Just log error and return empty map for view, or handle differently
@@ -1526,21 +1624,31 @@ pub async fn sql_schema_json(path: web::Path<String>, state: web::Data<Arc<AppSt
         None => return HttpResponse::NotFound().json("Connection not found"),
     };
 
-    match fetch_schema_map(&conn).await {
+    match fetch_schema_map(&conn, &state).await {
         Ok(map) => HttpResponse::Ok().json(map),
         Err(e) => HttpResponse::InternalServerError().json(format!("Error: {}", e)),
     }
 }
 
-async fn fetch_schema_map(conn: &DbConnection) -> Result<HashMap<String, Vec<String>>, String> {
-     use sqlx::{Row, postgres::PgPoolOptions};
+async fn fetch_schema_map(conn: &DbConnection, state: &AppState) -> Result<HashMap<String, Vec<String>>, String> {
+     use sqlx::{Row, sqlite::SqlitePoolOptions, postgres::PgPoolOptions};
      let mut schema_map: HashMap<String, Vec<String>> = HashMap::new();
 
      if conn.db_type == "sqlite" {
-        // SQLite Schema Fetching
         let dsn = format!("sqlite:{}?mode=rwc", conn.host);
-        let pool = SqlitePoolOptions::new().max_connections(1).connect(&dsn).await
-            .map_err(|e| format!("SQLite Connect Error: {}", e))?;
+        let pool = {
+            let mut pools = state.sqlite_pools.lock().unwrap();
+            if let Some(p) = pools.get(&dsn) {
+                p.clone()
+            } else {
+                let p = match SqlitePoolOptions::new().max_connections(1).connect(&dsn).await {
+                    Ok(p) => p,
+                    Err(e) => return Err(format!("SQLite Connect Error: {}", e)),
+                };
+                pools.insert(dsn.clone(), p.clone());
+                p
+            }
+        };
 
         // 1. Get Tables
         let table_query = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'";
@@ -1566,8 +1674,19 @@ async fn fetch_schema_map(conn: &DbConnection) -> Result<HashMap<String, Vec<Str
     } else {
         // Postgres Schema Fetching
         let dsn = format!("postgres://{}:{}@{}/{}", conn.user, conn.password, conn.host, conn.db_name);
-        let pool = PgPoolOptions::new().max_connections(5).connect(&dsn).await
-            .map_err(|e| format!("Postgres Connect Error: {}", e))?;
+        let pool = {
+            let mut pools = state.pg_pools.lock().unwrap();
+            if let Some(p) = pools.get(&dsn) {
+                p.clone()
+            } else {
+                let p = match PgPoolOptions::new().max_connections(5).connect(&dsn).await {
+                    Ok(p) => p,
+                    Err(e) => return Err(format!("Postgres Connect Error: {}", e)),
+                };
+                pools.insert(dsn.clone(), p.clone());
+                p
+            }
+        };
 
         let schema_query = r#"
             SELECT table_name, column_name 

@@ -1,4 +1,4 @@
-use actix_web::{get, post, web::{Data, Form, Json}, HttpResponse, Responder};
+use actix_web::{get, post, web::{self, Data, Form, Json}, HttpResponse, Responder};
 use std::{fs, io, process::Command, collections::HashMap};
 use serde::{Deserialize, Serialize};
 use crate::app_state::{AppState, Theme};
@@ -114,22 +114,25 @@ pub async fn request_delete(form: Form<DeleteRequestForm>) -> impl Responder {
 
 #[post("/requests/run")]
 pub async fn request_run(payload: Json<ProxyRequest>) -> impl Responder {
-    let mut cmd = Command::new("curl");
-    
-    cmd.arg("-i").arg("-s").arg("-X").arg(&payload.method);
+    let res = web::block(move || {
+        let mut cmd = Command::new("curl");
+        
+        cmd.arg("-i").arg("-s").arg("-X").arg(&payload.method);
 
-    for (key, value) in &payload.headers {
-        cmd.arg("-H").arg(format!("{}: {}", key, value));
-    }
+        for (key, value) in &payload.headers {
+            cmd.arg("-H").arg(format!("{}: {}", key, value));
+        }
 
-    if !payload.body.is_empty() && payload.method != "GET" && payload.method != "HEAD" {
-        cmd.arg("-d").arg(&payload.body);
-    }
+        if !payload.body.is_empty() && payload.method != "GET" && payload.method != "HEAD" {
+            cmd.arg("-d").arg(&payload.body);
+        }
 
-    cmd.arg(&payload.url);
+        cmd.arg(&payload.url);
+        cmd.output()
+    }).await;
 
-    match cmd.output() {
-        Ok(output) => {
+    match res {
+        Ok(Ok(output)) => {
             let result = String::from_utf8_lossy(&output.stdout).to_string();
             if result.is_empty() {
                 let err = String::from_utf8_lossy(&output.stderr).to_string();
@@ -138,9 +141,11 @@ pub async fn request_run(payload: Json<ProxyRequest>) -> impl Responder {
                 HttpResponse::Ok().body(result)
             }
         },
-        Err(e) => HttpResponse::InternalServerError().body(format!("Failed to execute curl: {}", e)),
+        Ok(Err(e)) => HttpResponse::InternalServerError().body(format!("Failed to execute curl: {}", e)),
+        _ => HttpResponse::InternalServerError().body("Blocked execution error"),
     }
 }
+
 
 // --- Rendering ---
 

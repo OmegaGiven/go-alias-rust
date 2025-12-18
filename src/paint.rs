@@ -123,9 +123,9 @@ fn render_paint_page(current_theme: &Theme) -> String {
 
             <div class="tool-group">
                 <label>Dimensions:</label>
-                <input type="number" id="canvas-width" value="800" title="Width">
+                <input type="number" id="canvas-width" value="1200" title="Width">
                 <span style="color:var(--text-color);">x</span>
-                <input type="number" id="canvas-height" value="600" title="Height">
+                <input type="number" id="canvas-height" value="800" title="Height">
                 <button id="resize-btn" class="btn-small btn-secondary" title="Update canvas size (clears if confirmed)">Set</button>
             </div>
 
@@ -223,8 +223,7 @@ fn render_paint_page(current_theme: &Theme) -> String {
         }
 
         // --- Initial Setup ---
-        // Start with 800x600 default
-        initCanvas(800, 600);
+        initCanvas(1200, 800);
 
         // --- Resize Logic ---
         resizeBtn.addEventListener('click', () => {

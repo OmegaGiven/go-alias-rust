@@ -150,25 +150,27 @@ fn render_request_page(current_theme: &Theme) -> String {
     let saved_list_html = saved_requests.iter().map(|r| {
         let safe_name = encode_minimal(&r.name);
         // Use standard strings with escaped quotes
-        format!(
-            "<li class=\"saved-req-item\">\
-                <span class=\"req-method {}\">{}</span>\
-                <a href=\"#\" class=\"req-link\" \
-                   data-name=\"{}\" \
-                   data-method=\"{}\" \
-                   data-url=\"{}\" \
-                   data-headers=\"{}\" \
-                   data-body=\"{}\" \
-                   data-auth-type=\"{}\" \
-                   data-oauth-token-url=\"{}\" \
-                   data-oauth-client-id=\"{}\" \
-                   data-oauth-client-secret=\"{}\" \
-                   data-oauth-scope=\"{}\">{}</a>\
-                <form method=\"POST\" action=\"/requests/delete\" style=\"display:inline;\">\
-                    <input type=\"hidden\" name=\"name\" value=\"{}\">\
-                    <button type=\"submit\" class=\"delete-btn\" title=\"Delete\">x</button>\
-                </form>\
-            </li>",
+        format!(r##"
+                <li class="saved-req-item">
+                    <div style="display:flex; align-items:center; min-width:0; flex-grow:1;">
+                        <span class="req-method {}">{}</span>
+                        <a href="#" class="req-link" 
+                        data-name="{}" 
+                        data-method="{}" 
+                        data-url="{}" 
+                        data-headers="{}" 
+                        data-body="{}" 
+                        data-auth-type="{}" 
+                        data-oauth-token-url="{}" 
+                        data-oauth-client-id="{}" 
+                        data-oauth-client-secret="{}" 
+                        data-oauth-scope="{}">{}</a>
+                    </div>
+                    <form method="POST" action="/requests/delete" class="delete-form">
+                        <input type="hidden" name="name" value="{}">
+                        <button type="submit" class="btn-danger-text" title="Delete">x</button>
+                    </form>
+                </li>"##,
             r.method.to_lowercase(), r.method, 
             safe_name, 
             encode_minimal(&r.method), 
@@ -185,138 +187,126 @@ fn render_request_page(current_theme: &Theme) -> String {
         )
     }).collect::<Vec<_>>().join("\n");
 
-    let style = r#"
+    let style = format!(r#"
 <style>
     /* FIX: Adjusted height calculation and ensures border box model */
-    .req-container { 
+    .req-container {{ 
         display: flex; 
-        height: calc(100vh - 120px); /* Increased offset to account for header/margins */
+        height: calc(100vh - 65px); /* Increased offset to account for header/margins */
         overflow: hidden; 
-        border: 1px solid var(--border-color); 
-        border-radius: 0; /* Removed rounded corners */
-        background-color: var(--secondary-bg);
-    }
+        position: relative;
+    }}
     
-    /* Sidebar */
-    .sidebar { 
-        width: 300px; /* Slightly wider */
-        background: var(--secondary-bg); 
-        border-right: 1px solid var(--border-color); 
-        display: flex; 
-        flex-direction: column; 
-        padding: 10px; 
-        flex-shrink: 0;
-        height: 100%; 
-        box-sizing: border-box;
-    }
-    .sidebar h2 { margin-top: 0; font-size: 1.2em; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; margin-bottom: 10px; flex-shrink: 0; }
-    
-    .saved-list { 
+    .saved-list {{ 
         list-style: none; 
         padding: 0; 
         margin: 0; 
         overflow-y: auto; 
-        flex: 1; /* Make it grow to fill sidebar */
-        min-height: 0; /* FIX: Enable scrolling inside flex item */
-    }
+        flex: 1; 
+        min-height: 0; 
+    }}
     
-    .saved-req-item { display: flex; align-items: center; padding: 8px 5px; border-bottom: 1px solid var(--border-color); }
-    .saved-req-item:last-child { border-bottom: none; }
-    .req-method { font-size: 0.7em; font-weight: bold; padding: 2px 5px; border-radius: 0; margin-right: 8px; min-width: 35px; text-align: center; color: #fff;}
-    .req-method.get { background-color: #61affe; }
-    .req-method.post { background-color: #49cc90; }
-    .req-method.put { background-color: #fca130; }
-    .req-method.delete { background-color: #f93e3e; }
-    .req-method.patch { background-color: #50e3c2; }
-    .req-link { text-decoration: none; color: var(--text-color); flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.95em; }
-    .delete-btn { background: none; border: none; color: #888; cursor: pointer; padding: 0 5px; font-size: 1.1em; }
-    .delete-btn:hover { color: #f00; }
+    .saved-req-item {{ display: flex; align-items: center; justify-content: space-between; padding: 3px 5px; border-bottom: 1px solid var(--border-color); cursor: pointer; }}
+    .saved-req-item:last-child {{ border-bottom: none; }}
+    .saved-req-item:hover {{ background-color: var(--tertiary-bg); }}
+
+    .req-method {{ font-size: 0.65em; font-weight: bold; padding: 1px 4px; border-radius: 2px; margin-right: 5px; min-width: 35px; text-align: center; color: #fff; flex-shrink: 0; }}
+    .req-method.get {{ background-color: #61affe; }}
+    .req-method.post {{ background-color: #49cc90; }}
+    .req-method.put {{ background-color: #fca130; }}
+    .req-method.delete {{ background-color: #f93e3e; }}
+    .req-method.patch {{ background-color: #50e3c2; }}
+    
+    .req-link {{ text-decoration: none; color: var(--text-color); flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.9em; min-width: 0; }}
+    
+    /* Shared styles for delete-btn removed - now using .btn-danger-text in static/style.css */
+
+    /* Resizers */
+    /* Sidebar & Response Resizer styles removed - now using shared .resizer-v/.resizer-h classes */
 
     /* Main Area */
-    .main-area { flex-grow: 1; padding: 20px; display: flex; flex-direction: column; overflow: hidden; height: 100%; box-sizing: border-box; }
+    .main-area {{ flex-grow: 1; padding: 0; display: flex; flex-direction: column; overflow: hidden; height: 100%; box-sizing: border-box; background-color: var(--primary-bg); }}
     
     /* Request Bar */
-    .request-bar { display: flex; gap: 10px; margin-bottom: 15px; flex-shrink: 0; }
-    .method-select { padding: 10px; background: var(--tertiary-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 0; font-weight: bold; }
-    .url-input { flex-grow: 1; padding: 10px; background: var(--primary-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 0; }
-    .send-btn { padding: 10px 20px; background-color: #007bff; color: white; border: none; border-radius: 0; cursor: pointer; font-weight: bold; }
-    .send-btn:hover { background-color: #0056b3; }
-    .save-btn { padding: 10px; background-color: var(--tertiary-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 0; cursor: pointer; }
+    .request-bar {{ display: flex; gap: 5px; padding: 10px; background: var(--secondary-bg); border-bottom: 1px solid var(--border-color); flex-shrink: 0; align-items: center; }}
+    .method-select {{ padding: 4px 8px; background: var(--tertiary-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px; font-weight: bold; height: 30px; }}
+    .url-input {{ flex-grow: 1; padding: 4px 8px; background: var(--primary-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px; height: 30px; box-sizing: border-box; }}
+    .send-btn {{ padding: 0 15px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; height: 30px; }}
+    .send-btn:hover {{ background-color: #0056b3; }}
+    .save-btn {{ padding: 0 10px; background-color: var(--tertiary-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer; height: 30px; }}
     
     /* Tabs */
-    .tabs { display: flex; gap: 5px; border-bottom: 1px solid var(--border-color); margin-bottom: 10px; flex-shrink: 0; }
-    .tab { padding: 8px 15px; cursor: pointer; border: 1px solid transparent; border-bottom: none; border-radius: 0; color: var(--text-color); opacity: 0.7; }
-    .tab.active { background-color: var(--secondary-bg); border-color: var(--border-color); opacity: 1; font-weight: bold; }
+    /* Tabs System styles removed - now using shared .tabs class in static/style.css */
     
-    .input-container {
-        flex: 0 0 45%; /* Give input area ~45% height */
+    .input-container {{
+        flex: 1; /* Default flex grow */
         display: flex;
         flex-direction: column;
         overflow: hidden;
-        min-height: 200px;
-    }
+        min-height: 100px;
+        background: var(--primary-bg);
+    }}
     
-    .tab-content { display: none; flex-direction: column; gap: 10px; flex: 1; overflow-y: auto; padding-bottom: 10px; min-height: 0; }
-    .tab-content.active { display: flex; }
+    .tab-content {{ display: none; flex-direction: column; gap: 10px; flex: 1; overflow-y: auto; padding: 10px; min-height: 0; }}
+    .tab-content.active {{ display: flex; }}
     
-    textarea.code-editor {
-        width: 100%; height: 100%; background: var(--secondary-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 0; padding: 10px; font-family: monospace; box-sizing: border-box; resize: none;
-    }
+    textarea.code-editor {{
+        width: 100%; height: 100%; background: var(--secondary-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; padding: 10px; font-family: monospace; box-sizing: border-box; resize: none;
+    }}
 
-    /* Key-Value Tables (Params & Headers) */
-    .kv-table { width: 100%; border-collapse: collapse; }
-    .kv-row { display: flex; gap: 10px; margin-bottom: 5px; }
-    .kv-input { flex: 1; padding: 8px; background: var(--primary-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 0; }
-    .kv-remove { background: none; border: none; color: #f93e3e; font-weight: bold; cursor: pointer; padding: 0 10px; }
-    .add-row-btn { width: auto; align-self: flex-start; margin-top: 5px; padding: 5px 10px; font-size: 0.9em; }
+    /* Key-Value Tables (Params & Headers) removed - now using shared .kv-row class */
+    .kv-remove {{ background: none; border: none; color: #f93e3e; font-weight: bold; cursor: pointer; padding: 0 8px; }}
     
     /* Read-only key for Path Params */
-    .kv-input.key.readonly { background-color: var(--tertiary-bg); color: #aaa; }
+    .kv-input.key.readonly {{ background-color: var(--tertiary-bg); color: #aaa; }}
 
-    /* Auth Section */
-    .auth-section { display: flex; flex-direction: column; gap: 10px; padding: 10px; background: var(--secondary-bg); border-radius: 0; border: 1px solid var(--border-color); }
-    .auth-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap;}
-    .auth-row label { width: 120px; flex-shrink: 0;}
-    .auth-row input, .auth-row select { flex: 1; padding: 8px; background: var(--primary-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 0; }
-    .oauth-btn { background-color: #fca130; color: #000; border: none; padding: 8px 12px; border-radius: 0; cursor: pointer; font-weight: bold; }
-    .oauth-btn:hover { background-color: #e59029; }
-    .token-display { width: 100%; margin-top: 5px; }
+    /* Auth Section removed - now using shared .form-group logic where possible */
+    .auth-section {{ display: flex; flex-direction: column; gap: 10px; padding: 0; background: transparent; border: none; }}
+    .auth-row {{ display: flex; gap: 10px; align-items: center; flex-wrap: wrap;}}
+    .auth-row label {{ width: 100px; flex-shrink: 0; font-size: 0.9em; color: #aaa;}}
+    .auth-row input, .auth-row select {{ flex: 1; padding: 5px; background: var(--tertiary-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 3px; }}
+    .oauth-btn {{ background-color: #fca130; color: #000; border: none; padding: 6px 12px; border-radius: 3px; cursor: pointer; font-weight: bold; font-size: 0.9em; }}
+    .oauth-btn:hover {{ background-color: #e59029; }}
+    .token-display {{ width: 100%; margin-top: 5px; }}
 
     /* Response Area */
-    .response-section { 
-        margin-top: 15px; 
-        border-top: 4px solid var(--border-color); 
-        padding-top: 10px; 
+    .response-section {{ 
+        height: 40%; /* Initial height */
+        padding: 0; 
         display: flex; 
         flex-direction: column; 
-        flex: 1; 
-        min-height: 0; 
+        min-height: 50px; 
         overflow: hidden; 
-    }
-    .response-meta { display: flex; gap: 15px; margin-bottom: 10px; font-size: 0.9em; color: #888; flex-shrink: 0; }
-    .status-badge { font-weight: bold; }
-    .status-badge.success { color: #49cc90; }
-    .status-badge.error { color: #f93e3e; }
+        background: var(--secondary-bg);
+    }}
+    .response-header {{ padding: 5px 10px; background: var(--tertiary-bg); border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }}
+    .response-meta {{ display: flex; gap: 15px; font-size: 0.85em; color: #aaa; flex-shrink: 0; margin: 0; }}
     
     /* Debug Info */
-    #request-debug-info { margin-bottom: 10px; color: #888; font-family: monospace; font-size: 0.8em; white-space: pre-wrap; overflow-x: auto; display: none; background: var(--tertiary-bg); padding: 10px; border-radius: 0; border: 1px solid var(--border-color); flex-shrink: 0;}
+    #request-debug-info {{ margin-bottom: 5px; color: #888; font-family: monospace; font-size: 0.8em; white-space: pre-wrap; overflow-x: auto; display: none; background: var(--primary-bg); padding: 5px; border-bottom: 1px solid var(--border-color); flex-shrink: 0;}}
 
-    #response-body { flex: 1; white-space: pre-wrap; overflow: auto; font-family: monospace; background: var(--secondary-bg); padding: 10px; border-radius: 0; border: 1px solid var(--border-color); min-height: 0; }
+    #response-body {{ flex: 1; white-space: pre-wrap; overflow: auto; font-family: monospace; background: var(--primary-bg); padding: 10px; border: none; min-height: 0; color: var(--text-color); }}
     
     /* Save Modal */
-    .save-controls { display: flex; gap: 10px; align-items: center; background: var(--secondary-bg); padding: 10px; border-radius: 0; border: 1px solid var(--border-color); margin-bottom: 10px; display: none; flex-shrink: 0; }
-    .save-controls input { flex-grow: 1; padding: 5px; }
+    .save-controls {{ display: flex; gap: 5px; align-items: center; background: var(--tertiary-bg); padding: 10px; border-bottom: 1px solid var(--border-color); margin-bottom: 0; display: none; flex-shrink: 0; }}
+    .save-controls input {{ flex-grow: 1; padding: 4px; border: 1px solid var(--border-color); border-radius: 3px; }}
 </style>
-"#;
+"#);
+
+    let sidebar_content = format!(r#"
+        <h2>Saved Requests</h2>
+        <ul class="saved-list" id="saved-list">
+            {}
+        </ul>
+    "#, saved_list_html);
+    
+    let sidebar_html = crate::elements::sidebar::render(&sidebar_content);
+    let sidebar_js = crate::elements::sidebar::get_js();
 
     let content = format!(r#"
     <div class="req-container">
-        <div class="sidebar">
-            <h2>Saved Requests</h2>
-            <ul class="saved-list" id="saved-list">
-                {saved_list}
-            </ul>
-        </div>
+
+        {sidebar_html}
         
         <div class="main-area">
             <!-- Request Bar -->
@@ -329,8 +319,8 @@ fn render_request_page(current_theme: &Theme) -> String {
                     <option value="PATCH">PATCH</option>
                 </select>
                 <input type="text" id="url" class="url-input" placeholder="Enter request URL" value="">
-                <button id="send-btn" class="send-btn">Send</button>
-                <button id="toggle-save-btn" class="save-btn">Save</button>
+                <button id="send-btn" class="send-btn btn-small">Send</button>
+                <button id="toggle-save-btn" class="save-btn btn-small">Save</button>
             </div>
 
             <!-- Save Form (Hidden by default) -->
@@ -345,7 +335,7 @@ fn render_request_page(current_theme: &Theme) -> String {
                 <input type="hidden" name="oauth_client_id" id="save-oauth-client-id">
                 <input type="hidden" name="oauth_client_secret" id="save-oauth-client-secret">
                 <input type="hidden" name="oauth_scope" id="save-oauth-scope">
-                <button type="submit" class="save-btn">Confirm Save</button>
+                <button type="submit" class="save-btn btn-small">Confirm Save</button>
             </form>
             
             <!-- Wrapper for Input Section to control height -->
@@ -365,7 +355,7 @@ fn render_request_page(current_theme: &Theme) -> String {
                     <div id="params-container">
                         <!-- Dynamic Rows -->
                     </div>
-                    <button class="save-btn add-row-btn" onclick="addKvRow('params-container')">+ Add Param</button>
+                    <button class="save-btn btn-small" onclick="addKvRow('params-container')">+ Add Param</button>
                 </div>
 
                 <!-- Path Tab -->
@@ -395,7 +385,7 @@ fn render_request_page(current_theme: &Theme) -> String {
                 <div id="tab-headers" class="tab-content">
                     <p style="font-size:0.8em; color:#888; margin:0;">HTTP Headers</p>
                     <div id="headers-container"></div>
-                    <button class="save-btn add-row-btn" onclick="addKvRow('headers-container')">+ Add Header</button>
+                    <button class="save-btn btn-small" onclick="addKvRow('headers-container')">+ Add Header</button>
                 </div>
                 
                 <!-- Body Tab -->
@@ -410,31 +400,32 @@ fn render_request_page(current_theme: &Theme) -> String {
                     <!-- Raw Editor -->
                     <div id="body-raw-container" style="display:flex; flex-direction:column; flex-grow:1;">
                         <textarea id="body-input" class="code-editor" placeholder="{{ \"key\": \"value\" }}"></textarea>
-                        <button type="button" id="format-json-btn" class="save-btn" style="width: auto; align-self: flex-start; margin-top:5px;">Format JSON</button>
+                        <button type="button" id="format-json-btn" class="save-btn btn-small" style="width: auto; align-self: flex-start; margin-top:5px;">Format JSON</button>
                     </div>
 
                     <!-- Form URL Encoded Editor -->
                     <div id="body-form-container" style="display:none; flex-direction:column;">
                         <div id="form-body-rows"></div>
-                        <button class="save-btn add-row-btn" onclick="addKvRow('form-body-rows')">+ Add Field</button>
+                        <button class="save-btn btn-small" onclick="addKvRow('form-body-rows')">+ Add Field</button>
                     </div>
                 </div>
             </div>
             
             <!-- Response -->
-            <div class="response-section">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; flex-shrink:0;">
-                    <h3 style="margin:0;">Response</h3>
-                    <button id="download-res-btn" class="save-btn" style="padding:5px 10px; font-size:0.8em;">Download JSON</button>
+            <!-- Response -->
+            <div id="response-resizer" class="resizer-h" title="Drag to resize"></div>
+            <div class="response-section" id="response-section">
+                <div class="response-header">
+                    <h3 style="margin:0; font-size:1em;">Response</h3>
+                    <div class="response-meta">
+                        <span id="res-status">Status: -</span>
+                        <span id="res-time">Time: - ms</span>
+                        <span id="res-size">Size: -</span>
+                    </div>
+                    <button id="download-res-btn" class="save-btn btn-small">JSON</button>
                 </div>
                 
                 <div id="request-debug-info"></div>
-
-                <div class="response-meta">
-                    <span id="res-status">Status: -</span>
-                    <span id="res-time">Time: - ms</span>
-                    <span id="res-size">Size: -</span>
-                </div>
                 <div id="response-body">Response body will appear here...</div>
             </div>
         </div>
@@ -882,8 +873,43 @@ fn render_request_page(current_theme: &Theme) -> String {
             link.click();
             URL.revokeObjectURL(link.href);
         }});
-    </script>
-    "#, saved_list = saved_list_html);
 
-    render_base_page("Request Builder", &format!("{}{}", style, content), current_theme)
+        // Response Resizing Only
+        const respSection = document.getElementById('response-section');
+        const respResizer = document.getElementById('response-resizer');
+        let isRespResizing = false;
+        
+        respResizer.addEventListener('mousedown', (e) => {{
+            isRespResizing = true;
+            respResizer.classList.add('resizing');
+            document.body.style.cursor = 'row-resize';
+            document.body.style.userSelect = 'none';
+        }});
+
+        document.addEventListener('mousemove', (e) => {{
+            if (isRespResizing) {{
+                const containerHeight = document.querySelector('.main-area').offsetHeight;
+                
+                const distFromBottom = window.innerHeight - e.clientY - 20; // 20 padding
+                if (distFromBottom > 50 && distFromBottom < containerHeight - 100) {{
+                    respSection.style.height = distFromBottom + 'px';
+                }}
+            }}
+        }});
+
+        document.addEventListener('mouseup', (e) => {{
+            if (isRespResizing) {{
+                isRespResizing = false;
+                respResizer.classList.remove('resizing');
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+            }}
+        }});
+        
+        // Inject Shared Sidebar JS
+        {sidebar_js}
+    </script>
+    "#, sidebar_html = sidebar_html, sidebar_js = sidebar_js);
+
+    render_base_page("Request Builder", &format!("{}{}{}", style, crate::elements::sidebar::get_css(), content), current_theme)
 }

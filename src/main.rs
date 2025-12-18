@@ -12,6 +12,7 @@ mod inspector;  // NEW: Module for Formatter Tools
 mod signaling;  // NEW: P2P Signaling
 mod manage_connections; // NEW: Connection UI
 
+
 use actix_files::Files;
 use actix_web::{
     get, 
@@ -146,7 +147,7 @@ async fn main() -> std::io::Result<()> {
         saved_themes: Mutex::new(saved_themes),
 
         // SQL service state
-        connections: Mutex::new(Vec::new()),
+        connections: Mutex::new(None),
         last_results: Mutex::new(Vec::new()),
         
         // P2P State
@@ -203,6 +204,7 @@ async fn main() -> std::io::Result<()> {
             .service(sql::sql_view)
             .service(sql::sql_save) 
             .service(sql::sql_delete) 
+            .service(sql::sql_schema_json) 
             .service(Files::new("/static", "./static").prefer_utf8(true))
             .service(add_shortcut)      
             .service(delete_shortcut)   

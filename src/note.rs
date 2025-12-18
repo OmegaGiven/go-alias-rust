@@ -326,13 +326,13 @@ fn render_note_page(notes: &[Note], current_theme: &Theme) -> String {
             format!(
                 r#"
                 <li class="saved-note-item">
-                    <form method="POST" action="/note/delete" class="delete-form">
-                        <input type="hidden" name="note_index" value="{index}">
-                        <button type="submit" class="delete-button" title="Delete this note">x</button>
-                    </form>
                     <span class="saved-note" data-index="{index}" data-subject="{subject}" data-content="{content}">
                         {subject_escaped}
                     </span>
+                    <form method="POST" action="/note/delete" class="delete-form">
+                        <input type="hidden" name="note_index" value="{index}">
+                        <button type="submit" class="delete-button" title="Delete this note">×</button>
+                    </form>
                 </li>
                 "#,
                 index = index,
@@ -344,40 +344,67 @@ fn render_note_page(notes: &[Note], current_theme: &Theme) -> String {
         .collect::<Vec<_>>()
         .join("\n");
 
+    let sidebar_content = format!(r#"
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('db')">Saved Notes</div>
+            <div class="tab" onclick="switchTab('fs')">Files</div>
+        </div>
+        
+        <!-- Database Tab -->
+        <div id="tab-db" class="sidebar-content active">
+            <div class="sidebar-search"><input type="text" id="note-search-input" placeholder="Search notes..."></div>
+            <ul id="saved-notes-list" style="list-style: none; padding: 0;">
+                {saved_notes_list}
+            </ul>
+        </div>
+
+        <!-- File System Tab -->
+        <div id="tab-fs" class="sidebar-content">
+            <div class="fs-controls">
+                <button class="utility-btn" onclick="loadDir('/')" title="Go to System Root">/</button>
+                <button class="utility-btn" onclick="goUp()" title="Up Directory">Up</button> 
+                <label><input type="checkbox" id="show-hidden-check" onchange="reloadDir()"> Hidden</label>
+                <button class="utility-btn" onclick="addBookmark()" title="Bookmark Current Path" style="margin-left: auto;">★</button>
+            </div>
+            
+            <input type="text" id="fs-path-input" class="fs-path-input" value="." onkeypress="if(event.key === 'Enter') loadDir(this.value)">
+            <input type="text" id="fs-search-input" class="fs-path-input" placeholder="Search files in current dir..." onkeypress="if(event.key === 'Enter') searchFs(this.value)">
+
+            <!-- Bookmarks Section -->
+            <div id="bookmarks-section" style="border-bottom: 1px solid var(--border-color); padding-bottom: 5px; margin-bottom: 5px; display:none;">
+                <div style="font-size:0.8em; font-weight:bold; color:#888; margin-bottom:2px;">BOOKMARKS</div>
+                <div id="bookmarks-list"></div>
+            </div>
+
+            <div id="file-list" style="margin-top: 5px;"></div>
+        </div>
+    "#, saved_notes_list = saved_notes_list);
+    
+    let sidebar_html = crate::elements::sidebar::render(&sidebar_content);
+    let sidebar_js = crate::elements::sidebar::get_js();
+
     let page_styles = r#"
 <style>
     .note-view-container { display: flex; height: calc(100vh - 60px); position: relative; overflow: hidden; }
     
-    /* Sidebar Styles */
-    #sidebar { 
-        width: 250px; 
-        min-width: 0; 
-        background: var(--secondary-bg); 
-        color: var(--text-color); 
-        display: flex;
-        flex-direction: column;
-        border-right: 1px solid var(--border-color);
-        flex-shrink: 0;
-    }
-    #sidebar.collapsed { width: 0 !important; overflow: hidden; border-right: none; }
-
-    .sidebar-tabs { display: flex; border-bottom: 1px solid var(--border-color); flex-shrink: 0; }
-    .sidebar-tab { flex: 1; padding: 10px; text-align: center; cursor: pointer; background: var(--secondary-bg); color: var(--text-color); font-size: 0.9em; font-weight: bold; opacity: 0.7; }
-    .sidebar-tab:hover { opacity: 1; background: var(--tertiary-bg); }
+    /* Sidebar Tabs removed - now using shared .tabs class */
     .sidebar-tab.active { border-bottom: 2px solid var(--link-color); opacity: 1; background: var(--tertiary-bg); }
 
     .sidebar-content { flex: 1; overflow-y: auto; padding: 5px; display: none; }
     .sidebar-content.active { display: block; }
     
-    .sidebar-search input { width: 100%; padding: 4px; margin-bottom: 5px; box-sizing: border-box; border: 1px solid var(--border-color); background: var(--primary-bg); color: var(--text-color); border-radius: 4px; font-size: 0.9em; }
+    /* Sidebar search style removed - now in static/style.css */
 
     /* Saved Notes Styles */
-    .saved-note-item { display: flex; align-items: center; margin-bottom: 1px; background-color: var(--tertiary-bg); border-radius: 4px; padding: 2px; }
-    .saved-note-item:hover { background-color: var(--border-color); }
-    .saved-note { cursor: pointer; font-weight: bold; transition: color 0.2s; flex-grow: 1; display: block; margin-left: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .saved-note-item { display: flex; align-items: center; justify-content: space-between; background-color: transparent; padding: 2px 5px; cursor: pointer; transition: background 0.2s; }
+    .saved-note-item:hover { background-color: var(--tertiary-bg); }
+    .saved-note-item.selected { background-color: var(--tertiary-bg); border-left: 3px solid var(--link-color); padding-left: 2px; }
+    
+    .saved-note { flex-grow: 1; min-width: 0; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-color); font-size: 0.95em; }
     .saved-note:hover { color: var(--link-hover); }
-    .delete-form { margin: 0; display: inline-flex; align-items: center; }
-    .delete-button { background: none; border: none; cursor: pointer; color: var(--text-color); padding: 0 5px; font-size: 0.9em; opacity: 0.6; }
+    
+    .delete-form { margin: 0; display: flex; align-items: center; margin-left: 5px; }
+    .delete-button { background: none; border: none; cursor: pointer; color: var(--text-color); padding: 0 4px; font-size: 1.2em; opacity: 0.3; line-height: 1; }
     .delete-button:hover { color: #ff6b6b; opacity: 1; }
 
     /* File System Styles */
@@ -411,27 +438,14 @@ fn render_note_page(notes: &[Note], current_theme: &Theme) -> String {
     .bookmark-del { margin-left: 5px; opacity: 0.5; font-weight: bold; }
     .bookmark-del:hover { opacity: 1; color: #ff6b6b; }
 
-    /* Resizer */
-    #sidebar-resizer {
-        width: 6px;
-        background-color: var(--tertiary-bg);
-        border-right: 1px solid var(--border-color);
-        cursor: col-resize;
-        flex-shrink: 0;
-        z-index: 100;
-        transition: background-color 0.2s;
-    }
-    #sidebar-resizer:hover, #sidebar-resizer.resizing { background-color: var(--link-hover); }
-
     /* Main Content */
-    #main { flex: 1; display: flex; flex-direction: column; padding: 10px; overflow: hidden; background-color: var(--primary-bg); }
+    #main { flex: 1; display: flex; flex-direction: column; padding: 0; overflow: hidden; background-color: var(--primary-bg); }
     
     /* Editor Toolbar */
-    .toolbar { display: flex; gap: 5px; margin-bottom: 5px; align-items: center; flex-wrap: wrap; flex-shrink: 0; }
-    .subject-input { flex-grow: 1; padding: 5px 8px; border: 1px solid var(--border-color); background-color: var(--secondary-bg); color: var(--text-color); border-radius: 4px; height: 28px; }
-    .utility-btn, .save-db-btn { background-color: var(--tertiary-bg); border: 1px solid var(--border-color); padding: 5px 10px; font-size: 0.9em; border-radius: 4px; height: 28px; cursor: pointer; color: var(--text-color); }
+    .toolbar { display: flex; gap: 5px; padding: 5px; border-bottom: 1px solid var(--border-color); margin-bottom: 0; align-items: center; flex-wrap: wrap; flex-shrink: 0; background: var(--secondary-bg); }
+    .subject-input { flex-grow: 1; padding: 5px 0px; border: 1px solid var(--border-color); background-color: var(--secondary-bg); color: var(--text-color); border-radius: 4px; height: 25px; }
+    .utility-btn, .save-db-btn { font-weight: bold; }
     .utility-btn:hover, .save-db-btn:hover { background-color: var(--link-hover); color: white; border-color: var(--link-hover); }
-    .save-db-btn { font-weight: bold; }
     
     .editor-wrapper { display: flex; flex-direction: column; flex-grow: 1; border: 1px solid var(--border-color); border-radius: 4px; overflow: hidden; min-height: 0; }
     .editor-container { display: flex; flex-grow: 1; overflow: hidden; min-height: 0; }
@@ -521,44 +535,8 @@ fn render_note_page(notes: &[Note], current_theme: &Theme) -> String {
 
     let body_content = format!(r#"
     <div class="note-view-container">
-        <div id="sidebar">
-            <div class="sidebar-tabs">
-                <div class="sidebar-tab active" onclick="switchTab('db')">Saved Notes</div>
-                <div class="sidebar-tab" onclick="switchTab('fs')">Files</div>
-            </div>
-            
-            <!-- Database Tab -->
-            <div id="tab-db" class="sidebar-content active">
-                <div class="sidebar-search"><input type="text" id="note-search-input" placeholder="Search notes..."></div>
-                <ul id="saved-notes-list" style="list-style: none; padding: 0;">
-                    {saved_notes_list}
-                </ul>
-            </div>
-
-            <!-- File System Tab -->
-            <div id="tab-fs" class="sidebar-content">
-                <div class="fs-controls">
-                    <button class="utility-btn" onclick="loadDir('/')" title="Go to System Root">/</button>
-                    <button class="utility-btn" onclick="goUp()" title="Up Directory">Up</button> 
-                    <label><input type="checkbox" id="show-hidden-check" onchange="reloadDir()"> Hidden</label>
-                    <button class="utility-btn" onclick="addBookmark()" title="Bookmark Current Path" style="margin-left: auto;">★</button>
-                </div>
-                
-                <input type="text" id="fs-path-input" class="fs-path-input" value="." onkeypress="if(event.key === 'Enter') loadDir(this.value)">
-                <input type="text" id="fs-search-input" class="fs-path-input" placeholder="Search files in current dir..." onkeypress="if(event.key === 'Enter') searchFs(this.value)">
-
-                <!-- Bookmarks Section -->
-                <div id="bookmarks-section" style="border-bottom: 1px solid var(--border-color); padding-bottom: 5px; margin-bottom: 5px; display:none;">
-                    <div style="font-size:0.8em; font-weight:bold; color:#888; margin-bottom:2px;">BOOKMARKS</div>
-                    <div id="bookmarks-list"></div>
-                </div>
-
-                <div id="file-list" style="margin-top: 5px;"></div>
-            </div>
-        </div>
+        {sidebar_html}
         
-        <div id="sidebar-resizer" title="Drag to resize, Click to toggle"></div>
-
         <div id="main">
             <form id="note-form" method="POST" action="/note" style="display: flex; flex-direction: column; height: 100%;">
                 <div class="toolbar">
@@ -583,14 +561,14 @@ fn render_note_page(notes: &[Note], current_theme: &Theme) -> String {
                         <option value="go">Go</option>
                     </select>
 
-                    <button type="button" class="utility-btn" onclick="newNote()" title="Create New Note">New</button>
+                    <button type="button" class="btn-small utility-btn" onclick="newNote()" title="Create New Note">New</button>
                     <!-- Save button moved here -->
-                    <button type="button" id="save-btn" class="save-db-btn" onclick="handleSave()">Save Note</button>
+                    <button type="button" id="save-btn" class="btn-small save-db-btn" onclick="handleSave()">Save Note</button>
 
-                    <button type="button" id="toggle-preview-btn" class="utility-btn">Preview</button>
-                    <button type="button" id="download-btn" class="utility-btn">Export</button>
-                    <button type="button" id="email-btn" class="utility-btn">Email</button>
-                    <button type="button" id="open-file-btn" class="utility-btn">Open</button>
+                    <button type="button" id="toggle-preview-btn" class="btn-small utility-btn">Preview</button>
+                    <button type="button" id="download-btn" class="btn-small utility-btn">Export</button>
+                    <button type="button" id="email-btn" class="btn-small utility-btn">Email</button>
+                    <button type="button" id="open-file-btn" class="btn-small utility-btn">Open</button>
                 </div>
 
                 <div class="editor-wrapper" id="editor-wrapper">
@@ -608,63 +586,6 @@ fn render_note_page(notes: &[Note], current_theme: &Theme) -> String {
     </div>
 
     <script>
-        // Sidebar Resizing Logic
-        const sidebar = document.getElementById('sidebar');
-        const resizer = document.getElementById('sidebar-resizer');
-        let isResizing = false;
-        let lastDownX = 0;
-        let savedSidebarWidth = 250;
-
-        resizer.addEventListener('mousedown', (e) => {{
-            isResizing = true;
-            lastDownX = e.clientX;
-            resizer.classList.add('resizing');
-            document.body.style.cursor = 'col-resize';
-            document.body.style.userSelect = 'none';
-        }});
-
-        document.addEventListener('mousemove', (e) => {{
-            if (!isResizing) return;
-            let newWidth = e.clientX;
-            if (newWidth < 0) newWidth = 0;
-            if (newWidth > 600) newWidth = 600;
-            
-            sidebar.style.width = newWidth + 'px';
-            
-            if (newWidth === 0) {{
-                sidebar.classList.add('collapsed');
-            }} else {{
-                sidebar.classList.remove('collapsed');
-            }}
-        }});
-
-        document.addEventListener('mouseup', (e) => {{
-            if (!isResizing) return;
-            isResizing = false;
-            resizer.classList.remove('resizing');
-            document.body.style.cursor = '';
-            document.body.style.userSelect = '';
-            
-            // Click detection (moved less than 5px)
-            if (Math.abs(e.clientX - lastDownX) < 5) {{
-                toggleSidebar();
-            }} else {{
-                if (sidebar.offsetWidth > 0) {{
-                    savedSidebarWidth = sidebar.offsetWidth;
-                }}
-            }}
-        }});
-
-        function toggleSidebar() {{
-            if (sidebar.offsetWidth === 0 || sidebar.classList.contains('collapsed')) {{
-                sidebar.classList.remove('collapsed');
-                sidebar.style.width = (savedSidebarWidth || 250) + 'px';
-            }} else {{
-                savedSidebarWidth = sidebar.offsetWidth;
-                sidebar.classList.add('collapsed');
-                sidebar.style.width = '0px';
-            }}
-        }}
 
         // Tabs Logic
         function switchTab(tabName) {{
@@ -1089,29 +1010,40 @@ fn render_note_page(notes: &[Note], current_theme: &Theme) -> String {
 
         // Saved Note Selection
         savedNotesList.addEventListener('click', (event) => {{
-            const span = event.target.closest('.saved-note');
-            if (span) {{
-                const subject = span.getAttribute('data-subject');
-                const content = span.getAttribute('data-content');
-                subjectInput.value = subject;
-                textarea.value = content;
-                currentFilePath = null; // Clear path for DB notes
-                languageSelect.value = 'markdown'; 
-                updateLineNumbers();
-                updateHighlighting();
-                saveButton.textContent = "Update Note: " + subject;
-                if (isPreview) updatePreview();
-                else subjectInput.focus();
+            const li = event.target.closest('.saved-note-item');
+            if (li) {{
+                 // Handle selection visual
+                 document.querySelectorAll('.saved-note-item').forEach(el => el.classList.remove('selected'));
+                 li.classList.add('selected');
+
+                const span = li.querySelector('.saved-note');
+                if (span) {{
+                    const subject = span.getAttribute('data-subject');
+                    const content = span.getAttribute('data-content');
+                    subjectInput.value = subject;
+                    textarea.value = content;
+                    currentFilePath = null; // Clear path for DB notes
+                    languageSelect.value = 'markdown'; 
+                    updateLineNumbers();
+                    updateHighlighting();
+                    saveButton.textContent = "Update Note: " + subject;
+                    if (isPreview) updatePreview();
+                    else subjectInput.focus();
+                }}
             }}
         }});
         
         // Initial setup
         updateLineNumbers();
         updateHighlighting();
+        
+        // Inject Shared Sidebar JS
+        {sidebar_js}
     </script>
     "#, 
-    saved_notes_list = saved_notes_list
+    sidebar_html = sidebar_html,
+    sidebar_js = sidebar_js
     );
 
-    render_base_page("Quick Notes", &format!("{}{}", page_styles, body_content), current_theme)
+    render_base_page("Quick Notes", &format!("{}{}{}", page_styles, crate::elements::sidebar::get_css(), body_content), current_theme)
 }

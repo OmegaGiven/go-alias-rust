@@ -233,13 +233,13 @@ fn render_connection_list(conns: &[DbConnection], current_theme: &crate::app_sta
 
 #[get("/sql")]
 pub async fn sql_get(state: web::Data<Arc<AppState>>) -> impl Responder {
-    {
-        let mut conns = state.connections.lock().unwrap();
-        if conns.is_empty() {
-            *conns = load_and_decrypt();
+    let conns = {
+        let mut conns_opt = state.connections.lock().unwrap();
+        if conns_opt.is_none() {
+            *conns_opt = Some(load_and_decrypt());
         }
-    }
-    let conns = state.connections.lock().unwrap().clone();
+        conns_opt.clone().unwrap()
+    };
     let current_theme = state.current_theme.lock().unwrap();
 
     HttpResponse::Ok()
@@ -258,13 +258,18 @@ pub async fn sql_add(form: web::Form<AddConnForm>, state: web::Data<Arc<AppState
         nickname: form.nickname.clone(),
     };
     {
-        let mut conns = state.connections.lock().unwrap();
+        let mut conns_opt = state.connections.lock().unwrap();
+        if conns_opt.is_none() {
+            *conns_opt = Some(load_and_decrypt());
+        }
+        let conns = conns_opt.as_mut().unwrap();
+
         if let Some(idx) = conns.iter().position(|c| c.nickname == new_conn.nickname) {
             conns[idx] = new_conn;
         } else {
             conns.push(new_conn);
         }
-        if let Err(e) = encrypt_and_save(&conns) {
+        if let Err(e) = encrypt_and_save(conns) {
             eprintln!("Failed to save encrypted connections: {e}");
         }
     }
@@ -342,8 +347,12 @@ pub async fn sql_run(form: web::Json<SqlForm>, state: web::Data<Arc<AppState>>) 
     use std::convert::TryInto; 
 
     let conn_opt = {
-        let conns = state.connections.lock().unwrap();
-        find_connection(&form.connection, &conns).cloned()
+        let mut conns_opt = state.connections.lock().unwrap();
+        if conns_opt.is_none() {
+            *conns_opt = Some(load_and_decrypt());
+        }
+        let conns = conns_opt.as_ref().unwrap();
+        find_connection(&form.connection, conns).cloned()
     };
 
     if conn_opt.is_none() {
@@ -621,54 +630,12 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
 <style>
     .sql-view-container { display: flex; height: calc(100vh - 60px); position: relative; overflow: hidden; }
     
-    #sidebar { 
-        width: 250px; 
-        min-width: 0; 
-        background: var(--secondary-bg); 
-        color: var(--text-color); 
-        padding: 5px; 
-        overflow-y: auto; 
-        flex-shrink: 0; 
-        font-size: 0.9em; 
-    }
-    
-    #sidebar.collapsed {
-        width: 0 !important;
-        padding: 0 !important;
-        overflow: hidden;
-    }
-
-    #sidebar-resizer {
-        width: 6px;
-        background-color: var(--tertiary-bg);
-        border-left: 1px solid var(--border-color);
-        border-right: 1px solid var(--border-color);
-        cursor: col-resize;
-        flex-shrink: 0;
-        z-index: 100;
-        transition: background-color 0.2s;
-    }
-    
-    #sidebar-resizer:hover, #sidebar-resizer.resizing {
-        background-color: var(--link-hover);
-    }
-
-    /* Output resizer style */
+    /* Output resizer style using shared class */
     #output-resizer {
-        height: 6px;
-        background-color: var(--tertiary-bg);
-        border-top: 1px solid var(--border-color);
-        border-bottom: 1px solid var(--border-color);
-        cursor: row-resize;
         flex-shrink: 0;
-        z-index: 10;
-        transition: background-color 0.2s;
-    }
-    #output-resizer:hover, #output-resizer.resizing {
-        background-color: var(--link-hover);
     }
 
-    #sidebar h2 { margin: 5px 0 2px 0; padding-bottom: 2px; border-bottom: 1px solid var(--border-color); font-size: 1.1em; white-space: nowrap; overflow: hidden; }
+    /* SQL-specific sidebar content styles */
     #sidebar ul { list-style: none; padding: 0; margin: 0; }
     #sidebar li { padding: 1px 0; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     
@@ -680,7 +647,7 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
     .delete-btn { background: none; border: none; color: #666; font-weight: bold; padding: 0 5px; margin: 0; cursor: pointer; width: 20px; text-align: center; font-size: 1em;}
     .delete-btn:hover { color: #ff3b3b; background: rgba(255,0,0,0.1); border-radius: 3px; }
     
-    .sidebar-search input { width: 100%; padding: 4px; margin-bottom: 5px; box-sizing: border-box; border: 1px solid var(--border-color); background: var(--primary-bg); color: var(--text-color); border-radius: 4px; font-size: 0.9em; }
+    /* Sidebar search style removed - now in static/style.css */
     
     .table-list-item { padding-left: 5px; display: block; color: var(--text-color); text-decoration: none; }
     .table-list-item:hover { color: var(--link-hover); background-color: var(--tertiary-bg); border-radius: 2px;}
@@ -689,9 +656,6 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
     .query-save-form input[type="text"] { width: 100%; padding: 4px; margin-bottom: 5px; box-sizing: border-box; border: 1px solid var(--border-color); background: var(--primary-bg); color: var(--text-color); border-radius: 4px; font-size: 0.9em; }
     .query-save-form button { width: 100%; padding: 4px; cursor: pointer; background: var(--tertiary-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px; font-size: 0.9em;}
     .query-save-form button:hover { background: var(--link-hover); color: #fff; border-color: var(--link-hover); }
-    
-    #toggle-arrow { position: absolute; top: 10px; left: 250px; cursor: pointer; font-size: 14px; user-select: none; background: var(--tertiary-bg); color: var(--text-color); padding: 6px 2px; border-radius: 0 4px 4px 0; transition: left 0.3s, background-color 0.2s; line-height: 1; z-index: 10; border: 1px solid var(--border-color); border-left: none; }
-    #toggle-arrow:hover { background: var(--border-color); }
     
     #main { flex: 1; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
     #sql-form { display: flex; flex-direction: column; flex-grow: 1; height: 100%; }
@@ -757,11 +721,10 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
     .hl-comment { color: #6272a4; }
     
     .action-bar { padding: 2px 5px; background: var(--secondary-bg); border-top: 1px solid var(--border-color); display: flex; gap: 10px; flex-shrink: 0; align-items: center; }
-    .action-bar button { margin: 0; cursor: pointer; padding: 5px 15px; background: var(--tertiary-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px; font-weight: bold; font-size: 0.9em; }
-    .action-bar button:hover { background: var(--link-hover); color: #fff; border-color: var(--link-hover); }
+    .action-bar button { margin: 0; font-weight: bold; }
     
     /* Result Tools (Filter/Export) */
-    .result-tools { padding: 4px 5px; background: var(--secondary-bg); border-bottom: 1px solid var(--border-color); display: flex; gap: 10px; align-items: center; flex-shrink: 0; }
+    .result-tools { padding: 4px 5px; background: var(--secondary-bg); border-bottom: none; display: flex; gap: 10px; align-items: center; flex-shrink: 0; }
     .result-tools input { padding: 3px 6px; border: 1px solid var(--border-color); background: var(--primary-bg); color: var(--text-color); border-radius: 3px; font-size: 0.9em; flex-grow: 1; max-width: 300px;}
     .result-tools label { font-size: 0.85em; color: var(--text-color); display: flex; align-items: center; gap: 3px; cursor: pointer; }
     
@@ -775,7 +738,7 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
         font-family: monospace; 
         font-size: 0.9em; 
     }
-    .output table { width: 100%; border-collapse: collapse; }
+    .output table { width: 100%; border-collapse: collapse; margin: 0; }
     .output th, .output td { border: 1px solid var(--border-color); padding: 4px 8px; text-align: left; white-space: nowrap; user-select: none; }
     .output th { background: var(--tertiary-bg); position: sticky; top: 0; z-index: 1; cursor: pointer; }
     .output tr:nth-child(even) { background-color: rgba(255,255,255,0.02); }
@@ -807,10 +770,11 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
 "###;
 
     // Using r###" to avoid termination on "#" in html
-    let body_content = format!(r###"
-    <div class="sql-view-container">
-      <div id="sidebar">
-        <h2>Tables & Columns</h2>
+    let sidebar_content = format!(r###"
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-color); padding-bottom:2px; margin: 5px 0 2px 0;">
+             <h2 style="margin:0; border:none;">Tables</h2>
+             <button id="refresh-schema-btn" type="button" class="delete-btn" style="width:auto; font-size:1.2em;" title="Refresh Tables">&#x21bb;</button>
+        </div>
         <div class="sidebar-search"><input type="text" id="sidebar-search-input" placeholder="Search tables..."></div>
         <ul id="table-list"></ul>
         
@@ -824,9 +788,14 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
             <input type="hidden" name="connection" value="{nickname}">
             <button type="submit">Save Current Query</button>
         </form>
-      </div>
-      
-      <div id="sidebar-resizer" title="Drag to resize, Click to toggle sidebar"></div>
+    "###, saved_query_list = saved_query_list, nickname = nickname_safe);
+    
+    let sidebar_html = crate::elements::sidebar::render(&sidebar_content);
+    let sidebar_js = crate::elements::sidebar::get_js();
+
+    let body_content = format!(r###"
+    <div class="sql-view-container">
+      {sidebar_html}
       
       <div id="main">
         <form id="sql-form">
@@ -846,15 +815,16 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
             <button type="submit">Run Query</button>
             <button type="button" id="clear-editor-btn" style="background-color: var(--tertiary-bg); opacity: 0.8;">Clear</button>
             <button type="button" id="save-sql-file-btn">Save SQL File</button>
-            <a href="/sql/export" target="_blank" title="Download all latest results from server"><button type="button">Export All (Server)</button></a>
           </div>
         </form>
         
-        <div id="output-resizer" title="Drag to resize output"></div>
+        <div id="output-resizer" class="resizer-h" title="Drag to resize"></div>
         <div class="result-tools">
             <input type="text" id="output-filter" placeholder="Filter results...">
+            <span id="row-count" style="font-size: 0.9em; margin: 0 10px; color: var(--text-color);"></span>
             <label><input type="checkbox" id="export-headers" checked> Headers</label>
-            <button type="button" id="export-client-btn" class="add-var-btn" style="width:auto;">Export Selected CSV</button>
+            <button type="button" id="export-client-btn" class="add-var-btn" style="width:auto;">Export Select CSV</button>
+            <a href="/sql/export" target="_blank" title="Download all latest results from server" style="text-decoration:none;"><button type="button" class="add-var-btn" style="width:auto;">Export All</button></a>
         </div>
         <div class="output" id="output"><pre>Click a table name or enter a query and press 'Run Query'.</pre></div>
       </div>
@@ -866,12 +836,6 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
     <script>
       const dbSchema = {table_schema_json};
       
-      const sidebar = document.getElementById('sidebar');
-      const resizer = document.getElementById('sidebar-resizer');
-      let isResizing = false;
-      let lastDownX = 0;
-      let savedSidebarWidth = 250;
-
       const mainContent = document.getElementById('main');
       const editor = document.getElementById('sql-editor');
       const sidebarSearchInput = document.getElementById('sidebar-search-input');
@@ -918,69 +882,6 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
           link.click();
           URL.revokeObjectURL(link.href);
       }});
-
-      const toggleArrow = document.getElementById('toggle-arrow');
-      if(toggleArrow) {{
-          toggleArrow.addEventListener('click', () => {{
-            if (!sidebar.classList.contains('collapsed')) {{
-              sidebar.classList.add('collapsed');
-              sidebar.style.width = '';
-            }} else {{
-              sidebar.classList.remove('collapsed');
-              sidebar.style.width = savedSidebarWidth + 'px';
-            }}
-          }});
-      }}
-
-      resizer.addEventListener('mousedown', (e) => {{
-          isResizing = true;
-          lastDownX = e.clientX;
-          resizer.classList.add('resizing');
-          document.body.style.cursor = 'col-resize';
-          document.body.style.userSelect = 'none'; 
-      }});
-
-      document.addEventListener('mousemove', (e) => {{
-          if (!isResizing) return;
-          let newWidth = e.clientX;
-          if (newWidth < 10) newWidth = 0;
-          if (newWidth > 600) newWidth = 600;
-          
-          if (newWidth === 0) {{
-             sidebar.classList.add('collapsed');
-             sidebar.style.width = '';
-          }} else {{
-             sidebar.classList.remove('collapsed');
-             sidebar.style.width = newWidth + 'px';
-          }}
-      }});
-
-      document.addEventListener('mouseup', (e) => {{
-          if (!isResizing) return;
-          isResizing = false;
-          resizer.classList.remove('resizing');
-          document.body.style.cursor = '';
-          document.body.style.userSelect = '';
-          
-          if (Math.abs(e.clientX - lastDownX) < 5) {{
-              toggleSidebar();
-          }} else {{
-              if (sidebar.offsetWidth > 0) {{
-                  savedSidebarWidth = sidebar.offsetWidth;
-              }}
-          }}
-      }});
-
-      function toggleSidebar() {{
-          if (sidebar.offsetWidth === 0 || sidebar.classList.contains('collapsed')) {{
-              sidebar.classList.remove('collapsed');
-              sidebar.style.width = savedSidebarWidth + 'px';
-          }} else {{
-              savedSidebarWidth = sidebar.offsetWidth;
-              sidebar.classList.add('collapsed');
-              sidebar.style.width = '';
-          }}
-      }}
       
       const outputResizer = document.getElementById('output-resizer');
       const outputPane = document.getElementById('output');
@@ -1031,7 +932,7 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
                   a.textContent = tableName;
                   a.href = '#';
                   a.title = "Click to SELECT * LIMIT 100";
-                  a.onclick = (e) => {{ e.preventDefault(); editor.value = "SELECT * FROM \\\"" + tableName + "\\\" LIMIT 100;"; handleInput(); }};
+                  a.onclick = (e) => {{ e.preventDefault(); editor.value = "SELECT * FROM " + tableName + " LIMIT 100;"; handleInput(); }};
                   li.appendChild(a);
                   sidebarTableList.appendChild(li);
               }}
@@ -1039,6 +940,31 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
       }}
       renderTableList();
       sidebarSearchInput.addEventListener('keyup', renderTableList);
+
+      const refreshBtn = document.getElementById('refresh-schema-btn');
+      refreshBtn.addEventListener('click', refreshSchema);
+
+      async function refreshSchema() {{
+          refreshBtn.style.animation = "spin 1s linear infinite";
+          try {{
+              const resp = await fetch('/sql/' + connectionNickname + '/schema-json');
+              if (resp.ok) {{
+                  dbSchema = await resp.json();
+                  renderTableList();
+              }} else {{
+                  console.error("Failed to refresh schema");
+              }}
+          }} catch(e) {{
+              console.error(e);
+          }} finally {{
+              refreshBtn.style.animation = "none";
+          }}
+      }}
+      
+      // Inject spin animation
+      const styleSheet = document.createElement("style");
+      styleSheet.innerText = `@keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}`;
+      document.head.appendChild(styleSheet);
 
       function filterSavedQueries() {{
           const filter = querySearchInput.value.toUpperCase();
@@ -1081,7 +1007,22 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
             output.innerHTML = html;
             
             const table = output.querySelector('table');
-            if(table) makeTableInteractable(table);
+            if(table) {{
+                makeTableInteractable(table);
+                // UPDATE ROW COUNT
+                const rows = table.querySelectorAll('tbody tr');
+                const countSpan = document.getElementById('row-count');
+                if(countSpan) countSpan.innerText = rows.length + " rows";
+            }}
+
+            // AUTO-REFRESH SCHEMA on DDL
+            const upperSql = payload.sql.toUpperCase();
+            if (upperSql.includes("CREATE TABLE") || 
+                upperSql.includes("DROP TABLE") || 
+                upperSql.includes("ALTER TABLE")) {{
+                refreshSchema();
+            }}
+
         }} catch(e) {{
             output.innerHTML = '<pre style="padding:10px; color:#ff6b6b;">Error: ' + e.message + '</pre>';
         }}
@@ -1143,10 +1084,19 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
           if(!table) return;
           const rows = table.querySelectorAll('tbody tr');
           
+          let visibleCount = 0;
           rows.forEach(row => {{
               const text = row.innerText.toLowerCase();
-              row.style.display = text.includes(term) ? '' : 'none';
+              if (text.includes(term)) {{
+                  row.style.display = '';
+                  visibleCount++;
+              }} else {{
+                  row.style.display = 'none';
+              }}
           }});
+          
+          const countSpan = document.getElementById('row-count');
+          if(countSpan) countSpan.innerText = visibleCount + " rows";
       }});
 
       function makeTableInteractable(table) {{
@@ -1504,12 +1454,15 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
       }}
 
       if (editor.value === "") {{ editor.value = "SELECT 1;"; handleInput(); }}
+      
+      // Inject Shared Sidebar JS
+      {sidebar_js}
     </script>
-    "###, nickname = nickname_safe, table_schema_json = table_schema_json, saved_query_list = saved_query_list);
+    "###, nickname = nickname_safe, table_schema_json = table_schema_json, sidebar_html = sidebar_html, sidebar_js = sidebar_js);
 
     render_base_page(
         &format!("SQL View: {}", nickname),
-        &format!("{}{}", page_styles, body_content),
+        &format!("{}{}{}", page_styles, crate::elements::sidebar::get_css(), body_content),
         current_theme
     )
 }
@@ -1521,7 +1474,11 @@ pub async fn sql_view(path: web::Path<String>, state: web::Data<Arc<AppState>>) 
 
     let nickname = path.into_inner();
     let conn_opt = {
-        let conns = state.connections.lock().unwrap();
+        let mut conns_opt = state.connections.lock().unwrap();
+        if conns_opt.is_none() {
+            *conns_opt = Some(load_and_decrypt());
+        }
+        let conns = conns_opt.as_ref().unwrap();
         conns.iter().find(|c| c.nickname == nickname).cloned()
     };
     let conn = match conn_opt {
@@ -1533,35 +1490,74 @@ pub async fn sql_view(path: web::Path<String>, state: web::Data<Arc<AppState>>) 
         }
     };
 
-    let mut schema_map: HashMap<String, Vec<String>> = HashMap::new();
+    let schema_map = match fetch_schema_map(&conn).await {
+        Ok(map) => map,
+        Err(e) => {
+             // Just log error and return empty map for view, or handle differently
+             eprintln!("Schema fetch error: {}", e);
+             HashMap::new()
+        }
+    };
 
-    if conn.db_type == "sqlite" {
+    let schema_json = serde_json::to_string(&schema_map).unwrap_or_else(|_| "{}".to_string());
+        
+    let current_theme = state.current_theme.lock().unwrap();
+    HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .body(render_query_view(&nickname, &schema_json, &current_theme))
+}
+
+#[get("/sql/{nickname}/schema-json")]
+pub async fn sql_schema_json(path: web::Path<String>, state: web::Data<Arc<AppState>>) -> impl Responder {
+    use sqlx::{Row, postgres::PgPoolOptions};
+    
+    let nickname = path.into_inner();
+    let conn_opt = {
+        let mut conns_opt = state.connections.lock().unwrap();
+        if conns_opt.is_none() {
+            *conns_opt = Some(load_and_decrypt());
+        }
+        let conns = conns_opt.as_ref().unwrap();
+        conns.iter().find(|c| c.nickname == nickname).cloned()
+    };
+    
+    let conn = match conn_opt {
+        Some(c) => c,
+        None => return HttpResponse::NotFound().json("Connection not found"),
+    };
+
+    match fetch_schema_map(&conn).await {
+        Ok(map) => HttpResponse::Ok().json(map),
+        Err(e) => HttpResponse::InternalServerError().json(format!("Error: {}", e)),
+    }
+}
+
+async fn fetch_schema_map(conn: &DbConnection) -> Result<HashMap<String, Vec<String>>, String> {
+     use sqlx::{Row, postgres::PgPoolOptions};
+     let mut schema_map: HashMap<String, Vec<String>> = HashMap::new();
+
+     if conn.db_type == "sqlite" {
         // SQLite Schema Fetching
         let dsn = format!("sqlite:{}?mode=rwc", conn.host);
-        let pool = match SqlitePoolOptions::new().max_connections(1).connect(&dsn).await {
-            Ok(p) => p,
-            Err(e) => {
-                let current_theme = state.current_theme.lock().unwrap();
-                let error = format!("SQLite Connect Error: {}", e);
-                return HttpResponse::InternalServerError().body(render_base_page("Error", &error, &current_theme));
-            }
-        };
+        let pool = SqlitePoolOptions::new().max_connections(1).connect(&dsn).await
+            .map_err(|e| format!("SQLite Connect Error: {}", e))?;
 
         // 1. Get Tables
         let table_query = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'";
-        if let Ok(rows) = sqlx::query(table_query).fetch_all(&pool).await {
-            for row in rows {
-                let table_name: String = row.get("name");
-                schema_map.insert(table_name.clone(), Vec::new());
-                
-                // 2. Get Columns for each table
-                let col_query = format!("PRAGMA table_info(\"{}\")", table_name);
-                if let Ok(cols) = sqlx::query(&col_query).fetch_all(&pool).await {
-                    for col_row in cols {
-                        let col_name: String = col_row.get("name");
-                        if let Some(vec) = schema_map.get_mut(&table_name) {
-                            vec.push(col_name);
-                        }
+        let rows = sqlx::query(table_query).fetch_all(&pool).await
+             .map_err(|e| format!("Failed to fetch tables: {}", e))?;
+             
+        for row in rows {
+            let table_name: String = row.get("name");
+            schema_map.insert(table_name.clone(), Vec::new());
+            
+            // 2. Get Columns for each table
+            let col_query = format!("PRAGMA table_info(\"{}\")", table_name);
+            if let Ok(cols) = sqlx::query(&col_query).fetch_all(&pool).await {
+                for col_row in cols {
+                    let col_name: String = col_row.get("name");
+                    if let Some(vec) = schema_map.get_mut(&table_name) {
+                        vec.push(col_name);
                     }
                 }
             }
@@ -1570,14 +1566,8 @@ pub async fn sql_view(path: web::Path<String>, state: web::Data<Arc<AppState>>) 
     } else {
         // Postgres Schema Fetching
         let dsn = format!("postgres://{}:{}@{}/{}", conn.user, conn.password, conn.host, conn.db_name);
-        let pool = match PgPoolOptions::new().max_connections(5).connect(&dsn).await {
-            Ok(p) => p,
-            Err(e) => {
-                let current_theme = state.current_theme.lock().unwrap();
-                let error_content = format!(r#"<h1>DB Connection Error</h1><pre class="error-message">Could not connect to {nickname}: {e}</pre>"#, nickname = htmlescape::encode_minimal(&nickname), e = htmlescape::encode_minimal(&e.to_string()));
-                return HttpResponse::InternalServerError().body(render_base_page("Connection Error", &error_content, &current_theme));
-            }
-        };
+        let pool = PgPoolOptions::new().max_connections(5).connect(&dsn).await
+            .map_err(|e| format!("Postgres Connect Error: {}", e))?;
 
         let schema_query = r#"
             SELECT table_name, column_name 
@@ -1586,19 +1576,15 @@ pub async fn sql_view(path: web::Path<String>, state: web::Data<Arc<AppState>>) 
             ORDER BY table_name, ordinal_position
         "#;
 
-        if let Ok(rows) = sqlx::query(schema_query).fetch_all(&pool).await {
-            for row in rows {
-                let table: String = row.get("table_name");
-                let col: String = row.get("column_name");
-                schema_map.entry(table).or_default().push(col);
-            }
+        let rows = sqlx::query(schema_query).fetch_all(&pool).await
+            .map_err(|e| format!("Failed to fetch schema: {}", e))?;
+            
+        for row in rows {
+            let table: String = row.get("table_name");
+            let col: String = row.get("column_name");
+            schema_map.entry(table).or_default().push(col);
         }
     }
-
-    let schema_json = serde_json::to_string(&schema_map).unwrap_or_else(|_| "{}".to_string());
-        
-    let current_theme = state.current_theme.lock().unwrap();
-    HttpResponse::Ok()
-        .content_type("text/html; charset=utf-8")
-        .body(render_query_view(&nickname, &schema_json, &current_theme))
+    
+    Ok(schema_map)
 }

@@ -20,14 +20,13 @@ fn render_connection_page(current_theme: &Theme) -> String {
     
     .room-display { font-family: monospace; font-size: 1.5em; background: var(--tertiary-bg); padding: 15px; text-align: center; border-radius: 4px; margin: 15px 0; letter-spacing: 2px; border: 1px dashed var(--link-color); word-break: break-all;}
     
+    /* btn removed - now using shared .btn class if defined, or btn-secondary from static/style.css */
     .btn { padding: 10px 20px; background: var(--link-color); color: #fff; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 1em; }
     .btn:hover { opacity: 0.9; }
-    .btn-secondary { background: var(--tertiary-bg); border: 1px solid var(--border-color); color: var(--text-color); }
+    /* btn-secondary removed - now in static/style.css */
     .btn-action { font-size: 0.9em; padding: 5px 10px; }
     
-    .input-group { display: flex; gap: 10px; margin-bottom: 15px; flex-direction: column; }
-    .input-group label { font-weight: bold; color: #888; font-size: 0.9em; }
-    .input-group input { padding: 10px; background: var(--primary-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px; font-size: 1.1em; }
+    /* input-group removed - now using .form-group from static/style.css */
     
     .perm-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
     .perm-table th, .perm-table td { text-align: left; padding: 10px; border-bottom: 1px solid var(--border-color); }
@@ -128,11 +127,11 @@ fn render_connection_page(current_theme: &Theme) -> String {
         <div class="panel" id="join-panel">
             <h2>Join a Session</h2>
             <p>Enter the Room ID and Encryption Key provided by the host.</p>
-            <div class="input-group">
+            <div class="form-group">
                 <label>Room ID</label>
                 <input type="text" id="join-code" placeholder="Enter Invite Code">
             </div>
-            <div class="input-group">
+            <div class="form-group">
                 <label>Encryption Key</label>
                 <input type="password" id="join-key" placeholder="Enter Secret Key">
                 <div class="security-note">This key is used to encrypt signaling traffic so the server/ISP cannot read it.</div>

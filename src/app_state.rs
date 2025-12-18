@@ -67,7 +67,7 @@ pub struct AppState {
     pub saved_themes: Mutex<HashMap<String, Theme>>, // All available themes
 
     // SQL service state
-    pub connections: Mutex<Vec<DbConnection>>,
+    pub connections: Mutex<Option<Vec<DbConnection>>>,
     pub last_results: Mutex<Vec<HashMap<String, String>>>,
     
     // NEW: P2P Signaling State

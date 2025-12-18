@@ -32,10 +32,10 @@ pub fn render_table(headers: &[String], results: &[Vec<String>]) -> String {
             .collect::<Vec<_>>()
             .join("");
         format!("<tr>{}</tr>", tds)
-    }).collect::<Vec<_>>().join("\n");
+    }).collect::<Vec<_>>().join("");
 
     format!(
-        "<table class=\"grid\"><thead>{}</thead><tbody>{}</tbody></table>",
+        "<table class=\"grid\" style=\"margin: 0;\"><thead>{}</thead><tbody>{}</tbody></table>",
         thead, tbody
     )
 }

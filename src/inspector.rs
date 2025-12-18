@@ -14,152 +14,9 @@ pub async fn inspector_get(state: Data<Arc<AppState>>) -> impl Responder {
 }
 
 fn render_inspector_page(current_theme: &Theme) -> String {
-    let style = r#"
-<style>
-    .inspector-container {
-        display: flex;
-        flex-direction: column;
-        gap: 20px;
-        max-width: 900px;
-        margin: 0 auto;
-        padding: 20px;
-        height: calc(100vh - 100px);
-    }
+    // Note: Inspector CSS is defined in static/style.css (lines 284-425)
+    // All styles are scoped to .inspector-container to avoid conflicts
     
-    /* SCOPED: Only affects elements INSIDE the inspector container */
-    
-    .inspector-container .input-section {
-        background: var(--secondary-bg);
-        padding: 20px;
-        border-radius: 0; 
-        border: 1px solid var(--border-color);
-        display: flex;
-        flex-direction: column;
-        flex-grow: 1;
-        overflow: hidden;
-    }
-    
-    .inspector-container .toolbar {
-        display: flex;
-        gap: 15px;
-        margin-bottom: 10px;
-        align-items: center;
-        flex-wrap: wrap;
-    }
-    
-    .inspector-container .control-row {
-        display: flex;
-        gap: 15px;
-        margin-top: 15px;
-        align-items: end;
-        flex-wrap: wrap;
-        border-top: 1px solid var(--border-color);
-        padding-top: 15px;
-    }
-    
-    .inspector-container .form-group {
-        display: flex;
-        flex-direction: column;
-        gap: 5px;
-    }
-    
-    .inspector-container label { 
-        font-weight: bold; 
-        font-size: 0.9em; 
-        color: var(--text-color); 
-    }
-    
-    .inspector-container input[type="number"], 
-    .inspector-container input[type="file"] {
-        padding: 8px;
-        background: var(--primary-bg);
-        border: 1px solid var(--border-color);
-        color: var(--text-color);
-        border-radius: 0; 
-    }
-    
-    .inspector-container textarea {
-        flex-grow: 1;
-        width: 100%;
-        background: var(--primary-bg);
-        border: 1px solid var(--border-color);
-        color: var(--text-color);
-        border-radius: 0;
-        padding: 10px;
-        font-family: monospace;
-        resize: none;
-        box-sizing: border-box;
-        white-space: pre; 
-        overflow: auto;
-    }
-    
-    /* This specific selector prevents the button styles from hitting the Nav Bar */
-    .inspector-container button {
-        padding: 8px 16px;
-        background: var(--tertiary-bg);
-        color: var(--text-color);
-        border: 1px solid var(--border-color);
-        border-radius: 0; /* Sharp corners for inspector only */
-        cursor: pointer;
-        font-weight: bold;
-    }
-    .inspector-container button:hover { 
-        background: var(--link-hover); 
-        color: #fff; 
-        border-color: var(--link-hover); 
-    }
-    
-    .inspector-container .result-section {
-        background: var(--secondary-bg);
-        padding: 20px;
-        border-radius: 0;
-        border: 1px solid var(--border-color);
-        display: none;
-        flex-shrink: 0;
-    }
-    
-    .inspector-container .context-display {
-        font-family: monospace;
-        background: var(--primary-bg);
-        padding: 15px;
-        border-radius: 0;
-        overflow-x: auto;
-        white-space: pre;
-        margin-bottom: 10px;
-        border: 1px solid var(--border-color);
-        font-size: 1.1em;
-        line-height: 1.5;
-    }
-    
-    .inspector-container .highlight-char {
-        background-color: #ff4444;
-        color: white;
-        font-weight: bold;
-        padding: 2px 4px;
-        border-radius: 0;
-        border: 1px solid #cc0000;
-    }
-    
-    .inspector-container .char-info {
-        display: grid;
-        grid-template-columns: auto 1fr;
-        gap: 10px;
-        font-size: 0.9em;
-        background: var(--tertiary-bg);
-        padding: 10px;
-        border-radius: 0;
-    }
-    .inspector-container .info-label { color: #888; font-weight: bold; text-align: right;}
-    
-    .inspector-container .checkbox-group {
-        display: flex;
-        align-items: center;
-        gap: 5px;
-        font-size: 0.9em;
-    }
-</style>
-    "#;
-
     let content = r#"
     <div class="inspector-container">
         <h1>Line & Column Inspector</h1>
@@ -173,6 +30,9 @@ fn render_inspector_page(current_theme: &Theme) -> String {
                 
                 <div style="flex-grow: 1;"></div>
                 
+                <!-- Format Indicator -->
+                <div id="type-indicator" class="indicator">Text</div>
+
                 <div class="checkbox-group">
                     <input type="checkbox" id="wrap-toggle" onchange="toggleWrap()">
                     <label for="wrap-toggle" style="font-weight: normal; cursor: pointer;">Word Wrap</label>
@@ -181,7 +41,7 @@ fn render_inspector_page(current_theme: &Theme) -> String {
                 <button onclick="formatJSON()">Prettify JSON</button>
             </div>
             
-            <textarea id="content-input" placeholder="Paste JSON, XML, or Text content here..."></textarea>
+            <textarea id="content-input" placeholder="Paste JSON, XML, or Text content here..." oninput="detectContent()"></textarea>
             
             <div class="control-row">
                 <div class="form-group">
@@ -222,6 +82,7 @@ fn render_inspector_page(current_theme: &Theme) -> String {
         const lineInput = document.getElementById('line-num');
         const colInput = document.getElementById('col-num');
         const resultSection = document.getElementById('result-section');
+        const indicator = document.getElementById('type-indicator');
         
         // Handle File Upload
         fileInput.addEventListener('change', (e) => {
@@ -231,9 +92,58 @@ fn render_inspector_page(current_theme: &Theme) -> String {
             const reader = new FileReader();
             reader.onload = (e) => {
                 contentInput.value = e.target.result;
+                detectContent();
             };
             reader.readAsText(file);
         });
+
+        // Detect content type (JSON, XML, or Text)
+        function detectContent() {
+            const text = contentInput.value.trim();
+            
+            if (text.length === 0) {
+                indicator.textContent = "Empty";
+                indicator.className = "indicator";
+                return;
+            }
+            
+            // Check JSON
+            if ((text.startsWith('{') || text.startsWith('[')) && isValidJSON(text)) {
+                indicator.textContent = "Valid JSON";
+                indicator.className = "indicator valid-json";
+                return;
+            }
+            
+            // Check XML
+            if (text.startsWith('<') && isValidXML(text)) {
+                indicator.textContent = "Valid XML";
+                indicator.className = "indicator valid-xml";
+                return;
+            }
+            
+            indicator.textContent = "Plain Text";
+            indicator.className = "indicator";
+        }
+
+        function isValidJSON(text) {
+            try {
+                JSON.parse(text);
+                return true;
+            } catch (e) {
+                return false;
+            }
+        }
+
+        function isValidXML(text) {
+            try {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(text, "application/xml");
+                // DOMParser returns a document with a parsererror tag if invalid
+                return !doc.querySelector("parsererror");
+            } catch (e) {
+                return false;
+            }
+        }
         
         function toggleWrap() {
             if (document.getElementById('wrap-toggle').checked) {
@@ -249,6 +159,7 @@ fn render_inspector_page(current_theme: &Theme) -> String {
                 if (!val) return;
                 const json = JSON.parse(val);
                 contentInput.value = JSON.stringify(json, null, 4);
+                detectContent();
             } catch (e) {
                 alert("Invalid JSON: " + e.message);
             }
@@ -335,5 +246,5 @@ fn render_inspector_page(current_theme: &Theme) -> String {
     </script>
     "#;
 
-    render_base_page("Inspector", &format!("{}{}", style, content), current_theme)
+    render_base_page("Inspector", content, current_theme)
 }

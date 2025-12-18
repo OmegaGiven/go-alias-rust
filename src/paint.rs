@@ -99,16 +99,7 @@ fn render_paint_page(current_theme: &Theme) -> String {
     }
 
     /* Scope button styles specifically to paint-app to fix nav bar issue */
-    .paint-app button {
-        padding: 4px 8px;
-        font-size: 0.9rem;
-        cursor: pointer;
-        background-color: var(--tertiary-bg);
-        color: var(--text-color);
-        border: 1px solid var(--border-color);
-        border-radius: 4px;
-        transition: background-color 0.2s;
-    }
+    /* paint-app button style removed - mostly uses shared .btn-secondary or btn-small now */
     .paint-app button:hover {
         background-color: var(--link-hover);
         color: white;
@@ -135,7 +126,7 @@ fn render_paint_page(current_theme: &Theme) -> String {
                 <input type="number" id="canvas-width" value="800" title="Width">
                 <span style="color:var(--text-color);">x</span>
                 <input type="number" id="canvas-height" value="600" title="Height">
-                <button id="resize-btn" title="Update canvas size (clears if confirmed)">Set</button>
+                <button id="resize-btn" class="btn-small btn-secondary" title="Update canvas size (clears if confirmed)">Set</button>
             </div>
 
             <div class="tool-group">
@@ -146,7 +137,7 @@ fn render_paint_page(current_theme: &Theme) -> String {
             <div class="tool-group">
                 <label for="bg-color">BG:</label>
                 <input type="color" id="bg-color" value="#000000">
-                <button id="fill-btn" title="Fill entire canvas">Fill</button>
+                <button id="fill-btn" class="btn-small btn-secondary" title="Fill entire canvas">Fill</button>
             </div>
             
             <div class="tool-group">
@@ -156,17 +147,17 @@ fn render_paint_page(current_theme: &Theme) -> String {
             </div>
             
             <div class="tool-group">
-                <button id="eraser-btn">Eraser</button>
-                <button id="brush-btn">Brush</button>
+                <button id="eraser-btn" class="btn-small btn-secondary">Eraser</button>
+                <button id="brush-btn" class="btn-small btn-secondary">Brush</button>
             </div>
 
             <div class="tool-group">
-                <button id="clear-btn">Clear</button>
+                <button id="clear-btn" class="btn-small btn-secondary">Clear</button>
             </div>
 
             <div class="tool-group" style="margin-left: auto;">
-                <button id="open-img-btn">📂 Open</button>
-                <button id="download-btn">💾 Save</button>
+                <button id="open-img-btn" class="btn-small btn-secondary">📂 Open</button>
+                <button id="download-btn" class="btn-small btn-secondary">💾 Save</button>
             </div>
         </div>
 

@@ -122,6 +122,7 @@ pub fn nav_bar_html() -> String {
         <a href="/note" class="nav-link-item">Notes</a>
         <a href="/board" class="nav-link-item">Board</a>
         <a href="/paint" class="nav-link-item">Paint</a>
+        <a href="/calculator" class="nav-link-item">Calculator</a>
         <a href="/requests" class="nav-link-item">Requests</a>
         <a href="/inspector" class="nav-link-item">Inspector</a>
         <a href="/connection" class="nav-link-item conn-link">Connection</a>

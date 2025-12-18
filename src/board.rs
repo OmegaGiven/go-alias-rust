@@ -317,20 +317,18 @@ fn render_board_page(current_theme: &Theme) -> String {
     .task-meta { font-size: 0.8em; color: #888; margin-top: 5px; display: flex; flex-wrap: wrap; gap: 5px; }
     .tag { background: var(--link-color); color: var(--primary-bg); padding: 2px 6px; border-radius: 10px; font-size: 0.75em; }
     
-    /* Modal */
+    /* Modal removed - now using static/style.css .modal if applicable, but board's modal is quite specific */
     .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center; }
     .modal.active { display: flex; }
     .modal-content { background: var(--secondary-bg); padding: 20px; border-radius: 8px; width: 500px; max-width: 90%; border: 1px solid var(--border-color); max-height: 90vh; overflow-y: auto; }
     .modal-header { font-size: 1.2em; font-weight: bold; margin-bottom: 15px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; }
-    .form-group { margin-bottom: 15px; }
-    .form-group label { display: block; margin-bottom: 5px; font-weight: bold; }
-    .form-group input, .form-group textarea, .form-group select { width: 100%; padding: 8px; box-sizing: border-box; background: var(--primary-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; }
-    .kv-row { display: flex; gap: 5px; margin-bottom: 5px; }
     
-    .btn { padding: 8px 12px; background: var(--link-color); color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+    /* form-group, kv-row removed - now in static/style.css */
+    
+    .btn { padding: 8px 12px; background: var(--link-color); color: #fff; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;}
     .btn:hover { opacity: 0.9; }
     .btn-danger { background: #f93e3e; }
-    .btn-secondary { background: var(--tertiary-bg); color: var(--text-color); border: 1px solid var(--border-color); }
+    /* btn-secondary removed - now in static/style.css */
     .icon-btn { background: none; border: none; color: var(--text-color); cursor: pointer; padding: 2px; font-size: 1.1em; }
     .icon-btn:hover { color: var(--link-hover); }
 

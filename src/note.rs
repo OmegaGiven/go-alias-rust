@@ -351,7 +351,7 @@ fn render_note_page(notes: &[Note], current_theme: &Theme) -> String {
         </div>
         
         <!-- Database Tab -->
-        <div id="tab-db" class="sidebar-content active">
+        <div id="tab-db" class="tab-content active">
             <div class="sidebar-search"><input type="text" id="note-search-input" placeholder="Search notes..."></div>
             <ul id="saved-notes-list" style="list-style: none; padding: 0;">
                 {saved_notes_list}
@@ -359,7 +359,7 @@ fn render_note_page(notes: &[Note], current_theme: &Theme) -> String {
         </div>
 
         <!-- File System Tab -->
-        <div id="tab-fs" class="sidebar-content">
+        <div id="tab-fs" class="tab-content">
             <div class="fs-controls">
                 <button class="utility-btn" onclick="loadDir('/')" title="Go to System Root">/</button>
                 <button class="utility-btn" onclick="goUp()" title="Up Directory">Up</button> 
@@ -388,10 +388,11 @@ fn render_note_page(notes: &[Note], current_theme: &Theme) -> String {
     .note-view-container { display: flex; height: calc(100vh - 60px); position: relative; overflow: hidden; }
     
     /* Sidebar Tabs removed - now using shared .tabs class */
-    .sidebar-tab.active { border-bottom: 2px solid var(--link-color); opacity: 1; background: var(--tertiary-bg); }
+    /* Sidebar Tabs removed - now using shared .tabs class */
+    .tab.active { border-bottom: 2px solid var(--link-color); opacity: 1; background: var(--tertiary-bg); }
 
-    .sidebar-content { flex: 1; overflow-y: auto; padding: 5px; display: none; }
-    .sidebar-content.active { display: block; }
+    .tab-content { flex: 1; overflow-y: auto; padding: 5px; display: none; }
+    .tab-content.active { display: flex; }
     
     /* Sidebar search style removed - now in static/style.css */
 
@@ -589,14 +590,14 @@ fn render_note_page(notes: &[Note], current_theme: &Theme) -> String {
 
         // Tabs Logic
         function switchTab(tabName) {{
-            document.querySelectorAll('.sidebar-tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.sidebar-content').forEach(c => c.classList.remove('active'));
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
             
             if (tabName === 'db') {{
-                document.querySelector('.sidebar-tab:nth-child(1)').classList.add('active');
+                document.querySelector('.tab:nth-child(1)').classList.add('active');
                 document.getElementById('tab-db').classList.add('active');
             }} else {{
-                document.querySelector('.sidebar-tab:nth-child(2)').classList.add('active');
+                document.querySelector('.tab:nth-child(2)').classList.add('active');
                 document.getElementById('tab-fs').classList.add('active');
                 loadBookmarks();
                 if(document.getElementById('file-list').innerHTML === '') loadDir('.');

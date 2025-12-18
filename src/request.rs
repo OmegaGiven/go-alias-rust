@@ -211,9 +211,9 @@ fn render_request_page(current_theme: &Theme) -> String {
         min-height: 0; 
     }}
     
-    .saved-req-item {{ display: flex; align-items: center; justify-content: space-between; padding: 3px 5px; border-bottom: 1px solid var(--border-color); cursor: pointer; }}
-    .saved-req-item:last-child {{ border-bottom: none; }}
+    .saved-req-item {{ display: flex; align-items: center; justify-content: space-between; padding: 2px 5px; background-color: transparent; cursor: pointer; transition: background 0.2s; }}
     .saved-req-item:hover {{ background-color: var(--tertiary-bg); }}
+    .saved-req-item.selected {{ background-color: var(--tertiary-bg); border-left: 3px solid var(--link-color); padding-left: 2px; }}
 
     .req-method {{ font-size: 0.65em; font-weight: bold; padding: 1px 4px; border-radius: 2px; margin-right: 5px; min-width: 35px; text-align: center; color: #fff; flex-shrink: 0; }}
     .req-method.get {{ background-color: #61affe; }}
@@ -222,7 +222,8 @@ fn render_request_page(current_theme: &Theme) -> String {
     .req-method.delete {{ background-color: #f93e3e; }}
     .req-method.patch {{ background-color: #50e3c2; }}
     
-    .req-link {{ text-decoration: none; color: var(--text-color); flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.9em; min-width: 0; }}
+    .req-link {{ text-decoration: none; color: var(--text-color); flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.9em; min-width: 0; transition: color 0.2s; }}
+    .req-link:hover {{ color: var(--link-hover); }}
     
     /* Shared styles for delete-btn removed - now using .btn-danger-text in static/style.css */
 
@@ -764,6 +765,11 @@ fn render_request_page(current_theme: &Theme) -> String {
             const link = e.target.closest('.req-link');
             if (link) {{
                 e.preventDefault();
+                
+                // Toggle selection class
+                document.querySelectorAll('.saved-req-item').forEach(el => el.classList.remove('selected'));
+                link.closest('.saved-req-item').classList.add('selected');
+
                 methodSelect.value = link.dataset.method;
                 urlInput.value = link.dataset.url;
                 stringToHeadersTable(link.dataset.headers);

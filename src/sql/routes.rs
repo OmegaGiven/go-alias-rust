@@ -1568,7 +1568,6 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
 // Ensure sql_view is pub so it can be exported
 #[get("/sql/{nickname}")]
 pub async fn sql_view(path: web::Path<String>, state: web::Data<Arc<AppState>>) -> impl Responder {
-    use sqlx::{Row, postgres::PgPoolOptions};
 
     let nickname = path.into_inner();
     let conn_opt = {
@@ -1607,7 +1606,6 @@ pub async fn sql_view(path: web::Path<String>, state: web::Data<Arc<AppState>>) 
 
 #[get("/sql/{nickname}/schema-json")]
 pub async fn sql_schema_json(path: web::Path<String>, state: web::Data<Arc<AppState>>) -> impl Responder {
-    use sqlx::{Row, postgres::PgPoolOptions};
     
     let nickname = path.into_inner();
     let conn_opt = {

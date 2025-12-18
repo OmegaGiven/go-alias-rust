@@ -47,10 +47,12 @@ pub struct ReadForm {
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 pub struct SaveFileForm {
     pub path: String,
     pub content: String,
 }
+
 
 #[derive(Deserialize)]
 pub struct SearchForm {

@@ -106,8 +106,6 @@ button:hover {
 ul {
     list-style: none;
     padding: 0 10px;
-    overflow-y: auto;
-    max-height: 30vh;
 }
 
 li {

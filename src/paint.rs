@@ -156,8 +156,8 @@ fn render_paint_page(current_theme: &Theme) -> String {
             </div>
 
             <div class="tool-group" style="margin-left: auto;">
-                <button id="open-img-btn" class="btn-small btn-secondary">📂 Open</button>
-                <button id="download-btn" class="btn-small btn-secondary">💾 Save</button>
+                <button id="open-img-btn" class="btn-small btn-secondary">Open</button>
+                <button id="download-btn" class="btn-small btn-secondary">Save</button>
             </div>
         </div>
 

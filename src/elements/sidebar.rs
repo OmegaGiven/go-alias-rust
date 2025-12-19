@@ -13,10 +13,20 @@ pub fn get_css() -> &'static str {
         flex-shrink: 0;
         height: 100%; 
         box-sizing: border-box;
+        overflow: hidden; /* Prevent sidebar itself from scrolling; content inside handles it */
     }
     #sidebar.collapsed { width: 0 !important; padding: 0; overflow: hidden; border-right: none; }
 
-    #sidebar h2 { margin-top: 0; font-size: 1.1em; border-bottom: 1px solid var(--border-color); padding: 10px; margin-bottom: 0px; flex-shrink: 0; white-space: nowrap; overflow: hidden; }
+    #sidebar h2 { 
+        margin-top: 0; 
+        font-size: 1.1em; 
+        border-bottom: 1px solid var(--border-color); 
+        padding: 10px; 
+        margin-bottom: 0px; 
+        flex-shrink: 0; 
+        white-space: nowrap; 
+        overflow: hidden; 
+    }
 
     #sidebar-resizer {
         width: 8px;
@@ -31,6 +41,18 @@ pub fn get_css() -> &'static str {
     #sidebar-resizer:hover, #sidebar-resizer.resizing {
         background: var(--link-color);
         opacity: 0.8;
+    }
+
+    /* Helper for sidebar sections that should scroll */
+    .sidebar-scroll-area {
+        flex: 1;
+        overflow-y: auto;
+        min-height: 50px; /* Ensure it doesn't vanish entirely */
+        scrollbar-width: thin;
+    }
+    
+    .sidebar-fixed-section {
+        flex-shrink: 0;
     }
 </style>
     "#
@@ -72,7 +94,6 @@ pub fn get_js() -> &'static str {
                 sbResizer.classList.remove('resizing');
                 document.body.style.cursor = '';
                 document.body.style.userSelect = '';
-                // Increased threshold for better click detection (especially when collapsed)
                 if (Math.abs(e.clientX - lastSbDownX) < 10) {
                     if (sidebar.offsetWidth === 0 || sidebar.classList.contains('collapsed')) {
                         sidebar.classList.remove('collapsed');

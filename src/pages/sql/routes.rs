@@ -11,7 +11,6 @@ use crate::pages::sql::{
 // Added ValueRef to fix .is_null() error
 use sqlx::{Row, Column, TypeInfo, postgres::PgPoolOptions, sqlite::SqlitePoolOptions, types::JsonValue, ValueRef}; 
 
-// --- NEW: Saved Query Structures and Persistence ---
 const QUERIES_FILE: &str = "saved_queries.json";
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -53,8 +52,6 @@ fn delete_query(name: &str) -> io::Result<()> {
     }
     Ok(())
 }
-// --- END: Saved Query Structures and Persistence ---
-
 
 fn render_connection_list(conns: &[DbConnection], current_theme: &Theme, saved_themes: &HashMap<String, Theme>) -> String {
     let conn_links = conns.iter()
@@ -80,7 +77,6 @@ fn render_connection_list(conns: &[DbConnection], current_theme: &Theme, saved_t
         <h1>SQL Connection Manager</h1>
         
         <div class="forms-container">
-            <!-- Left: Add Existing -->
             <div class="connection-form-container">
                 <h2>Add Connection</h2>
                 <form method="POST" action="/sql/add" class="connection-form">
@@ -106,7 +102,6 @@ fn render_connection_list(conns: &[DbConnection], current_theme: &Theme, saved_t
                 </form>
             </div>
 
-            <!-- Right: Create New SQLite -->
             <div class="connection-form-container">
                 <h2>Create New SQLite DB</h2>
                 <form method="POST" action="/sql/add" class="connection-form" onsubmit="prepareCreate(event)">
@@ -643,12 +638,10 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
 <style>
     .sql-view-container { display: flex; height: calc(100vh - 60px); position: relative; overflow: hidden; }
     
-    /* Output resizer style using shared class */
     #output-resizer {
         flex-shrink: 0;
     }
 
-    /* SQL-specific sidebar content styles */
     #sidebar ul { list-style: none; padding: 0; margin: 0; }
     #sidebar li { padding: 1px 0; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     
@@ -660,7 +653,6 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
     .delete-btn { background: none; border: none; color: #666; font-weight: bold; padding: 0 5px; margin: 0; cursor: pointer; width: 20px; text-align: center; font-size: 1em;}
     .delete-btn:hover { color: #ff3b3b; background: rgba(255,0,0,0.1); border-radius: 3px; }
     
-    /* Sidebar search style removed - now in static/style.css */
     
     .table-list-item { padding-left: 5px; display: block; color: var(--text-color); text-decoration: none; }
     .table-list-item:hover { color: var(--link-hover); background-color: var(--tertiary-bg); border-radius: 2px;}
@@ -782,25 +774,30 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
 </style>
 "###;
 
-    // Using r###" to avoid termination on "#" in html
     let sidebar_content = format!(r###"
-        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-color); padding-bottom:2px; margin: 5px 0 2px 0;">
-             <h2 style="margin:0; border:none;">Tables</h2>
-             <button id="refresh-schema-btn" type="button" class="delete-btn" style="width:auto; font-size:1.2em;" title="Refresh Tables">&#x21bb;</button>
+        <div class="sidebar-fixed-section">
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-color); padding-bottom:2px; margin: 5px 0 2px 0;">
+                 <h2 style="margin:0; border:none;">Tables</h2>
+                 <button id="refresh-schema-btn" type="button" class="delete-btn" style="width:auto; font-size:1.2em;" title="Refresh Tables">&#x21bb;</button>
+            </div>
+            <div class="sidebar-search"><input type="text" id="sidebar-search-input" placeholder="Search tables..."></div>
         </div>
-        <div class="sidebar-search"><input type="text" id="sidebar-search-input" placeholder="Search tables..."></div>
-        <ul id="table-list"></ul>
+        <ul id="table-list" class="sidebar-scroll-area"></ul>
         
-        <h2 style="margin-top: 15px;">Saved Queries</h2>
-        <div class="sidebar-search"><input type="text" id="query-search-input" placeholder="Search queries..."></div>
-        <ul id="saved-queries-list">{saved_query_list}</ul>
+        <div class="sidebar-fixed-section">
+            <h2 style="margin-top: 15px;">Saved Queries</h2>
+            <div class="sidebar-search"><input type="text" id="query-search-input" placeholder="Search queries..."></div>
+        </div>
+        <ul id="saved-queries-list" class="sidebar-scroll-area">{saved_query_list}</ul>
         
-        <form id="save-query-form" method="POST" action="/sql/save" class="query-save-form">
-            <input type="text" id="query-name" name="query_name" placeholder="Name query to save" required>
-            <input type="hidden" id="query-sql" name="sql">
-            <input type="hidden" name="connection" value="{nickname}">
-            <button type="submit">Save Current Query</button>
-        </form>
+        <div class="sidebar-fixed-section">
+            <form id="save-query-form" method="POST" action="/sql/save" class="query-save-form">
+                <input type="text" id="query-name" name="query_name" placeholder="Name query to save" required>
+                <input type="hidden" id="query-sql" name="sql">
+                <input type="hidden" name="connection" value="{nickname}">
+                <button type="submit">Save Current Query</button>
+            </form>
+        </div>
     "###, saved_query_list = saved_query_list, nickname = nickname_safe);
     
     let sidebar_html = crate::elements::sidebar::render(&sidebar_content);

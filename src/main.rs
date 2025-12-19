@@ -4,14 +4,13 @@ mod sql;        // now a folder with models, helpers, routes, crypto
 mod not_found;  // 404 page module
 mod base_page;  // New centralized module for base page helpers
 mod elements;   // Module for elements
-mod calculator; // Module for the calculator page
+mod calculator; // Module for the calculator
 mod paint;      // Module for the paint tool
 mod request;    // Module for request builder
 mod board;      // Module for Task Board
 mod inspector;  // Module for Formatter Tools
 mod signaling;  // P2P Signaling
 mod manage_connections; // Connection UI
-
 
 use actix_files::Files;
 use actix_web::{
@@ -31,7 +30,6 @@ use note::{
     note_get, note_post, note_delete, note_ls, note_read, 
     note_search, note_bookmarks_get, note_bookmark_add, note_bookmark_delete
 };
-use calculator::calculator_get;
 use paint::paint_get; 
 use request::{request_get, request_save, request_delete, request_run};
 use board::{board_get, board_data_get, board_add_column, board_delete_column, board_save_task, board_move_task, board_delete_task, board_reorder_columns};
@@ -170,7 +168,6 @@ async fn main() -> std::io::Result<()> {
             .service(note_bookmarks_get)    // NEW
             .service(note_bookmark_add)     // NEW
             .service(note_bookmark_delete)  // NEW
-            .service(calculator_get)
             .service(paint_get) 
             // Register Request Builder handlers
             .service(request_get)

@@ -1,5 +1,5 @@
 
-use crate::sql::DbConnection;
+use crate::pages::sql::DbConnection;
 
 pub fn find_connection<'a>(nick: &str, conns: &'a [DbConnection]) -> Option<&'a DbConnection> {
     conns.iter().find(|c| c.nickname == nick)

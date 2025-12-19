@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc, fs, io};
 use serde::{Deserialize, Serialize};
 use crate::app_state::{AppState, Theme};
 use crate::base_page::render_base_page;
-use crate::sql::{
+use crate::pages::sql::{
     DbConnection, SqlForm, AddConnForm,
     find_connection, render_table,
     encrypt_and_save, load_and_decrypt,

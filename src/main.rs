@@ -1,8 +1,12 @@
+// --- Updated Module Declarations ---
 mod app_state;
-mod signaling;  // P2P Signaling
-mod elements;
 mod base_page;
-mod pages;
+mod elements;
+mod signaling;
+
+// Grouping all page-related modules under the new pages module.
+// Note: sql and calculator are now submodules of pages.
+mod pages; 
 
 use actix_files::Files;
 use actix_web::{
@@ -18,6 +22,8 @@ use std::{
 };
 
 use app_state::AppState;
+
+// --- Updated Imports for moved pages ---
 use pages::note::{
     note_get, note_post, note_delete, note_ls, note_read, 
     note_search, note_bookmarks_get, note_bookmark_add, note_bookmark_delete
@@ -29,8 +35,11 @@ use pages::inspector::inspector_get;
 use pages::manage_connections::connection_page;
 use pages::not_found::{go, render_shortcuts_table}; 
 
-use signaling::{signal_create, signal_offer, signal_get_offer, signal_answer, signal_get_answer, signal_ice, signal_get_ice, signal_permissions, signal_get_permissions};
+// Re-exporting SQL routes from the nested pages module
+use pages::sql;
 
+// signaling and elements stay the same as they aren't in pages/
+use signaling::{signal_create, signal_offer, signal_get_offer, signal_answer, signal_get_answer, signal_ice, signal_get_ice, signal_permissions, signal_get_permissions};
 use elements::theme::{save_theme};
 use elements::shortcut::{add_shortcut, delete_shortcut}; 
 use base_page::{render_base_page, render_add_shortcut_button, render_add_shortcut_modal, nav_bar_html};
@@ -157,10 +166,10 @@ async fn main() -> std::io::Result<()> {
             .service(note_post)
             .service(note_ls)
             .service(note_read)
-            .service(note_search)           // NEW
-            .service(note_bookmarks_get)    // NEW
-            .service(note_bookmark_add)     // NEW
-            .service(note_bookmark_delete)  // NEW
+            .service(note_search)
+            .service(note_bookmarks_get)
+            .service(note_bookmark_add)
+            .service(note_bookmark_delete)
             .service(paint_get) 
             // Register Request Builder handlers
             .service(request_get)
@@ -190,14 +199,14 @@ async fn main() -> std::io::Result<()> {
             .service(signal_get_permissions)
             
             .service(note_delete) 
-            .service(pages::sql::sql_get)
-            .service(pages::sql::sql_add)
-            .service(pages::sql::sql_run)
-            .service(pages::sql::sql_export)
-            .service(pages::sql::sql_view)
-            .service(pages::sql::sql_save) 
-            .service(pages::sql::sql_delete) 
-            .service(pages::sql::sql_schema_json) 
+            .service(sql::sql_get)
+            .service(sql::sql_add)
+            .service(sql::sql_run)
+            .service(sql::sql_export)
+            .service(sql::sql_view)
+            .service(sql::sql_save) 
+            .service(sql::sql_delete) 
+            .service(sql::sql_schema_json) 
             .service(Files::new("/static", "./static").prefer_utf8(true))
             .service(add_shortcut)      
             .service(delete_shortcut)       

@@ -1,5 +1,5 @@
 use actix_web::{get, web::Data, HttpResponse, Responder};
-use std::sync::Arc;
+use std::{sync::Arc, collections::HashMap};
 
 use crate::app_state::{AppState, Theme};
 use crate::base_page::render_base_page;
@@ -7,13 +7,14 @@ use crate::base_page::render_base_page;
 #[get("/inspector")]
 pub async fn inspector_get(state: Data<Arc<AppState>>) -> impl Responder {
     let current_theme = state.current_theme.lock().unwrap();
+    let saved_themes = state.saved_themes.lock().unwrap();
     
     HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")
-        .body(render_inspector_page(&current_theme))
+        .body(render_inspector_page(&current_theme, &saved_themes))
 }
 
-fn render_inspector_page(current_theme: &Theme) -> String {
+fn render_inspector_page(current_theme: &Theme, saved_themes: &HashMap<String, Theme>) -> String {
     // Note: Inspector CSS is defined in static/style.css (lines 284-425)
     // All styles are scoped to .inspector-container to avoid conflicts
     
@@ -246,5 +247,5 @@ fn render_inspector_page(current_theme: &Theme) -> String {
     </script>
     "#;
 
-    render_base_page("Inspector", content, current_theme)
+    render_base_page("Inspector", content, current_theme, saved_themes)
 }

@@ -4,13 +4,13 @@ mod sql;        // now a folder with models, helpers, routes, crypto
 mod not_found;  // 404 page module
 mod base_page;  // New centralized module for base page helpers
 mod elements;   // Module for elements
-mod calculator; // NEW: Module for the calculator page
-mod paint;      // NEW: Module for the paint tool
-mod request;    // NEW: Module for request builder
-mod board;      // NEW: Module for Task Board
-mod inspector;  // NEW: Module for Formatter Tools
-mod signaling;  // NEW: P2P Signaling
-mod manage_connections; // NEW: Connection UI
+mod calculator; // Module for the calculator page
+mod paint;      // Module for the paint tool
+mod request;    // Module for request builder
+mod board;      // Module for Task Board
+mod inspector;  // Module for Formatter Tools
+mod signaling;  // P2P Signaling
+mod manage_connections; // Connection UI
 
 
 use actix_files::Files;
@@ -27,7 +27,6 @@ use std::{
 };
 
 use app_state::AppState;
-// Updated import to include note_ls, note_read, and new search/bookmark handlers
 use note::{
     note_get, note_post, note_delete, note_ls, note_read, 
     note_search, note_bookmarks_get, note_bookmark_add, note_bookmark_delete
@@ -40,7 +39,7 @@ use inspector::inspector_get;
 use signaling::{signal_create, signal_offer, signal_get_offer, signal_answer, signal_get_answer, signal_ice, signal_get_ice, signal_permissions, signal_get_permissions};
 use manage_connections::connection_page;
 
-use elements::theme::{get_settings, save_theme};
+use elements::theme::{save_theme};
 use elements::shortcut::{add_shortcut, delete_shortcut}; 
 use base_page::{render_base_page, render_add_shortcut_button, render_add_shortcut_modal, nav_bar_html};
 use not_found::{go, render_shortcuts_table}; 
@@ -68,8 +67,8 @@ async fn index(state: Data<Arc<AppState>>) -> impl Responder {
     combined_shortcuts.extend(work_shortcuts.clone());
 
     let table_html = render_shortcuts_table(&combined_shortcuts);
+    let saved_themes = state.saved_themes.lock().unwrap();
     
-    // 1. Create the CUSTOM navigation bar with the Add Shortcut button injected into its placeholder.
     let nav_with_button = nav_bar_html()
         .replace(r#"<div id="optional-button-placeholder"></div>"#, &render_add_shortcut_button());
     
@@ -82,7 +81,7 @@ async fn index(state: Data<Arc<AppState>>) -> impl Responder {
     );
 
     let full_page_content = content;
-    let html_output = render_base_page("Home - Shortcuts List", &full_page_content, &current_theme);
+    let html_output = render_base_page("Home - Shortcuts List", &full_page_content, &current_theme, &saved_themes);
     
     let final_html = html_output
         .replace(&nav_bar_html(), &nav_with_button)
@@ -211,8 +210,7 @@ async fn main() -> std::io::Result<()> {
             .service(sql::sql_schema_json) 
             .service(Files::new("/static", "./static").prefer_utf8(true))
             .service(add_shortcut)      
-            .service(delete_shortcut)   
-            .service(get_settings)      
+            .service(delete_shortcut)       
             .service(save_theme)        
             .service(go) 
     })

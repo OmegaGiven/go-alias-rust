@@ -1,5 +1,5 @@
 use actix_web::{get, web::Data, HttpResponse, Responder};
-use std::sync::Arc;
+use std::{sync::Arc, collections::HashMap};
 
 use crate::app_state::{AppState, Theme};
 use crate::base_page::render_base_page;
@@ -8,13 +8,14 @@ use crate::base_page::render_base_page;
 #[get("/paint")]
 pub async fn paint_get(state: Data<Arc<AppState>>) -> impl Responder {
     let current_theme = state.current_theme.lock().unwrap();
+    let saved_themes = state.saved_themes.lock().unwrap();
     
     HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")
-        .body(render_paint_page(&current_theme))
+        .body(render_paint_page(&current_theme, &saved_themes))
 }
 
-fn render_paint_page(current_theme: &Theme) -> String {
+fn render_paint_page(current_theme: &Theme, saved_themes: &HashMap<String, Theme>) -> String {
     let style = r#"
 <style>
     .paint-app {
@@ -52,12 +53,12 @@ fn render_paint_page(current_theme: &Theme) -> String {
     .canvas-container {
         flex-grow: 1;
         background-color: #1a1a1a; 
-        border: none; /* Removed border */
-        border-radius: 0; /* Removed rounded corners */
-        overflow: auto; /* Allow scrolling for large canvases */
+        border: none;
+        border-radius: 0;
+        overflow: auto;
         position: relative;
         display: grid;
-        place-items: center; /* Center the canvas */
+        place-items: center;
     }
     
     /* Scope styles to avoid affecting global nav bar */
@@ -152,6 +153,7 @@ fn render_paint_page(current_theme: &Theme) -> String {
             </div>
 
             <div class="tool-group">
+                <button id="undo-btn" class="btn-small btn-secondary" title="Undo (Ctrl+Z)">Undo</button>
                 <button id="clear-btn" class="btn-small btn-secondary">Clear</button>
             </div>
 
@@ -188,6 +190,7 @@ fn render_paint_page(current_theme: &Theme) -> String {
         const clearBtn = document.getElementById('clear-btn');
         const eraserBtn = document.getElementById('eraser-btn');
         const brushBtn = document.getElementById('brush-btn');
+        const undoBtn = document.getElementById('undo-btn');
         const downloadBtn = document.getElementById('download-btn');
 
         let isDrawing = false;
@@ -196,6 +199,41 @@ fn render_paint_page(current_theme: &Theme) -> String {
         let isEraser = false;
         let brushColor = '#ffffff';
         let backgroundColor = '#000000';
+
+        // --- Undo System ---
+        const undoStack = [];
+        const MAX_UNDO_STEPS = 20;
+
+        function saveState() {
+            // Cap the stack
+            if (undoStack.length >= MAX_UNDO_STEPS) {
+                undoStack.shift();
+            }
+            undoStack.push(canvas.toDataURL());
+        }
+
+        function undo() {
+            if (undoStack.length === 0) return;
+            
+            const lastState = undoStack.pop();
+            const img = new Image();
+            img.onload = () => {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0);
+                updateContextStyles();
+            };
+            img.src = lastState;
+        }
+
+        // Keyboard shortcut for Undo
+        window.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+                e.preventDefault();
+                undo();
+            }
+        });
+
+        undoBtn.addEventListener('click', undo);
 
         // --- Initialization ---
         function initCanvas(w, h) {
@@ -232,6 +270,7 @@ fn render_paint_page(current_theme: &Theme) -> String {
             
             if (w && h) {
                 if (confirm("Resizing will clear the current drawing. Continue?")) {
+                    saveState(); // Save before resize
                     // Create temp canvas to try and preserve content
                     const tempCanvas = document.createElement('canvas');
                     tempCanvas.width = canvas.width;
@@ -259,6 +298,7 @@ fn render_paint_page(current_theme: &Theme) -> String {
 
         // Fill the canvas with the current background color
         function fillCanvas() {
+            saveState(); // Save before fill
             ctx.fillStyle = backgroundColor;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
         }
@@ -290,6 +330,7 @@ fn render_paint_page(current_theme: &Theme) -> String {
         }
 
         canvas.addEventListener('mousedown', (e) => {
+            saveState(); // Save before stroke
             isDrawing = true;
             const pos = getPos(e);
             [lastX, lastY] = [pos.x, pos.y];
@@ -314,6 +355,7 @@ fn render_paint_page(current_theme: &Theme) -> String {
                 const img = new Image();
                 img.onload = () => {
                     if(confirm('Load image? This will replace the current canvas.')) {
+                        saveState(); // Save before loading image
                         // Resize canvas to match image?
                         if(confirm('Resize canvas to match image dimensions?')) {
                             canvas.width = img.width;
@@ -387,5 +429,5 @@ fn render_paint_page(current_theme: &Theme) -> String {
     </script>
     "##;
 
-    render_base_page("Paint Tool", &format!("{}{}", style, html_content), current_theme)
+    render_base_page("Paint Tool", &format!("{}{}", style, html_content), current_theme, saved_themes)
 }

@@ -1,7 +1,7 @@
 use actix_web::{get, post, web::{self, Data}, HttpResponse, Responder};
 use htmlescape::encode_minimal;
 use serde::{Deserialize, Serialize};
-use std::{fs, io::{self, Write}, sync::Arc, path::Path};
+use std::{fs, io::{self, Write}, sync::Arc, path::Path, collections::HashMap};
 use serde_json;
 
 use crate::app_state::{AppState, Theme, Note};
@@ -21,7 +21,7 @@ pub struct _DeleteForm {
     pub note_index: usize,
 }
 
-// --- NEW: File System Structs ---
+// --- File System Structs ---
 #[derive(Deserialize)]
 pub struct LsForm {
     pub path: String,
@@ -94,10 +94,11 @@ fn save_bookmarks(bookmarks: &[Bookmark]) -> io::Result<()> {
 pub async fn note_get(state: Data<Arc<AppState>>) -> impl Responder {
     let notes = state.notes.lock().unwrap().clone();
     let current_theme = state.current_theme.lock().unwrap();
+    let saved_themes = state.saved_themes.lock().unwrap();
 
     HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")
-        .body(render_note_page(&notes, &current_theme))
+        .body(render_note_page(&notes, &current_theme, &saved_themes))
 }
 
 #[post("/note")]
@@ -171,7 +172,7 @@ pub async fn note_delete(
         .finish()
 }
 
-// --- NEW: File System Handlers ---
+// --- File System Handlers ---
 #[post("/note/ls")]
 pub async fn note_ls(form: web::Json<LsForm>) -> impl Responder {
     let res = web::block(move || {
@@ -201,7 +202,6 @@ pub async fn note_ls(form: web::Json<LsForm>) -> impl Responder {
                     }
 
                     let is_dir = meta.is_dir();
-                    // Construct the full absolute path for this entry
                     let full_path = absolute_path.join(&file_name).to_string_lossy().to_string();
                     
                     entries.push(FileEntry {
@@ -260,7 +260,6 @@ pub async fn note_save_file(form: web::Json<SaveFileForm>) -> impl Responder {
 }
 
 
-// Helper for recursive search
 fn recursive_search(dir: &Path, query: &str, results: &mut Vec<FileEntry>, count: &mut usize) {
     if *count >= 50 { return; } // Hard limit to prevent hanging
     if let Ok(entries) = fs::read_dir(dir) {
@@ -346,7 +345,7 @@ pub async fn note_bookmark_delete(form: web::Json<Bookmark>) -> impl Responder {
 }
 // ---------------------------------
 
-fn render_note_page(notes: &[Note], current_theme: &Theme) -> String {
+fn render_note_page(notes: &[Note], current_theme: &Theme, saved_themes: &HashMap<String, Theme>) -> String {
     let saved_notes_list = notes
         .iter()
         .enumerate()
@@ -415,21 +414,17 @@ fn render_note_page(notes: &[Note], current_theme: &Theme) -> String {
 <style>
     .note-view-container { display: flex; height: calc(100vh - 60px); position: relative; overflow: hidden; }
     
-    /* Sidebar Tabs removed - now using shared .tabs class */
-    /* Sidebar Tabs removed - now using shared .tabs class */
     .tab.active { border-bottom: 2px solid var(--link-color); opacity: 1; background: var(--tertiary-bg); }
 
     .tab-content { flex: 1; overflow-y: auto; padding: 5px; display: none; }
     .tab-content.active { display: flex; }
-    
-    /* Sidebar search style removed - now in static/style.css */
 
     /* Saved Notes Styles */
     .saved-note-item { display: flex; align-items: center; justify-content: space-between; background-color: transparent; padding: 2px 5px; cursor: pointer; transition: background 0.2s; }
     .saved-note-item:hover { background-color: var(--tertiary-bg); }
     .saved-note-item.selected { background-color: var(--tertiary-bg); border-left: 3px solid var(--link-color); padding-left: 2px; }
     
-    .saved-note { flex-grow: 1; min-width: 0; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-color); font-size: 0.95em; }
+    .saved-note { flex-grow: 1; min-width: 0; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-color); font-size: var(--font-size-small); }
     .saved-note:hover { color: var(--link-hover); }
     
     .delete-form { margin: 0; display: flex; align-items: center; margin-left: 5px; }
@@ -455,7 +450,7 @@ fn render_note_page(notes: &[Note], current_theme: &Theme) -> String {
         box-sizing: border-box;
     }
     
-    .file-item { cursor: pointer; padding: 2px 5px; font-size: 0.9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-radius: 3px; display: flex; align-items: center; gap: 5px; }
+    .file-item { cursor: pointer; padding: 2px 5px; font-size: var(--font-size-small); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-radius: 3px; display: flex; align-items: center; gap: 5px; }
     .file-item:hover { background-color: var(--tertiary-bg); color: var(--link-hover); }
     .file-icon { width: 16px; text-align: center; display: inline-block; opacity: 0.7; }
     .dir-item { font-weight: bold; color: var(--link-color); }
@@ -491,7 +486,7 @@ fn render_note_page(notes: &[Note], current_theme: &Theme) -> String {
         min-width: 35px; 
         box-sizing: border-box; 
         font-family: 'Consolas', 'Monaco', monospace; 
-        font-size: 14px; 
+        font-size: var(--font-size-medium); 
         line-height: 20px; 
     }
     
@@ -502,7 +497,7 @@ fn render_note_page(notes: &[Note], current_theme: &Theme) -> String {
         padding: 10px; box-sizing: border-box;
         margin: 0; border: none; outline: none;
         font-family: 'Consolas', 'Monaco', monospace; 
-        font-size: 14px; 
+        font-size: var(--font-size-medium); 
         line-height: 20px;
         white-space: pre; overflow: auto;
     }
@@ -1074,5 +1069,5 @@ fn render_note_page(notes: &[Note], current_theme: &Theme) -> String {
     sidebar_js = sidebar_js
     );
 
-    render_base_page("Quick Notes", &format!("{}{}{}", page_styles, crate::elements::sidebar::get_css(), body_content), current_theme)
+    render_base_page("Quick Notes", &format!("{}{}{}", page_styles, crate::elements::sidebar::get_css(), body_content), current_theme, saved_themes)
 }

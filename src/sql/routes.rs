@@ -1,7 +1,7 @@
 use actix_web::{get, post, web, HttpResponse, Responder};
 use std::{collections::HashMap, sync::Arc, fs, io};
 use serde::{Deserialize, Serialize};
-use crate::app_state::AppState;
+use crate::app_state::{AppState, Theme};
 use crate::base_page::render_base_page;
 use crate::sql::{
     DbConnection, SqlForm, AddConnForm,
@@ -56,7 +56,7 @@ fn delete_query(name: &str) -> io::Result<()> {
 // --- END: Saved Query Structures and Persistence ---
 
 
-fn render_connection_list(conns: &[DbConnection], current_theme: &crate::app_state::Theme) -> String {
+fn render_connection_list(conns: &[DbConnection], current_theme: &Theme, saved_themes: &HashMap<String, Theme>) -> String {
     let conn_links = conns.iter()
         .map(|c| {
             // Differentiate display based on type
@@ -227,7 +227,7 @@ fn render_connection_list(conns: &[DbConnection], current_theme: &crate::app_sta
     </style>
     "#, conn_links = conn_links);
     
-    render_base_page("SQL Connections", &content, current_theme)
+    render_base_page("SQL Connections", &content, current_theme, saved_themes)
 }
 
 
@@ -241,10 +241,11 @@ pub async fn sql_get(state: web::Data<Arc<AppState>>) -> impl Responder {
         conns_opt.clone().unwrap()
     };
     let current_theme = state.current_theme.lock().unwrap();
+    let saved_themes = state.saved_themes.lock().unwrap();
 
     HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")
-        .body(render_connection_list(&conns, &current_theme))
+        .body(render_connection_list(&conns, &current_theme, &saved_themes))
 }
 
 #[post("/sql/add")]
@@ -614,7 +615,7 @@ pub async fn sql_export(state: web::Data<Arc<AppState>>) -> impl Responder {
         .body(data)
 }
 
-fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &crate::app_state::Theme) -> String {
+fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &crate::app_state::Theme, saved_themes: &HashMap<String, Theme>) -> String {
     let saved_queries = load_queries();
     let nickname_safe = htmlescape::encode_minimal(nickname);
     
@@ -653,7 +654,7 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
     
     .saved-query-item { display: flex; align-items: center; padding-left: 2px; }
     .delete-query-form { margin: 0; display: inline-flex; }
-    .query-link { flex-grow: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-left: 5px; text-decoration: none; color: var(--text-color); font-size: 0.9em; opacity: 0.9; }
+    .query-link { flex-grow: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-left: 5px; text-decoration: none; color: var(--text-color); font-size: var(--font-size-small); opacity: 0.9; }
     .query-link:hover { opacity: 1; text-decoration: underline; color: var(--link-hover); }
     
     .delete-btn { background: none; border: none; color: #666; font-weight: bold; padding: 0 5px; margin: 0; cursor: pointer; width: 20px; text-align: center; font-size: 1em;}
@@ -665,8 +666,8 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
     .table-list-item:hover { color: var(--link-hover); background-color: var(--tertiary-bg); border-radius: 2px;}
     
     .query-save-form { margin-top: 10px; padding-top: 5px; border-top: 1px solid var(--border-color); }
-    .query-save-form input[type="text"] { width: 100%; padding: 4px; margin-bottom: 5px; box-sizing: border-box; border: 1px solid var(--border-color); background: var(--primary-bg); color: var(--text-color); border-radius: 4px; font-size: 0.9em; }
-    .query-save-form button { width: 100%; padding: 4px; cursor: pointer; background: var(--tertiary-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px; font-size: 0.9em;}
+    .query-save-form input[type="text"] { width: 100%; padding: 4px; margin-bottom: 5px; box-sizing: border-box; border: 1px solid var(--border-color); background: var(--primary-bg); color: var(--text-color); border-radius: 4px; font-size: var(--font-size-small); }
+    .query-save-form button { width: 100%; padding: 4px; cursor: pointer; background: var(--tertiary-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px; font-size: var(--font-size-small);}
     .query-save-form button:hover { background: var(--link-hover); color: #fff; border-color: var(--link-hover); }
     
     #main { flex: 1; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
@@ -675,7 +676,7 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
     .variables-section { padding: 5px; background: var(--secondary-bg); border-bottom: 1px solid var(--border-color); display: flex; flex-wrap: wrap; gap: 5px; align-items: center; flex-shrink: 0; }
     .var-input-group { display: flex; align-items: center; gap: 5px; background: var(--tertiary-bg); padding: 0 5px; height: 26px; border-radius: 4px; border: 1px solid var(--border-color); box-sizing: border-box; }
     .var-input-group label { font-size: 0.8em; color: var(--text-color); font-weight: bold; white-space: nowrap; }
-    .var-input-group input { padding: 2px 4px; border: 1px solid var(--border-color); background: var(--primary-bg); color: var(--text-color); border-radius: 2px; font-size: 0.9em; width: 100px; height: 20px; box-sizing: border-box; }
+    .var-input-group input { padding: 2px 4px; border: 1px solid var(--border-color); background: var(--primary-bg); color: var(--text-color); border-radius: 2px; font-size: var(--font-size-small); width: 100px; height: 20px; box-sizing: border-box; }
     .add-var-btn { padding: 0 8px; height: 26px; font-size: 0.8em; cursor: pointer; background: var(--tertiary-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px; line-height: 24px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; margin: 0; }
     .add-var-btn:hover { background: var(--link-hover); color: white; border-color: var(--link-hover); }
     
@@ -703,7 +704,7 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
         padding: 5px; /* Minimal padding */
         border: none;
         font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-        font-size: 14px;
+        font-size: var(--font-size-medium);
         line-height: 1.5;
         box-sizing: border-box;
         overflow: auto;
@@ -737,7 +738,7 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
     
     /* Result Tools (Filter/Export) */
     .result-tools { padding: 4px 5px; background: var(--secondary-bg); border-bottom: none; display: flex; gap: 10px; align-items: center; flex-shrink: 0; }
-    .result-tools input { padding: 3px 6px; border: 1px solid var(--border-color); background: var(--primary-bg); color: var(--text-color); border-radius: 3px; font-size: 0.9em; flex-grow: 1; max-width: 300px;}
+    .result-tools input { padding: 3px 6px; border: 1px solid var(--border-color); background: var(--primary-bg); color: var(--text-color); border-radius: 3px; font-size: var(--font-size-small); flex-grow: 1; max-width: 300px;}
     .result-tools label { font-size: 0.85em; color: var(--text-color); display: flex; align-items: center; gap: 3px; cursor: pointer; }
     
     .output { 
@@ -748,7 +749,7 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
         padding: 0; 
         margin-top: 0; 
         font-family: monospace; 
-        font-size: 0.9em; 
+        font-size: var(--font-size-small); 
     }
     .output table { width: 100%; border-collapse: collapse; margin: 0; }
     .output th, .output td { border: 1px solid var(--border-color); padding: 4px 8px; text-align: left; white-space: nowrap; user-select: none; }
@@ -1559,9 +1560,10 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
     "###, nickname = nickname_safe, table_schema_json = table_schema_json, sidebar_html = sidebar_html, sidebar_js = sidebar_js);
 
     render_base_page(
-        &format!("SQL View: {}", nickname),
+        &format!("SQL View: {}", htmlescape::encode_minimal(&nickname)),
         &format!("{}{}{}", page_styles, crate::elements::sidebar::get_css(), body_content),
-        current_theme
+        current_theme,
+        saved_themes
     )
 }
 
@@ -1582,8 +1584,9 @@ pub async fn sql_view(path: web::Path<String>, state: web::Data<Arc<AppState>>) 
         Some(c) => c,
         None => {
             let current_theme = state.current_theme.lock().unwrap();
+            let saved_themes = state.saved_themes.lock().unwrap();
             let error_content = format!(r#"<h1>Error</h1><p>Connection '{nickname}' not found.</p>"#, nickname = htmlescape::encode_minimal(&nickname));
-            return HttpResponse::BadRequest().body(render_base_page("Error", &error_content, &current_theme));
+            return HttpResponse::BadRequest().body(render_base_page("Error", &error_content, &current_theme, &saved_themes));
         }
     };
 
@@ -1599,9 +1602,10 @@ pub async fn sql_view(path: web::Path<String>, state: web::Data<Arc<AppState>>) 
     let schema_json = serde_json::to_string(&schema_map).unwrap_or_else(|_| "{}".to_string());
         
     let current_theme = state.current_theme.lock().unwrap();
+    let saved_themes = state.saved_themes.lock().unwrap();
     HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")
-        .body(render_query_view(&nickname, &schema_json, &current_theme))
+        .body(render_query_view(&nickname, &schema_json, &current_theme, &saved_themes))
 }
 
 #[get("/sql/{nickname}/schema-json")]

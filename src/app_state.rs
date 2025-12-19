@@ -23,6 +23,9 @@ pub struct Theme {
     pub link_visited: String,  // e.g., #b366ff (Visited link color)
     pub link_hover: String,    // e.g., #66ccff (Hover link color)
     pub border_color: String,  // e.g., #444 (Borders/Dividers)
+    pub font_size_small: u32,
+    pub font_size_medium: u32,
+    pub font_size_large: u32,
 }
 
 // NEW: Structure for P2P Room Signaling

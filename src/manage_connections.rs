@@ -2,16 +2,18 @@ use actix_web::{get, web::Data, HttpResponse, Responder};
 use std::sync::Arc;
 use crate::app_state::{AppState, Theme};
 use crate::base_page::render_base_page;
+use std::collections::HashMap; // Added this line
 
 #[get("/connection")]
 pub async fn connection_page(state: Data<Arc<AppState>>) -> impl Responder {
     let current_theme = state.current_theme.lock().unwrap();
+    let saved_themes = state.saved_themes.lock().unwrap();
     HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")
-        .body(render_connection_page(&current_theme))
+        .body(render_connection_page(&current_theme, &saved_themes))
 }
 
-fn render_connection_page(current_theme: &Theme) -> String {
+fn render_connection_page(current_theme: &Theme, saved_themes: &HashMap<String, Theme>) -> String {
     let style = r#"
 <style>
     .conn-container { max-width: 800px; margin: 0 auto; padding: 20px; }
@@ -357,5 +359,5 @@ fn render_connection_page(current_theme: &Theme) -> String {
     </script>
     "#;
 
-    render_base_page("Connection Manager", &format!("{}{}", style, content), current_theme)
+    render_base_page("Connection Manager", &format!("{}{}", style, content), current_theme, saved_themes)
 }

@@ -65,9 +65,10 @@ fn save_requests_to_file(requests: &[SavedRequest]) -> io::Result<()> {
 #[get("/requests")]
 pub async fn request_get(state: Data<std::sync::Arc<AppState>>) -> impl Responder {
     let current_theme = state.current_theme.lock().unwrap();
+    let saved_themes = state.saved_themes.lock().unwrap();
     HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")
-        .body(render_request_page(&current_theme))
+        .body(render_request_page(&current_theme, &saved_themes))
 }
 
 #[post("/requests/save")]
@@ -149,7 +150,7 @@ pub async fn request_run(payload: Json<ProxyRequest>) -> impl Responder {
 
 // --- Rendering ---
 
-fn render_request_page(current_theme: &Theme) -> String {
+fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, Theme>) -> String {
     let saved_requests = load_requests();
     
     let saved_list_html = saved_requests.iter().map(|r| {
@@ -194,7 +195,6 @@ fn render_request_page(current_theme: &Theme) -> String {
 
     let style = format!(r#"
 <style>
-    /* FIX: Adjusted height calculation and ensures border box model */
     .req-container {{ 
         display: flex; 
         height: calc(100vh - 65px); /* Increased offset to account for header/margins */
@@ -580,7 +580,7 @@ fn render_request_page(current_theme: &Theme) -> String {
             // Helper to get value securely
             const val = (key) => savedData ? (savedData[key] || '') : '';
 
-            // FIX: Pre-fill specific OAuth defaults for testing
+            // Pre-fill specific OAuth defaults for testing
             const defTokenUrl = val('oauth_token_url') || '';
             const defClientId = val('oauth_client_id') || '';
             const defClientSecret = val('oauth_client_secret') || '';
@@ -818,7 +818,6 @@ fn render_request_page(current_theme: &Theme) -> String {
                 body: ''
             }};
 
-            // NEW: Build the curl command for display
             let curlCmd = `curl -X ${{methodSelect.value}} "${{finalUrl}}"`;
             for (const [key, val] of Object.entries(headers)) {{
                 curlCmd += ` \\\n  -H "${{key}}: ${{val}}"`;
@@ -872,7 +871,6 @@ fn render_request_page(current_theme: &Theme) -> String {
             }}
         }});
         
-        // NEW: Download Response as JSON
         downloadResBtn.addEventListener('click', () => {{
             const content = responseBody.innerText;
             if (!content) return;
@@ -922,5 +920,5 @@ fn render_request_page(current_theme: &Theme) -> String {
     </script>
     "#, sidebar_html = sidebar_html, sidebar_js = sidebar_js);
 
-    render_base_page("Request Builder", &format!("{}{}{}", style, crate::elements::sidebar::get_css(), content), current_theme)
+    render_base_page("Request Builder", &format!("{}{}{}", style, crate::elements::sidebar::get_css(), content), current_theme, saved_themes)
 }

@@ -12,7 +12,7 @@ use std::{
 };
 
 use crate::app_state::{AppState, Theme};
-use crate::base_page::{render_base_page, render_settings_page};
+use crate::base_page::render_base_page;
 
 // File constants
 pub static THEMES_FILE: &str = "themes.json";
@@ -30,6 +30,9 @@ pub fn default_dark_theme() -> Theme {
         link_visited: "#b366ff".to_string(),
         link_hover: "#66ccff".to_string(),
         border_color: "#444444".to_string(),
+        font_size_small: 14,
+        font_size_medium: 16,
+        font_size_large: 18,
     }
 }
 
@@ -76,27 +79,14 @@ pub struct ThemeForm {
     pub link_visited: String,
     pub link_hover: String,
     pub border_color: String,
+    pub font_size_small: u32,
+    pub font_size_medium: u32,
+    pub font_size_large: u32,
     
     pub load_theme_name: Option<String>,
     
     // Action is optional because JS submissions might not include button values
     pub action: Option<String>,                  
-}
-
-
-// Handler for GET /settings
-#[get("/settings")]
-pub async fn get_settings(state: Data<Arc<AppState>>) -> impl Responder {
-    let current_theme = state.current_theme.lock().unwrap();
-    let saved_themes = state.saved_themes.lock().unwrap();
-    
-    let content = render_settings_page(&current_theme, &saved_themes);
-
-    let html_output = render_base_page("Settings - Theme Customization", &content, &current_theme);
-
-    HttpResponse::Ok()
-        .content_type("text/html; charset=utf-8")
-        .body(html_output)
 }
 
 // Handler for POST /save_theme
@@ -136,6 +126,9 @@ pub async fn save_theme(
         link_visited: form.link_visited.clone(),
         link_hover: form.link_hover.clone(),
         border_color: form.border_color.clone(),
+        font_size_small: form.font_size_small,
+        font_size_medium: form.font_size_medium,
+        font_size_large: form.font_size_large,
     };
 
     // 3. Update the current theme

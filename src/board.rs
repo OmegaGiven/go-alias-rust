@@ -108,9 +108,10 @@ fn generate_id() -> String {
 #[get("/board")]
 pub async fn board_get(state: Data<Arc<AppState>>) -> impl Responder {
     let current_theme = state.current_theme.lock().unwrap();
+    let saved_themes = state.saved_themes.lock().unwrap();
     HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")
-        .body(render_board_page(&current_theme))
+        .body(render_board_page(&current_theme, &saved_themes))
 }
 
 #[get("/board/data")]
@@ -234,7 +235,7 @@ pub async fn board_delete_task(payload: Json<DeletePayload>) -> impl Responder {
 
 // --- Rendering ---
 
-fn render_board_page(current_theme: &Theme) -> String {
+fn render_board_page(current_theme: &Theme, saved_themes: &HashMap<String, Theme>) -> String {
     let style = r#"
 <style>
     .board-app {
@@ -747,5 +748,5 @@ fn render_board_page(current_theme: &Theme) -> String {
     </script>
     "#;
 
-    render_base_page("Task Board", &format!("{}{}", style, html), current_theme)
+    render_base_page("Task Board", &format!("{}{}", style, html), current_theme, saved_themes)
 }

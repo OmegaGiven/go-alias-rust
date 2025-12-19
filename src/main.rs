@@ -1,16 +1,8 @@
 mod app_state;
-mod note;
-mod sql;        // now a folder with models, helpers, routes, crypto
-mod not_found;  // 404 page module
-mod base_page;  // New centralized module for base page helpers
-mod elements;   // Module for elements
-mod calculator; // Module for the calculator
-mod paint;      // Module for the paint tool
-mod request;    // Module for request builder
-mod board;      // Module for Task Board
-mod inspector;  // Module for Formatter Tools
 mod signaling;  // P2P Signaling
-mod manage_connections; // Connection UI
+mod elements;
+mod base_page;
+mod pages;
 
 use actix_files::Files;
 use actix_web::{
@@ -26,21 +18,22 @@ use std::{
 };
 
 use app_state::AppState;
-use note::{
+use pages::note::{
     note_get, note_post, note_delete, note_ls, note_read, 
     note_search, note_bookmarks_get, note_bookmark_add, note_bookmark_delete
 };
-use paint::paint_get; 
-use request::{request_get, request_save, request_delete, request_run};
-use board::{board_get, board_data_get, board_add_column, board_delete_column, board_save_task, board_move_task, board_delete_task, board_reorder_columns};
-use inspector::inspector_get; 
+use pages::paint::paint_get; 
+use pages::request::{request_get, request_save, request_delete, request_run};
+use pages::board::{board_get, board_data_get, board_add_column, board_delete_column, board_save_task, board_move_task, board_delete_task, board_reorder_columns};
+use pages::inspector::inspector_get; 
+use pages::manage_connections::connection_page;
+use pages::not_found::{go, render_shortcuts_table}; 
+
 use signaling::{signal_create, signal_offer, signal_get_offer, signal_answer, signal_get_answer, signal_ice, signal_get_ice, signal_permissions, signal_get_permissions};
-use manage_connections::connection_page;
 
 use elements::theme::{save_theme};
 use elements::shortcut::{add_shortcut, delete_shortcut}; 
 use base_page::{render_base_page, render_add_shortcut_button, render_add_shortcut_modal, nav_bar_html};
-use not_found::{go, render_shortcuts_table}; 
 
 static SHORTCUTS_FILE: &str = "shortcuts.json";
 static HIDDEN_SHORTCUTS_FILE: &str = "hidden-shortcuts.json";
@@ -197,14 +190,14 @@ async fn main() -> std::io::Result<()> {
             .service(signal_get_permissions)
             
             .service(note_delete) 
-            .service(sql::sql_get)
-            .service(sql::sql_add)
-            .service(sql::sql_run)
-            .service(sql::sql_export)
-            .service(sql::sql_view)
-            .service(sql::sql_save) 
-            .service(sql::sql_delete) 
-            .service(sql::sql_schema_json) 
+            .service(pages::sql::sql_get)
+            .service(pages::sql::sql_add)
+            .service(pages::sql::sql_run)
+            .service(pages::sql::sql_export)
+            .service(pages::sql::sql_view)
+            .service(pages::sql::sql_save) 
+            .service(pages::sql::sql_delete) 
+            .service(pages::sql::sql_schema_json) 
             .service(Files::new("/static", "./static").prefer_utf8(true))
             .service(add_shortcut)      
             .service(delete_shortcut)       

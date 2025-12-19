@@ -2,7 +2,7 @@ use aes_gcm::{Aes256Gcm, Nonce};
 use aes_gcm::aead::{Aead, KeyInit};
 use rand::RngCore;
 use std::{fs, io};
-use crate::sql::DbConnection;
+use crate::pages::sql::DbConnection;
 
 const CONN_FILE: &str = "connections.json.enc";
 const KEY_FILE: &str = "connections.key";

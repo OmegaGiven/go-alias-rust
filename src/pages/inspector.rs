@@ -15,9 +15,6 @@ pub async fn inspector_get(state: Data<Arc<AppState>>) -> impl Responder {
 }
 
 fn render_inspector_page(current_theme: &Theme, saved_themes: &HashMap<String, Theme>) -> String {
-    // Note: Inspector CSS is defined in static/style.css (lines 284-425)
-    // All styles are scoped to .inspector-container to avoid conflicts
-    
     let content = r#"
     <div class="inspector-container">
         <h1>Line & Column Inspector</h1>

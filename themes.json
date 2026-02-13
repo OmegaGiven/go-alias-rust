@@ -1,13 +1,16 @@
 {
   "Dark Default": {
     "name": "Dark Default",
-    "primary_bg": "#181111",
+    "primary_bg": "#1c1c1c",
     "secondary_bg": "#000000",
-    "tertiary_bg": "#3a3a3a",
+    "tertiary_bg": "#292929",
     "text_color": "#ffffff",
     "link_color": "#4da6ff",
     "link_visited": "#b366ff",
     "link_hover": "#66ccff",
-    "border_color": "#444444"
+    "border_color": "#444444",
+    "font_size_small": 12,
+    "font_size_medium": 14,
+    "font_size_large": 18
   }
 }

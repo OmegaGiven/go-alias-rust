@@ -167,6 +167,7 @@ async fn main() -> std::io::Result<()> {
             .service(note_ls)
             .service(note_read)
             .service(note_search)
+            .service(note_delete) 
             .service(note_bookmarks_get)
             .service(note_bookmark_add)
             .service(note_bookmark_delete)
@@ -197,8 +198,6 @@ async fn main() -> std::io::Result<()> {
             .service(signal_get_ice)
             .service(signal_permissions)
             .service(signal_get_permissions)
-            
-            .service(note_delete) 
             .service(sql::sql_get)
             .service(sql::sql_add)
             .service(sql::sql_run)

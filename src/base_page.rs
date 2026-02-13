@@ -1,5 +1,6 @@
 use crate::app_state::Theme; 
 use crate::elements::calculator;
+use crate::elements::jwt_decoder;
 use std::collections::HashMap; 
 
 fn render_theme_variables(theme: &Theme) -> String {
@@ -48,7 +49,7 @@ pub fn nav_bar_html() -> String {
             max-height: 30px; /* Prevent expansion */
             user-select: none;
             box-sizing: border-box;
-            overflow: hidden; /* Ensure nothing pushes the box open */
+            overflow: visible; /* Allow tool dropdown to float over page content */
         }
         
         .nav-left, .nav-right {
@@ -123,6 +124,52 @@ pub fn nav_bar_html() -> String {
             align-items: center;
             height: 100%;
         }
+
+        .tools-dropdown {
+            position: relative;
+            height: 100%;
+            display: flex;
+            align-items: stretch;
+        }
+
+        .tools-dropdown-menu {
+            display: none;
+            position: absolute;
+            top: 100%;
+            right: 0;
+            min-width: 170px;
+            background: var(--secondary-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 0 0 6px 6px;
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+            z-index: 10020;
+            overflow: hidden;
+        }
+
+        .tools-dropdown:hover .tools-dropdown-menu {
+            display: block;
+        }
+
+        .tools-dropdown-item {
+            width: 100%;
+            text-align: left;
+            padding: 8px 12px;
+            margin: 0 !important;
+            border: none;
+            border-bottom: 1px solid var(--border-color);
+            background: transparent;
+            color: var(--text-color);
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+
+        .tools-dropdown-item:last-child {
+            border-bottom: none;
+        }
+
+        .tools-dropdown-item:hover {
+            background: var(--tertiary-bg);
+        }
     </style>
 
     <div class="modern-nav">
@@ -138,7 +185,13 @@ pub fn nav_bar_html() -> String {
       </div>
       <div class="nav-right">
         <div id="optional-button-placeholder"></div>
-        <button class="nav-link-item" onclick="toggleCalculator()">Calculator</button>
+        <div class="tools-dropdown">
+          <button class="nav-link-item">Tools</button>
+          <div class="tools-dropdown-menu">
+            <button class="tools-dropdown-item" onclick="toggleCalculator()">Calculator</button>
+            <button class="tools-dropdown-item" onclick="toggleJwtDecoder()">JWT Decoder</button>
+          </div>
+        </div>
         <button class="nav-link-item" onclick="toggleSettings()">Settings</button> 
       </div>
     </div>
@@ -182,6 +235,7 @@ pub fn render_base_page(
     {} 
     {}
     {}
+    {}
     <link rel="stylesheet" href="/static/style.css">
   </head>
   <body>
@@ -189,6 +243,8 @@ pub fn render_base_page(
     {}
     {}
     {}
+    {}
+    <script>{}</script>
     <script>{}</script>
     <script>{}</script>
   </body>
@@ -196,12 +252,15 @@ pub fn render_base_page(
         title,
         render_theme_variables(current_theme),
         calculator::get_css(),
+        jwt_decoder::get_css(),
         get_settings_css(),
         nav_bar_html(),
         body_content,
         calculator::get_html(),
+        jwt_decoder::get_html(),
         get_settings_html(current_theme, saved_themes),
         calculator::get_js(),
+        jwt_decoder::get_js(),
         get_settings_js()
     )
 }

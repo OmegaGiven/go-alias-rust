@@ -1,5 +1,6 @@
 use crate::app_state::Theme; 
 use crate::elements::calculator;
+use crate::elements::connection_tool;
 use crate::elements::jwt_decoder;
 use std::collections::HashMap; 
 
@@ -20,6 +21,7 @@ fn render_theme_variables(theme: &Theme) -> String {
     --font-size-medium: {}px;
     --font-size-large: {}px;
     --base-font-size: {}px;
+    --base-font-family: {};
 }}
 </style>
 "#,
@@ -27,7 +29,8 @@ fn render_theme_variables(theme: &Theme) -> String {
         theme.text_color, theme.link_color, theme.link_visited,
         theme.link_hover, theme.border_color,
         theme.font_size_small, theme.font_size_medium, theme.font_size_large,
-        theme.font_size_medium
+        theme.font_size_medium,
+        theme.font_family
     )
 }
 
@@ -68,7 +71,7 @@ pub fn nav_bar_html() -> String {
             height: 100%;
             color: var(--text-color);
             text-decoration: none !important;
-            font-size: 1rem;
+            font-size: var(--font-size-medium);
             opacity: 0.8;
             transition: background-color 0.2s ease, opacity 0.2s ease;
             border-bottom: 3px solid transparent;
@@ -85,7 +88,7 @@ pub fn nav_bar_html() -> String {
         .modern-nav button.nav-link-item {
             border: none;
             font-family: inherit;
-            font-size: 1rem;
+            font-size: var(--font-size-medium);
             appearance: none;
             background: transparent;
             outline: none;
@@ -102,21 +105,6 @@ pub fn nav_bar_html() -> String {
             opacity: 1;
             font-weight: bold;
             border-bottom-color: var(--link-color);
-        }
-        
-        /* Connection indicator */
-        .conn-link { position: relative; }
-        .conn-link::after {
-            content: '';
-            position: absolute;
-            top: 15px; /* Fixed position relative to 60px height */
-            right: 5px;
-            width: 8px;
-            height: 8px;
-            background-color: #49cc90;
-            border-radius: 50%;
-            opacity: 0.6;
-            box-shadow: 0 0 4px rgba(73, 204, 144, 0.4);
         }
         
         #optional-button-placeholder {
@@ -159,7 +147,7 @@ pub fn nav_bar_html() -> String {
             border-bottom: 1px solid var(--border-color);
             background: transparent;
             color: var(--text-color);
-            font-size: 0.9rem;
+            font-size: var(--font-size-small);
             cursor: pointer;
         }
 
@@ -181,13 +169,13 @@ pub fn nav_bar_html() -> String {
         <a href="/paint" class="nav-link-item">Paint</a>
         <a href="/requests" class="nav-link-item">Requests</a>
         <a href="/inspector" class="nav-link-item">Inspector</a>
-        <a href="/connection" class="nav-link-item conn-link">Connection</a>
       </div>
       <div class="nav-right">
         <div id="optional-button-placeholder"></div>
         <div class="tools-dropdown">
           <button class="nav-link-item">Tools</button>
           <div class="tools-dropdown-menu">
+            <button class="tools-dropdown-item" onclick="toggleConnectionTool()">Connection</button>
             <button class="tools-dropdown-item" onclick="toggleCalculator()">Calculator</button>
             <button class="tools-dropdown-item" onclick="toggleJwtDecoder()">JWT Decoder</button>
           </div>
@@ -236,6 +224,7 @@ pub fn render_base_page(
     {}
     {}
     {}
+    {}
     <link rel="stylesheet" href="/static/style.css">
   </head>
   <body>
@@ -244,6 +233,9 @@ pub fn render_base_page(
     {}
     {}
     {}
+    {}
+    <script src="/static/p2p_logic.js"></script>
+    <script>{}</script>
     <script>{}</script>
     <script>{}</script>
     <script>{}</script>
@@ -253,13 +245,16 @@ pub fn render_base_page(
         render_theme_variables(current_theme),
         calculator::get_css(),
         jwt_decoder::get_css(),
+        connection_tool::get_css(),
         get_settings_css(),
         nav_bar_html(),
         body_content,
         calculator::get_html(),
         jwt_decoder::get_html(),
+        connection_tool::get_html(),
         get_settings_html(current_theme, saved_themes),
         calculator::get_js(),
+        connection_tool::get_js(),
         jwt_decoder::get_js(),
         get_settings_js()
     )
@@ -367,14 +362,14 @@ pub fn get_settings_css() -> String {
 
     .settings-header h3 {
         margin: 0;
-        font-size: 1rem;
+        font-size: var(--font-size-medium);
     }
 
     .settings-close-btn {
         background: none;
         border: none;
         color: var(--text-color);
-        font-size: 1.5rem;
+        font-size: var(--font-size-large);
         cursor: pointer;
         opacity: 0.7;
     }
@@ -405,7 +400,7 @@ pub fn get_settings_css() -> String {
     }
 
     .settings-grid label {
-        font-size: 0.9rem;
+        font-size: var(--font-size-small);
         font-weight: bold;
         opacity: 0.9;
     }
@@ -504,6 +499,22 @@ pub fn get_settings_html(current_theme: &Theme, saved_themes: &HashMap<String, T
                             </label>
                         </div>
                     </div>
+
+                    <div style="margin-top: 10px;">
+                        <label for="font_family">Font Family:</label>
+                        <select id="font_family" name="font_family">
+                            <option value="sans-serif" {font_family_sans}>Sans Serif</option>
+                            <option value="Arial, sans-serif" {font_family_arial}>Arial</option>
+                            <option value="'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" {font_family_segoe}>Segoe UI</option>
+                            <option value="'Helvetica Neue', Helvetica, Arial, sans-serif" {font_family_helvetica}>Helvetica</option>
+                            <option value="Georgia, 'Times New Roman', serif" {font_family_georgia}>Georgia</option>
+                            <option value="'Trebuchet MS', sans-serif" {font_family_trebuchet}>Trebuchet</option>
+                            <option value="'Courier New', Courier, monospace" {font_family_courier}>Courier New</option>
+                            <option value="'Comic Sans MS', 'Comic Sans', 'Chalkboard SE', 'Marker Felt', cursive" {font_family_comic}>Comic / Chalkboard</option>
+                            <option value="Impact, Haettenschweiler, 'Arial Narrow Bold', sans-serif" {font_family_impact}>Impact Display</option>
+                            <option value="'Brush Script MT', 'Lucida Handwriting', cursive" {font_family_script}>Brush Script</option>
+                        </select>
+                    </div>
                 </div>
 
                 <div class="theme-action-buttons">
@@ -526,6 +537,16 @@ pub fn get_settings_html(current_theme: &Theme, saved_themes: &HashMap<String, T
         font_size_small = current_theme.font_size_small,
         font_size_medium = current_theme.font_size_medium,
         font_size_large = current_theme.font_size_large,
+        font_family_sans = if current_theme.font_family == "sans-serif" { "selected" } else { "" },
+        font_family_arial = if current_theme.font_family == "Arial, sans-serif" { "selected" } else { "" },
+        font_family_segoe = if current_theme.font_family == "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" { "selected" } else { "" },
+        font_family_helvetica = if current_theme.font_family == "'Helvetica Neue', Helvetica, Arial, sans-serif" { "selected" } else { "" },
+        font_family_georgia = if current_theme.font_family == "Georgia, 'Times New Roman', serif" { "selected" } else { "" },
+        font_family_trebuchet = if current_theme.font_family == "'Trebuchet MS', sans-serif" { "selected" } else { "" },
+        font_family_courier = if current_theme.font_family == "'Courier New', Courier, monospace" { "selected" } else { "" },
+        font_family_comic = if current_theme.font_family == "'Comic Sans MS', 'Comic Sans', 'Chalkboard SE', 'Marker Felt', cursive" { "selected" } else { "" },
+        font_family_impact = if current_theme.font_family == "Impact, Haettenschweiler, 'Arial Narrow Bold', sans-serif" { "selected" } else { "" },
+        font_family_script = if current_theme.font_family == "'Brush Script MT', 'Lucida Handwriting', cursive" { "selected" } else { "" },
         theme_options = theme_options
     )
 }
@@ -539,6 +560,7 @@ pub fn get_settings_js() -> String {
         const styleElement = document.getElementById('current-theme-vars');
         const themeInputs = form.querySelectorAll('input[type="color"]');
         const fontSizeNumericInputs = form.querySelectorAll('input[type="number"]');
+        const fontFamilyInput = document.getElementById('font_family');
 
         window.toggleSettings = function() {
             if (settings.style.display === 'none') {
@@ -565,6 +587,7 @@ pub fn get_settings_js() -> String {
             cssVars += `--font-size-medium: ${mediumVal}px;`;
             cssVars += `--font-size-large: ${largeVal}px;`;
             cssVars += `--base-font-size: ${mediumVal}px;`;
+            cssVars += `--base-font-family: ${fontFamilyInput.value};`;
             
             cssVars += '}';
             styleElement.innerHTML = cssVars;
@@ -577,6 +600,9 @@ pub fn get_settings_js() -> String {
         fontSizeNumericInputs.forEach(input => {
             input.addEventListener('input', applyTheme);
         });
+        if (fontFamilyInput) {
+            fontFamilyInput.addEventListener('change', applyTheme);
+        }
 
         // Drag logic
         let isDragging = false;

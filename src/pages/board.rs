@@ -335,6 +335,10 @@ fn render_board_page(current_theme: &Theme, saved_themes: &HashMap<String, Theme
 
     /* Dragging Visuals */
     .drag-over-column { background: rgba(255,255,255,0.05); border: 2px dashed var(--link-color); }
+    .board-readonly .task-card,
+    .board-readonly .column-header {
+        cursor: default;
+    }
 </style>
 "#;
 
@@ -344,6 +348,7 @@ fn render_board_page(current_theme: &Theme, saved_themes: &HashMap<String, Theme
             <button class="btn btn-secondary" onclick="openColumnModal()">+ Add Column</button>
             <button class="btn" onclick="openTaskModal()">+ New Task</button>
             <div style="margin-left: auto; font-size: 0.9em; color: #888; align-self: center;">Drag columns by header. Drag tasks by card.</div>
+            <div id="board-p2p-status" style="font-size: 0.9em; color: #888; align-self: center;">Local board mode</div>
         </div>
         <div class="board-container" id="board-container" ondragover="handleContainerDragOver(event)" ondrop="handleContainerDrop(event)">
             <!-- Columns will be injected here -->
@@ -410,15 +415,92 @@ fn render_board_page(current_theme: &Theme, saved_themes: &HashMap<String, Theme
     <script>
         let boardData = { columns: [], tasks: [] };
         let draggedType = null; // 'task' or 'column'
+        let boardReadonly = false;
+
+        function setBoardStatus(text) {
+            const el = document.getElementById('board-p2p-status');
+            if (el) el.textContent = text;
+        }
+
+        function setBoardReadonly(nextReadonly) {
+            boardReadonly = !!nextReadonly;
+            const root = document.querySelector('.board-app');
+            if (!root) return;
+            root.classList.toggle('board-readonly', boardReadonly);
+            document.querySelectorAll('.board-toolbar button').forEach(btn => {
+                if (btn.textContent && btn.textContent.includes('+')) {
+                    btn.disabled = boardReadonly;
+                }
+            });
+        }
+
+        function broadcastBoardState() {
+            if (!window.p2p || !window.p2p.isConnected() || boardReadonly) return;
+            window.p2p.sendToolState('board', boardData);
+        }
+
+        function initBoardP2P() {
+            if (!window.p2p) return;
+
+            const info = window.p2p.getSessionInfo();
+            if (info.connected && info.role === 'guest') {
+                setBoardReadonly(true);
+                setBoardStatus('Connected: viewing shared board');
+                window.p2p.sendToolMessage('board', 'request_state', {});
+            } else if (info.connected) {
+                setBoardStatus('Connected: sharing local board');
+                setTimeout(() => broadcastBoardState(), 300);
+            } else {
+                setBoardStatus('Local board mode');
+            }
+
+            window.addEventListener('p2p-status', (event) => {
+                const state = event.detail || {};
+                if (!state.connected) {
+                    setBoardReadonly(false);
+                    setBoardStatus('Local board mode');
+                    return;
+                }
+
+                if (state.role === 'guest') {
+                    setBoardReadonly(true);
+                    setBoardStatus('Connected: viewing shared board');
+                    if (window.p2p) window.p2p.sendToolMessage('board', 'request_state', {});
+                } else {
+                    setBoardReadonly(false);
+                    setBoardStatus('Connected: sharing local board');
+                    broadcastBoardState();
+                }
+            });
+
+            window.addEventListener('p2p-message', (event) => {
+                const msg = event.detail || {};
+                if (msg.type !== 'tool' || msg.tool !== 'board') return;
+
+                if (msg.action === 'request_state') {
+                    if (!boardReadonly) broadcastBoardState();
+                    return;
+                }
+
+                if (msg.action === 'state' && msg.payload && Array.isArray(msg.payload.columns) && Array.isArray(msg.payload.tasks)) {
+                    setBoardReadonly(true);
+                    setBoardStatus('Connected: viewing shared board');
+                    boardData = msg.payload;
+                    renderBoard();
+                }
+            });
+        }
         
         // --- Init ---
         async function loadBoard() {
             const res = await fetch('/board/data');
             boardData = await res.json();
             renderBoard();
+            if (!boardReadonly) broadcastBoardState();
         }
         
         loadBoard();
+        initBoardP2P();
 
         // --- Rendering ---
         function renderBoard() {
@@ -430,7 +512,7 @@ fn render_board_page(current_theme: &Theme, saved_themes: &HashMap<String, Theme
                 const colDiv = document.createElement('div');
                 colDiv.className = 'column';
                 colDiv.id = col.id;
-                colDiv.draggable = true;
+                colDiv.draggable = !boardReadonly;
                 
                 // Listeners for Column Dragging
                 colDiv.ondragstart = (ev) => dragColumnStart(ev, col.id);
@@ -439,7 +521,7 @@ fn render_board_page(current_theme: &Theme, saved_themes: &HashMap<String, Theme
                 colDiv.innerHTML = `
                     <div class="column-header">
                         ${col.title}
-                        <button class="icon-btn" onclick="deleteColumn('${col.id}')" title="Delete Column">x</button>
+                        ${boardReadonly ? '' : `<button class="icon-btn" onclick="deleteColumn('${col.id}')" title="Delete Column">x</button>`}
                     </div>
                     <div class="column-body" id="body_${col.id}" 
                          ondrop="dropTask(event, '${col.id}')" 
@@ -456,7 +538,7 @@ fn render_board_page(current_theme: &Theme, saved_themes: &HashMap<String, Theme
                 if (colBody) {
                     const card = document.createElement('div');
                     card.className = 'task-card';
-                    card.draggable = true;
+                    card.draggable = !boardReadonly;
                     card.id = task.id;
                     
                     // Listeners for Task Dragging
@@ -498,6 +580,7 @@ fn render_board_page(current_theme: &Theme, saved_themes: &HashMap<String, Theme
 
         // --- TASK Drag & Drop ---
         function dragTaskStart(ev, id) {
+            if (boardReadonly) return;
             ev.stopPropagation(); // Stop bubbling so we don't trigger column drag
             draggedType = 'task';
             ev.dataTransfer.setData("text/plain", id);
@@ -511,6 +594,7 @@ fn render_board_page(current_theme: &Theme, saved_themes: &HashMap<String, Theme
         }
 
         function allowDropTask(ev) {
+            if (boardReadonly) return;
             if (draggedType === 'task') {
                 ev.preventDefault();
                 ev.currentTarget.classList.add('drag-over-column');
@@ -522,6 +606,7 @@ fn render_board_page(current_theme: &Theme, saved_themes: &HashMap<String, Theme
         }
 
         async function dropTask(ev, colId) {
+            if (boardReadonly) return;
             if (draggedType !== 'task') return;
             ev.preventDefault();
             const colBody = ev.currentTarget;
@@ -542,10 +627,13 @@ fn render_board_page(current_theme: &Theme, saved_themes: &HashMap<String, Theme
             // Reload to ensure data consistency
             const res = await fetch('/board/data');
             boardData = await res.json();
+            renderBoard();
+            broadcastBoardState();
         }
 
         // --- COLUMN Drag & Drop ---
         function dragColumnStart(ev, id) {
+            if (boardReadonly) return;
             draggedType = 'column';
             ev.dataTransfer.setData("text/plain", id);
             ev.dataTransfer.setData("type", "column");
@@ -558,6 +646,7 @@ fn render_board_page(current_theme: &Theme, saved_themes: &HashMap<String, Theme
         }
 
         function handleContainerDragOver(ev) {
+            if (boardReadonly) return;
             if (draggedType === 'column') {
                 ev.preventDefault();
                 const container = document.getElementById('board-container');
@@ -572,6 +661,7 @@ fn render_board_page(current_theme: &Theme, saved_themes: &HashMap<String, Theme
         }
 
         async function handleContainerDrop(ev) {
+            if (boardReadonly) return;
             if (draggedType !== 'column') return;
             ev.preventDefault();
             
@@ -589,6 +679,8 @@ fn render_board_page(current_theme: &Theme, saved_themes: &HashMap<String, Theme
             // Reload
             const res = await fetch('/board/data');
             boardData = await res.json();
+            renderBoard();
+            broadcastBoardState();
         }
 
         // Helper to determine where to drop column in horizontal list
@@ -612,12 +704,14 @@ fn render_board_page(current_theme: &Theme, saved_themes: &HashMap<String, Theme
 
         // --- Modals & Logic ---
         function openColumnModal() {
+            if (boardReadonly) return;
             document.getElementById('col-modal').classList.add('active');
             document.getElementById('col-title').value = '';
             document.getElementById('col-title').focus();
         }
 
         function openTaskModal(taskId = null) {
+            if (boardReadonly) return;
             const modal = document.getElementById('task-modal');
             const container = document.getElementById('custom-fields-container');
             container.innerHTML = ''; // Clear custom fields
@@ -664,6 +758,7 @@ fn render_board_page(current_theme: &Theme, saved_themes: &HashMap<String, Theme
         }
         
         function addCustomFieldRow(key = '', val = '') {
+            if (boardReadonly) return;
             const container = document.getElementById('custom-fields-container');
             const row = document.createElement('div');
             row.className = 'kv-row';
@@ -677,6 +772,7 @@ fn render_board_page(current_theme: &Theme, saved_themes: &HashMap<String, Theme
 
         // --- Actions ---
         async function saveColumn() {
+            if (boardReadonly) return;
             const title = document.getElementById('col-title').value;
             if (!title) return;
             
@@ -687,10 +783,12 @@ fn render_board_page(current_theme: &Theme, saved_themes: &HashMap<String, Theme
             });
             boardData = await res.json();
             renderBoard();
+            broadcastBoardState();
             closeModal('col-modal');
         }
         
         async function deleteColumn(id) {
+            if (boardReadonly) return;
             if(!confirm('Delete this column and all its tasks?')) return;
              const res = await fetch('/board/column/delete', {
                 method: 'POST',
@@ -699,9 +797,11 @@ fn render_board_page(current_theme: &Theme, saved_themes: &HashMap<String, Theme
             });
             boardData = await res.json();
             renderBoard();
+            broadcastBoardState();
         }
 
         async function saveTask() {
+            if (boardReadonly) return;
             const id = document.getElementById('task-id').value || null;
             const title = document.getElementById('task-title').value;
             if (!title) return alert('Title required');
@@ -729,10 +829,12 @@ fn render_board_page(current_theme: &Theme, saved_themes: &HashMap<String, Theme
             });
             boardData = await res.json();
             renderBoard();
+            broadcastBoardState();
             closeModal('task-modal');
         }
         
         async function deleteTask() {
+            if (boardReadonly) return;
             const id = document.getElementById('task-id').value;
             if(!id || !confirm('Delete this task?')) return;
             
@@ -743,6 +845,7 @@ fn render_board_page(current_theme: &Theme, saved_themes: &HashMap<String, Theme
             });
             boardData = await res.json();
             renderBoard();
+            broadcastBoardState();
             closeModal('task-modal');
         }
     </script>

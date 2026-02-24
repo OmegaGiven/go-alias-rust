@@ -11,6 +11,13 @@ pub struct RoomResponse {
     status: String,
 }
 
+#[derive(Serialize)]
+pub struct RoomLookupResponse {
+    exists: bool,
+    has_offer: bool,
+    has_answer: bool,
+}
+
 #[derive(Deserialize)]
 pub struct SignalPayload {
     room_id: String,
@@ -25,11 +32,19 @@ pub struct PermissionPayload {
     level: String, // "rw", "r", "none"
 }
 
+#[derive(Deserialize)]
+pub struct DisconnectPayload {
+    room_id: String,
+}
+
 #[post("/signal/create")]
 pub async fn signal_create(state: Data<Arc<AppState>>) -> impl Responder {
     let mut rooms = state.rooms.lock().unwrap();
-    // Simple ID generation based on time
-    let id = format!("{:x}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos());
+    // Generate a unique room id. Collisions are unlikely but guarded.
+    let mut id = format!("{:x}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos());
+    while rooms.contains_key(&id) {
+        id = format!("{:x}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos());
+    }
     let room = RoomState::new(id.clone());
     rooms.insert(id.clone(), room);
     
@@ -40,7 +55,11 @@ pub async fn signal_create(state: Data<Arc<AppState>>) -> impl Responder {
 pub async fn signal_offer(payload: Json<SignalPayload>, state: Data<Arc<AppState>>) -> impl Responder {
     let mut rooms = state.rooms.lock().unwrap();
     if let Some(room) = rooms.get_mut(&payload.room_id) {
+        // New offer implies a fresh negotiation cycle for this room.
         room.host_offer = Some(payload.data.clone());
+        room.guest_answer = None;
+        room.host_ice.clear();
+        room.guest_ice.clear();
         return HttpResponse::Ok().body("Offer received");
     }
     HttpResponse::NotFound().body("Room not found")
@@ -95,10 +114,15 @@ pub async fn signal_ice(payload: Json<SignalPayload>, state: Data<Arc<AppState>>
 #[get("/signal/ice/{room_id}/{role}")]
 pub async fn signal_get_ice(path: actix_web::web::Path<(String, String)>, state: Data<Arc<AppState>>) -> impl Responder {
     let (room_id, role) = path.into_inner();
-    let rooms = state.rooms.lock().unwrap();
-    if let Some(room) = rooms.get(&room_id) {
-        // If I am the host, I want guest ICE candidates, and vice versa
-        let candidates = if role == "host" { &room.guest_ice } else { &room.host_ice };
+    let mut rooms = state.rooms.lock().unwrap();
+    if let Some(room) = rooms.get_mut(&room_id) {
+        // If I am host, return guest ICE; if guest, return host ICE.
+        // Drain after read to avoid re-sending the same candidates forever.
+        let candidates = if role == "host" {
+            std::mem::take(&mut room.guest_ice)
+        } else {
+            std::mem::take(&mut room.host_ice)
+        };
         return HttpResponse::Ok().json(candidates);
     }
     HttpResponse::NotFound().body("Room not found")
@@ -121,4 +145,29 @@ pub async fn signal_get_permissions(path: actix_web::web::Path<String>, state: D
         return HttpResponse::Ok().json(&room.permissions);
     }
     HttpResponse::NotFound().body("Room not found")
+}
+
+#[get("/signal/room/{room_id}")]
+pub async fn signal_room_lookup(path: actix_web::web::Path<String>, state: Data<Arc<AppState>>) -> impl Responder {
+    let room_id = path.into_inner();
+    let rooms = state.rooms.lock().unwrap();
+    if let Some(room) = rooms.get(&room_id) {
+        return HttpResponse::Ok().json(RoomLookupResponse {
+            exists: true,
+            has_offer: room.host_offer.is_some(),
+            has_answer: room.guest_answer.is_some(),
+        });
+    }
+    HttpResponse::Ok().json(RoomLookupResponse {
+        exists: false,
+        has_offer: false,
+        has_answer: false,
+    })
+}
+
+#[post("/signal/disconnect")]
+pub async fn signal_disconnect(payload: Json<DisconnectPayload>, state: Data<Arc<AppState>>) -> impl Responder {
+    let mut rooms = state.rooms.lock().unwrap();
+    rooms.remove(&payload.room_id);
+    HttpResponse::Ok().body("Room disconnected")
 }

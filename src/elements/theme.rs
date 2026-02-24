@@ -1,5 +1,5 @@
 use actix_web::{
-    get, post,
+    post,
     web::{Data, Form}, 
     HttpResponse, Responder,
 };
@@ -12,7 +12,6 @@ use std::{
 };
 
 use crate::app_state::{AppState, Theme};
-use crate::base_page::render_base_page;
 
 // File constants
 pub static THEMES_FILE: &str = "themes.json";
@@ -33,6 +32,7 @@ pub fn default_dark_theme() -> Theme {
         font_size_small: 14,
         font_size_medium: 16,
         font_size_large: 18,
+        font_family: "sans-serif".to_string(),
     }
 }
 
@@ -82,6 +82,7 @@ pub struct ThemeForm {
     pub font_size_small: u32,
     pub font_size_medium: u32,
     pub font_size_large: u32,
+    pub font_family: String,
     
     pub load_theme_name: Option<String>,
     
@@ -129,6 +130,7 @@ pub async fn save_theme(
         font_size_small: form.font_size_small,
         font_size_medium: form.font_size_medium,
         font_size_large: form.font_size_large,
+        font_family: form.font_family.clone(),
     };
 
     // 3. Update the current theme

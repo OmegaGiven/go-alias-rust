@@ -1,11 +1,16 @@
 use actix_web::{get, post, web::{self, Data, Form, Json}, HttpResponse, Responder};
-use std::{fs, io, process::Command, collections::HashMap};
+use std::{fs, io, process::Command, collections::HashMap, time::{Instant, SystemTime, UNIX_EPOCH}, sync::{Mutex, OnceLock}};
 use serde::{Deserialize, Serialize};
 use crate::app_state::{AppState, Theme};
 use crate::base_page::render_base_page;
 use htmlescape::encode_minimal;
 
 const REQUESTS_FILE: &str = "saved_requests.json";
+static RUNNING_REQUESTS: OnceLock<Mutex<HashMap<String, u32>>> = OnceLock::new();
+
+fn running_requests() -> &'static Mutex<HashMap<String, u32>> {
+    RUNNING_REQUESTS.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
 #[derive(Serialize, Deserialize, Clone)]
 struct SavedRequest {
@@ -44,8 +49,30 @@ struct DeleteRequestForm {
 struct ProxyRequest {
     method: String,
     url: String,
-    headers: HashMap<String, String>,
+    headers: Vec<HeaderPair>,
     body: String,
+    request_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct HeaderPair {
+    key: String,
+    value: String,
+}
+
+#[derive(Deserialize)]
+struct CancelRequest {
+    request_id: String,
+}
+
+#[derive(Serialize)]
+struct ProxyResponse {
+    status: u16,
+    headers: String,
+    body: String,
+    stderr: String,
+    curl_exit: i32,
+    duration_ms: u128,
 }
 
 fn load_requests() -> Vec<SavedRequest> {
@@ -116,35 +143,105 @@ pub async fn request_delete(form: Form<DeleteRequestForm>) -> impl Responder {
 #[post("/requests/run")]
 pub async fn request_run(payload: Json<ProxyRequest>) -> impl Responder {
     let res = web::block(move || {
+        let started = Instant::now();
         let mut cmd = Command::new("curl");
-        
-        cmd.arg("-i").arg("-s").arg("-X").arg(&payload.method);
+        let request_id = payload.request_id.clone().unwrap_or_else(|| {
+            format!(
+                "req_{}_{}",
+                std::process::id(),
+                SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos()
+            )
+        });
 
-        for (key, value) in &payload.headers {
-            cmd.arg("-H").arg(format!("{}: {}", key, value));
+        let run_id = format!(
+            "{}_{}_{}",
+            std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos(),
+            payload.method
+        );
+        let mut header_path = std::env::temp_dir();
+        header_path.push(format!("go_service_headers_{run_id}.txt"));
+        let mut body_path = std::env::temp_dir();
+        body_path.push(format!("go_service_body_{run_id}.txt"));
+
+        cmd.arg("-sS")
+            .arg("--connect-timeout").arg("15")
+            .arg("--max-time").arg("60")
+            .arg("-X").arg(&payload.method);
+
+        for header in &payload.headers {
+            if !header.key.trim().is_empty() {
+                cmd.arg("-H").arg(format!("{}: {}", header.key, header.value));
+            }
         }
 
         if !payload.body.is_empty() && payload.method != "GET" && payload.method != "HEAD" {
             cmd.arg("-d").arg(&payload.body);
         }
 
-        cmd.arg(&payload.url);
-        cmd.output()
+        cmd.arg("-D").arg(&header_path)
+            .arg("-o").arg(&body_path)
+            .arg("-w").arg("%{http_code}")
+            .arg(&payload.url);
+
+        let child = cmd.spawn()?;
+        if let Ok(mut map) = running_requests().lock() {
+            map.insert(request_id.clone(), child.id());
+        }
+        let output = child.wait_with_output()?;
+        if let Ok(mut map) = running_requests().lock() {
+            map.remove(&request_id);
+        }
+
+        let headers = fs::read_to_string(&header_path).unwrap_or_default();
+        let body = fs::read(&body_path)
+            .map(|b| String::from_utf8_lossy(&b).to_string())
+            .unwrap_or_default();
+        let _ = fs::remove_file(&header_path);
+        let _ = fs::remove_file(&body_path);
+
+        let status = String::from_utf8_lossy(&output.stdout)
+            .trim()
+            .parse::<u16>()
+            .unwrap_or(0);
+
+        Ok::<ProxyResponse, io::Error>(ProxyResponse {
+            status,
+            headers,
+            body,
+            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+            curl_exit: output.status.code().unwrap_or(-1),
+            duration_ms: started.elapsed().as_millis(),
+        })
     }).await;
 
     match res {
-        Ok(Ok(output)) => {
-            let result = String::from_utf8_lossy(&output.stdout).to_string();
-            if result.is_empty() {
-                let err = String::from_utf8_lossy(&output.stderr).to_string();
-                HttpResponse::Ok().body(if err.is_empty() { "No response".to_string() } else { err })
-            } else {
-                HttpResponse::Ok().body(result)
-            }
-        },
+        Ok(Ok(output)) => HttpResponse::Ok().json(output),
         Ok(Err(e)) => HttpResponse::InternalServerError().body(format!("Failed to execute curl: {}", e)),
         _ => HttpResponse::InternalServerError().body("Blocked execution error"),
     }
+}
+
+#[post("/requests/cancel")]
+pub async fn request_cancel(payload: Json<CancelRequest>) -> impl Responder {
+    let pid = {
+        let mut map = running_requests().lock().unwrap();
+        map.remove(&payload.request_id)
+    };
+
+    if let Some(pid) = pid {
+        let result = Command::new("kill")
+            .arg("-TERM")
+            .arg(pid.to_string())
+            .status();
+        return match result {
+            Ok(status) if status.success() => HttpResponse::Ok().body("Cancelled"),
+            Ok(_) => HttpResponse::InternalServerError().body("Failed to cancel request"),
+            Err(err) => HttpResponse::InternalServerError().body(format!("Cancel error: {}", err)),
+        };
+    }
+
+    HttpResponse::NotFound().body("Request not found")
 }
 
 
@@ -174,7 +271,7 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
                     </div>
                     <form method="POST" action="/requests/delete" class="delete-form">
                         <input type="hidden" name="name" value="{}">
-                        <button type="submit" class="btn-danger-text" title="Delete">x</button>
+                        <button type="submit" class="btn-danger-text" title="Delete">×</button>
                     </form>
                 </li>"##,
             r.method.to_lowercase(), r.method, 
@@ -211,18 +308,20 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
         min-height: 0; 
     }}
     
-    .saved-req-item {{ display: flex; align-items: center; justify-content: space-between; padding: 2px 5px; background-color: transparent; cursor: pointer; transition: background 0.2s; }}
+    .saved-req-item {{ display: flex; align-items: center; justify-content: space-between; padding: 1px 5px; min-height: 24px; background-color: transparent; cursor: pointer; transition: background 0.2s; }}
+    .saved-req-item .delete-form {{ margin: 0; display: flex; align-items: center; flex: 0 0 auto; align-self: center; }}
+    .saved-req-item .btn-danger-text {{ width: 18px; height: 18px; min-height: 18px; min-width: 18px; font-size: var(--font-size-small); line-height: 1; padding: 0; margin: 0; display: inline-flex; align-items: center; justify-content: center; transform: translateY(-1px); }}
     .saved-req-item:hover {{ background-color: var(--tertiary-bg); }}
     .saved-req-item.selected {{ background-color: var(--tertiary-bg); border-left: 3px solid var(--link-color); padding-left: 2px; }}
 
-    .req-method {{ font-size: 0.65em; font-weight: bold; padding: 1px 4px; border-radius: 2px; margin-right: 5px; min-width: 35px; text-align: center; color: #fff; flex-shrink: 0; }}
+    .req-method {{ font-size: calc(var(--font-size-small) * 0.8); font-weight: bold; padding: 1px 4px; border-radius: 2px; margin-right: 5px; min-width: 35px; text-align: center; color: #fff; flex-shrink: 0; }}
     .req-method.get {{ background-color: #61affe; }}
     .req-method.post {{ background-color: #49cc90; }}
     .req-method.put {{ background-color: #fca130; }}
     .req-method.delete {{ background-color: #f93e3e; }}
     .req-method.patch {{ background-color: #50e3c2; }}
     
-    .req-link {{ text-decoration: none; color: var(--text-color); flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.9em; min-width: 0; transition: color 0.2s; }}
+    .req-link {{ text-decoration: none; color: var(--text-color); flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: var(--font-size-small); min-width: 0; transition: color 0.2s; }}
     .req-link:hover {{ color: var(--link-hover); }}
     
     /* Shared styles for delete-btn removed - now using .btn-danger-text in static/style.css */
@@ -255,9 +354,12 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
     
     .tab-content {{ display: none; flex-direction: column; gap: 10px; flex: 1; overflow-y: auto; padding: 10px; min-height: 0; }}
     .tab-content.active {{ display: flex; }}
+    .body-type-row {{ display:flex; gap:15px; margin-bottom:10px; align-items:center; }}
+    .body-type-row .title {{ font-size: var(--font-size-small); color:#888; }}
+    .body-type-row label {{ font-size: var(--font-size-small); color: var(--text-color); display: inline-flex; align-items: center; gap: 4px; }}
     
     textarea.code-editor {{
-        width: 100%; height: 100%; background: var(--secondary-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; padding: 10px; font-family: monospace; box-sizing: border-box; resize: none;
+        width: 100%; height: 100%; background: var(--secondary-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; padding: 10px; font-family: monospace; font-size: var(--font-size-medium); box-sizing: border-box; resize: none;
     }}
 
     /* Key-Value Tables (Params & Headers) removed - now using shared .kv-row class */
@@ -269,9 +371,9 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
     /* Auth Section removed - now using shared .form-group logic where possible */
     .auth-section {{ display: flex; flex-direction: column; gap: 10px; padding: 0; background: transparent; border: none; }}
     .auth-row {{ display: flex; gap: 10px; align-items: center; flex-wrap: wrap;}}
-    .auth-row label {{ width: 100px; flex-shrink: 0; font-size: 0.9em; color: #aaa;}}
+    .auth-row label {{ width: 100px; flex-shrink: 0; font-size: var(--font-size-small); color: #aaa;}}
     .auth-row input, .auth-row select {{ flex: 1; padding: 5px; background: var(--tertiary-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 3px; }}
-    .oauth-btn {{ background-color: #fca130; color: #000; border: none; padding: 6px 12px; border-radius: 3px; cursor: pointer; font-weight: bold; font-size: 0.9em; }}
+    .oauth-btn {{ background-color: #fca130; color: #000; border: none; padding: 6px 12px; border-radius: 3px; cursor: pointer; font-weight: bold; font-size: var(--font-size-small); }}
     .oauth-btn:hover {{ background-color: #e59029; }}
     .token-display {{ width: 100%; margin-top: 5px; }}
 
@@ -286,12 +388,15 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
         background: var(--secondary-bg);
     }}
     .response-header {{ padding: 5px 10px; background: var(--tertiary-bg); border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }}
-    .response-meta {{ display: flex; gap: 15px; font-size: 0.85em; color: #aaa; flex-shrink: 0; margin: 0; }}
+    .response-meta {{ display: flex; gap: 15px; font-size: var(--font-size-small); color: #aaa; flex-shrink: 0; margin: 0; }}
     
     /* Debug Info */
-    #request-debug-info {{ margin-bottom: 5px; color: #888; font-family: monospace; font-size: 0.8em; white-space: pre-wrap; overflow-x: auto; display: none; background: var(--primary-bg); padding: 5px; border-bottom: 1px solid var(--border-color); flex-shrink: 0;}}
+    #request-debug-info {{ margin-bottom: 5px; color: #888; font-family: monospace; font-size: var(--font-size-small); white-space: pre-wrap; overflow-x: auto; display: none; background: var(--primary-bg); padding: 5px; border-bottom: 1px solid var(--border-color); flex-shrink: 0;}}
 
-    #response-body {{ flex: 1; white-space: pre-wrap; overflow: auto; font-family: monospace; background: var(--primary-bg); padding: 10px; border: none; min-height: 0; color: var(--text-color); }}
+    #response-body {{ flex: 1; white-space: pre-wrap; overflow: auto; font-family: monospace; background: var(--primary-bg); padding: 10px; border: none; min-height: 60px; color: var(--text-color); }}
+    #response-headers {{ height: 160px; overflow: auto; white-space: pre-wrap; font-family: monospace; background: var(--primary-bg); padding: 10px; border-bottom: 1px solid var(--border-color); margin: 0; color: var(--text-color); min-height: 50px; }}
+    #headers-body-resizer {{ height: 6px; background: var(--tertiary-bg); border-top: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color); cursor: row-resize; flex-shrink: 0; }}
+    #headers-body-resizer.resizing {{ background: var(--link-color); }}
     
     /* Save Modal */
     .save-controls {{ display: flex; gap: 5px; align-items: center; background: var(--tertiary-bg); padding: 10px; border-bottom: 1px solid var(--border-color); margin-bottom: 0; display: none; flex-shrink: 0; }}
@@ -326,6 +431,7 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
                 </select>
                 <input type="text" id="url" class="url-input" placeholder="Enter request URL" value="">
                 <button id="send-btn" class="send-btn btn-small">Send</button>
+                <button id="cancel-btn" class="save-btn btn-small" disabled>Cancel</button>
                 <button id="toggle-save-btn" class="save-btn btn-small">Save</button>
             </div>
 
@@ -357,7 +463,7 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
 
                 <!-- Params Tab -->
                 <div id="tab-params" class="tab-content active">
-                    <p style="font-size:0.8em; color:#888; margin:0;">Query Parameters</p>
+                    <p style="font-size:var(--font-size-small); color:#888; margin:0;">Query Parameters</p>
                     <div id="params-container">
                         <!-- Dynamic Rows -->
                     </div>
@@ -366,7 +472,7 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
 
                 <!-- Path Tab -->
                 <div id="tab-path" class="tab-content">
-                    <p style="font-size:0.8em; color:#888; margin:0;">Path Variables (Auto-detected from URL like {{id}})</p>
+                    <p style="font-size:var(--font-size-small); color:#888; margin:0;">Path Variables (Auto-detected from URL like {{id}})</p>
                     <div id="path-container"></div>
                 </div>
 
@@ -389,7 +495,7 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
                 
                 <!-- Headers Tab -->
                 <div id="tab-headers" class="tab-content">
-                    <p style="font-size:0.8em; color:#888; margin:0;">HTTP Headers</p>
+                    <p style="font-size:var(--font-size-small); color:#888; margin:0;">HTTP Headers</p>
                     <div id="headers-container"></div>
                     <button class="save-btn btn-small" onclick="addKvRow('headers-container')">+ Add Header</button>
                 </div>
@@ -397,8 +503,8 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
                 <!-- Body Tab -->
                 <div id="tab-body" class="tab-content">
                     <!-- Body Type Selector -->
-                    <div style="display:flex; gap:15px; margin-bottom:10px; align-items:center;">
-                        <label style="font-size:0.9em; color:#888;">Type:</label>
+                    <div class="body-type-row">
+                        <label class="title">Type:</label>
                         <label><input type="radio" name="body-type" value="raw" checked onchange="toggleBodyType()"> Raw (JSON)</label>
                         <label><input type="radio" name="body-type" value="form" onchange="toggleBodyType()"> Form URL Encoded</label>
                     </div>
@@ -422,7 +528,7 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
             <div id="response-resizer" class="resizer-h" title="Drag to resize"></div>
             <div class="response-section" id="response-section">
                 <div class="response-header">
-                    <h3 style="margin:0; font-size:1em;">Response</h3>
+                    <h3 style="margin:0; font-size:var(--font-size-medium);">Response</h3>
                     <div class="response-meta">
                         <span id="res-status">Status: -</span>
                         <span id="res-time">Time: - ms</span>
@@ -432,6 +538,8 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
                 </div>
                 
                 <div id="request-debug-info"></div>
+                <pre id="response-headers">Response headers will appear here...</pre>
+                <div id="headers-body-resizer" title="Drag to resize headers/body"></div>
                 <div id="response-body">Response body will appear here...</div>
             </div>
         </div>
@@ -442,12 +550,17 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
         const urlInput = document.getElementById('url');
         const bodyInput = document.getElementById('body-input');
         const sendBtn = document.getElementById('send-btn');
+        const cancelBtn = document.getElementById('cancel-btn');
         const responseBody = document.getElementById('response-body');
+        const responseHeaders = document.getElementById('response-headers');
+        const headersBodyResizer = document.getElementById('headers-body-resizer');
         const resStatus = document.getElementById('res-status');
         const resTime = document.getElementById('res-time');
         const resSize = document.getElementById('res-size');
         const downloadResBtn = document.getElementById('download-res-btn');
         const requestDebugInfo = document.getElementById('request-debug-info');
+        const RESPONSE_HEIGHT_KEY = 'request-response-height';
+        const RESPONSE_HEADERS_HEIGHT_KEY = 'request-response-headers-height';
         
         // Save Logic Elements
         const toggleSaveBtn = document.getElementById('toggle-save-btn');
@@ -466,6 +579,8 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
         const authTypeSelect = document.getElementById('auth-type');
         const authInputs = document.getElementById('auth-inputs');
         let fetchedOAuthToken = ''; // Store the token here
+        let currentRequestId = null;
+        let currentAbortController = null;
 
         // --- Helper: Create Key-Value Row ---
         function addKvRow(containerId, key = '', val = '', isReadOnlyKey = false) {{
@@ -495,6 +610,17 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
             return map;
         }}
 
+        function getKvPairs(containerId) {{
+            const container = document.getElementById(containerId);
+            const pairs = [];
+            container.querySelectorAll('.kv-row').forEach(row => {{
+                const k = row.querySelector('.key').value.trim();
+                const v = row.querySelector('.val').value.trim();
+                if (k) pairs.push([k, v]);
+            }});
+            return pairs;
+        }}
+
         // --- Body Type Toggle ---
         function toggleBodyType() {{
             const type = document.querySelector('input[name="body-type"]:checked').value;
@@ -521,8 +647,10 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
             try {{
                 const parts = urlInput.value.split('?');
                 const baseUrl = parts[0];
-                const params = getKvMap('params-container');
-                const queryString = new URLSearchParams(params).toString();
+                const params = getKvPairs('params-container');
+                const search = new URLSearchParams();
+                params.forEach(([k, v]) => search.append(k, v));
+                const queryString = search.toString();
                 if (queryString) {{
                     urlInput.value = `${{baseUrl}}?${{queryString}}`;
                 }} else {{
@@ -640,7 +768,7 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
             const debugCurl = `curl -X POST "${{tokenUrl}}" \\\n  -H "Content-Type: application/json" \\\n  -d '${{JSON.stringify(payload)}}'`;
 
             // Display debug info immediately
-            display.innerHTML = `<div style="white-space: pre-wrap; margin-bottom: 10px; color: #888; border-bottom: 1px solid #444; padding-bottom: 5px; font-size: 0.8em; overflow-x: auto;">${{debugCurl}}</div><div id="token-status-msg">Fetching...</div>`;
+            display.innerHTML = `<div style="white-space: pre-wrap; margin-bottom: 10px; color: #888; border-bottom: 1px solid #444; padding-bottom: 5px; font-size: var(--font-size-small); overflow-x: auto;">${{debugCurl}}</div><div id="token-status-msg">Fetching...</div>`;
             
             try {{
                 const resp = await fetch('/requests/run', {{
@@ -649,16 +777,12 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
                     body: JSON.stringify({{
                         method: 'POST',
                         url: tokenUrl,
-                        headers: {{ 'Content-Type': 'application/json' }}, // Using JSON content type
+                        headers: [{{ key: 'Content-Type', value: 'application/json' }}],
                         body: JSON.stringify(payload)
                     }})
                 }});
-                
-                const text = await resp.text();
-                // Robust parsing of curl output (splitting headers/body by double newlines)
-                const parts = text.split(/(?:\r\n\r\n|\n\n)/g); 
-                const jsonStr = parts.length > 1 ? parts[parts.length - 1] : text;
-                const cleanJson = jsonStr.trim();
+                const run = await resp.json();
+                const cleanJson = (run.body || '').trim();
                 
                 const msgDiv = document.getElementById('token-status-msg');
 
@@ -681,7 +805,7 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
                 }} catch(e) {{
                     msgDiv.innerText = "Error parsing response JSON.";
                     console.error("Parse error:", e);
-                    console.log("Raw text:", text);
+                    console.log("Raw body:", run.body);
                 }}
                 
             }} catch (e) {{
@@ -698,19 +822,48 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
         }}
 
         function constructHeaders() {{
-            const headers = getKvMap('headers-container');
+            const headers = getKvPairs('headers-container');
             const authType = authTypeSelect.value;
-            // ... (Auth injection logic same as before) ...
+
             if (authType === 'bearer' || authType === 'oauth2') {{
                 const token = authType === 'oauth2' ? fetchedOAuthToken : document.getElementById('auth-bearer-token')?.value;
-                if(token) headers['Authorization'] = `Bearer ${{token}}`;
+                if(token) headers.push(['Authorization', `Bearer ${{token}}`]);
+            }}
+            if (authType === 'basic') {{
+                const user = document.getElementById('auth-basic-user')?.value || '';
+                const pass = document.getElementById('auth-basic-pass')?.value || '';
+                headers.push(['Authorization', `Basic ${{btoa(`${{user}}:${{pass}}`)}}`]);
+            }}
+            if (authType === 'apikey') {{
+                const key = document.getElementById('auth-api-key')?.value?.trim() || '';
+                const val = document.getElementById('auth-api-val')?.value || '';
+                if (key) headers.push([key, val]);
             }}
             return headers;
         }}
 
+        function getRequestBodyAndHeaders(method, headerPairs) {{
+            if (method === 'GET' || method === 'HEAD') return {{ body: '', headerPairs }};
+            const bodyType = document.querySelector('input[name="body-type"]:checked')?.value || 'raw';
+            if (bodyType === 'form') {{
+                const formPairs = getKvPairs('form-body-rows');
+                const encoded = new URLSearchParams(formPairs).toString();
+                const hasContentType = headerPairs.some(([k]) => k.toLowerCase() === 'content-type');
+                if (!hasContentType) {{
+                    headerPairs.push(['Content-Type', 'application/x-www-form-urlencoded']);
+                }}
+                return {{ body: encoded, headerPairs }};
+            }}
+            return {{ body: bodyInput.value, headerPairs }};
+        }}
+
+        function headerPairsToPayload(headerPairs) {{
+            return headerPairs.map(([key, value]) => ({{ key, value }}));
+        }}
+
         function headersToString() {{
             const h = constructHeaders();
-            return Object.entries(h).map(([k, v]) => `${{k}}: ${{v}}`).join('\\n');
+            return h.map(([k, v]) => `${{k}}: ${{v}}`).join('\\n');
         }}
         
         function stringToHeadersTable(headerStr) {{
@@ -723,6 +876,49 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
                 if (parts.length >= 2) addKvRow('headers-container', parts[0].trim(), parts.slice(1).join(':').trim());
             }});
             addKvRow('headers-container'); 
+        }}
+
+        function getHeaderValueInsensitive(name) {{
+            const target = (name || '').toLowerCase();
+            const pairs = getKvPairs('headers-container');
+            for (const [k, v] of pairs) {{
+                if ((k || '').toLowerCase() === target) return v || '';
+            }}
+            return '';
+        }}
+
+        function inferAuthTypeFromHeaders() {{
+            const authHeader = getHeaderValueInsensitive('Authorization');
+            if (!authHeader) return 'none';
+            const lower = authHeader.toLowerCase();
+            if (lower.startsWith('bearer ')) return 'bearer';
+            if (lower.startsWith('basic ')) return 'basic';
+            return 'apikey';
+        }}
+
+        function applyAuthDefaultsFromHeaders(authType) {{
+            const authHeader = getHeaderValueInsensitive('Authorization');
+            if (!authHeader) return;
+
+            if (authType === 'bearer') {{
+                const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+                const tokenInput = document.getElementById('auth-bearer-token');
+                if (tokenInput && token) tokenInput.value = token;
+            }}
+
+            if (authType === 'basic') {{
+                const raw = authHeader.replace(/^Basic\s+/i, '').trim();
+                try {{
+                    const decoded = atob(raw);
+                    const idx = decoded.indexOf(':');
+                    const user = idx >= 0 ? decoded.slice(0, idx) : decoded;
+                    const pass = idx >= 0 ? decoded.slice(idx + 1) : '';
+                    const userInput = document.getElementById('auth-basic-user');
+                    const passInput = document.getElementById('auth-basic-pass');
+                    if (userInput) userInput.value = user;
+                    if (passInput) passInput.value = pass;
+                }} catch (_) {{}}
+            }}
         }}
 
         function openTab(id) {{
@@ -749,8 +945,10 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
         saveControls.addEventListener('submit', () => {{
             saveMethod.value = methodSelect.value;
             saveUrl.value = urlInput.value;
-            saveHeaders.value = headersToString(); 
-            saveBody.value = bodyInput.value;
+            const headers = constructHeaders();
+            const reqPayload = getRequestBodyAndHeaders(methodSelect.value, headers);
+            saveHeaders.value = reqPayload.headerPairs.map(([k, v]) => `${{k}}: ${{v}}`).join('\\n');
+            saveBody.value = reqPayload.body;
             saveAuthType.value = authTypeSelect.value;
             
             if (authTypeSelect.value === 'oauth2') {{
@@ -776,7 +974,12 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
                 bodyInput.value = link.dataset.body;
                 document.getElementById('req-name').value = link.dataset.name; 
                 
-                authTypeSelect.value = link.dataset.authType || 'none';
+                let savedAuthType = link.dataset.authType || 'none';
+                if (savedAuthType === 'none') {{
+                    const inferred = inferAuthTypeFromHeaders();
+                    if (inferred !== 'none') savedAuthType = inferred;
+                }}
+                authTypeSelect.value = savedAuthType;
                 const savedAuthData = {{
                     oauth_token_url: link.dataset.oauthTokenUrl,
                     oauth_client_id: link.dataset.oauthClientId,
@@ -784,6 +987,7 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
                     oauth_scope: link.dataset.oauthScope
                 }};
                 renderAuthInputs(savedAuthData);
+                applyAuthDefaultsFromHeaders(savedAuthType);
                 parseUrlToParams(); 
                 detectPathVariables();
             }}
@@ -795,9 +999,14 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
 
         sendBtn.addEventListener('click', async () => {{
             responseBody.innerText = 'Loading...';
+            responseHeaders.innerText = 'Loading headers...';
             resStatus.innerText = 'Status: -';
             resTime.innerText = 'Time: -';
+            resSize.innerText = 'Size: -';
             requestDebugInfo.innerHTML = ''; // Clear old debug info
+            currentAbortController = new AbortController();
+            currentRequestId = `${{Date.now()}}-${{Math.random().toString(16).slice(2)}}`;
+            cancelBtn.disabled = false;
             
             const startTime = performance.now();
             
@@ -805,11 +1014,12 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
             let finalUrl = urlInput.value;
             const pathMap = getKvMap('path-container');
             for (const [key, val] of Object.entries(pathMap)) {{
-                finalUrl = finalUrl.replace(`{{${{key}}}}`, val);
+                finalUrl = finalUrl.split(`{{${{key}}}}`).join(val);
             }}
 
-            const headers = constructHeaders();
-            const body = bodyInput.value;
+            const requestParts = getRequestBodyAndHeaders(methodSelect.value, constructHeaders());
+            const headers = requestParts.headerPairs;
+            const body = requestParts.body;
 
             const options = {{
                 method: methodSelect.value,
@@ -819,7 +1029,7 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
             }};
 
             let curlCmd = `curl -X ${{methodSelect.value}} "${{finalUrl}}"`;
-            for (const [key, val] of Object.entries(headers)) {{
+            for (const [key, val] of headers) {{
                 curlCmd += ` \\\n  -H "${{key}}: ${{val}}"`;
             }}
             
@@ -840,22 +1050,36 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
                 const resp = await fetch('/requests/run', {{
                     method: 'POST',
                     headers: {{ 'Content-Type': 'application/json' }},
-                    body: JSON.stringify(options)
+                    signal: currentAbortController.signal,
+                    body: JSON.stringify({{
+                        ...options,
+                        headers: headerPairsToPayload(headers),
+                        request_id: currentRequestId
+                    }})
                 }});
                 
-                const endTime = performance.now();
-                const duration = (endTime - startTime).toFixed(0);
-                
-                resStatus.innerText = 'Status: ' + resp.status + ' ' + resp.statusText;
-                resStatus.className = 'status-badge ' + (resp.ok ? 'success' : 'error');
-                resTime.innerText = 'Time: ' + duration + ' ms';
-                
-                const text = await resp.text();
-                resSize.innerText = 'Size: ' + (text.length / 1024).toFixed(2) + ' KB';
+                if (!resp.ok) {{
+                    const errText = await resp.text();
+                    throw new Error(errText || 'Request proxy failed');
+                }}
 
-                // Try to strip headers from curl output if -i is used
-                const parts = text.split(/(?:\r\n\r\n|\n\n)/g); 
-                const bodyText = parts.length > 1 ? parts[parts.length - 1] : text;
+                const run = await resp.json();
+                const duration = run.duration_ms ?? (performance.now() - startTime).toFixed(0);
+                const statusCode = Number(run.status || 0);
+                const ok = run.curl_exit === 0 && statusCode >= 200 && statusCode < 400;
+
+                resStatus.innerText = `Status: ${{statusCode || '0'}}`;
+                resStatus.className = 'status-badge ' + (ok ? 'success' : 'error');
+                resTime.innerText = `Time: ${{duration}} ms`;
+                responseHeaders.innerText = run.headers || '(no headers)';
+
+                const bodyText = run.body || '';
+                resSize.innerText = 'Size: ' + (bodyText.length / 1024).toFixed(2) + ' KB';
+
+                if (run.curl_exit !== 0) {{
+                    responseBody.innerText = (run.stderr || 'Request failed').trim();
+                    return;
+                }}
 
                 try {{
                     const json = JSON.parse(bodyText);
@@ -865,10 +1089,34 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
                 }}
                 
             }} catch (err) {{
-                responseBody.innerText = 'Error: ' + err.message;
-                resStatus.innerText = 'Error';
+                responseHeaders.innerText = '';
+                if (err && err.name === 'AbortError') {{
+                    responseBody.innerText = 'Request cancelled.';
+                    resStatus.innerText = 'Status: cancelled';
+                }} else {{
+                    responseBody.innerText = 'Error: ' + err.message;
+                    resStatus.innerText = 'Error';
+                }}
                 resStatus.className = 'status-badge error';
+            }} finally {{
+                cancelBtn.disabled = true;
+                currentRequestId = null;
+                currentAbortController = null;
             }}
+        }});
+
+        cancelBtn.addEventListener('click', async () => {{
+            const requestId = currentRequestId;
+            if (!requestId) return;
+            if (currentAbortController) currentAbortController.abort();
+            cancelBtn.disabled = true;
+            try {{
+                await fetch('/requests/cancel', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{ request_id: requestId }})
+                }});
+            }} catch (_) {{}}
         }});
         
         downloadResBtn.addEventListener('click', () => {{
@@ -887,10 +1135,28 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
         const respSection = document.getElementById('response-section');
         const respResizer = document.getElementById('response-resizer');
         let isRespResizing = false;
+        let isHeadersResizing = false;
+
+        // Restore persisted heights
+        const savedRespHeight = localStorage.getItem(RESPONSE_HEIGHT_KEY);
+        if (savedRespHeight) {{
+            respSection.style.height = savedRespHeight;
+        }}
+        const savedHeadersHeight = localStorage.getItem(RESPONSE_HEADERS_HEIGHT_KEY);
+        if (savedHeadersHeight) {{
+            responseHeaders.style.height = savedHeadersHeight;
+        }}
         
         respResizer.addEventListener('mousedown', (e) => {{
             isRespResizing = true;
             respResizer.classList.add('resizing');
+            document.body.style.cursor = 'row-resize';
+            document.body.style.userSelect = 'none';
+        }});
+
+        headersBodyResizer.addEventListener('mousedown', (e) => {{
+            isHeadersResizing = true;
+            headersBodyResizer.classList.add('resizing');
             document.body.style.cursor = 'row-resize';
             document.body.style.userSelect = 'none';
         }});
@@ -904,6 +1170,18 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
                     respSection.style.height = distFromBottom + 'px';
                 }}
             }}
+
+            if (isHeadersResizing) {{
+                const respRect = respSection.getBoundingClientRect();
+                const topOffset = e.clientY - respRect.top;
+                const headerOffset = document.querySelector('.response-header').offsetHeight;
+                const debugOffset = requestDebugInfo.style.display === 'none' ? 0 : requestDebugInfo.offsetHeight;
+                const minHeaders = 50;
+                const minBody = 80;
+                const maxHeaders = respRect.height - headerOffset - debugOffset - minBody - headersBodyResizer.offsetHeight;
+                const nextHeaders = Math.max(minHeaders, Math.min(topOffset - headerOffset - debugOffset, maxHeaders));
+                responseHeaders.style.height = `${{Math.floor(nextHeaders)}}px`;
+            }}
         }});
 
         document.addEventListener('mouseup', (e) => {{
@@ -912,6 +1190,15 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
                 respResizer.classList.remove('resizing');
                 document.body.style.cursor = '';
                 document.body.style.userSelect = '';
+                localStorage.setItem(RESPONSE_HEIGHT_KEY, respSection.style.height);
+            }}
+
+            if (isHeadersResizing) {{
+                isHeadersResizing = false;
+                headersBodyResizer.classList.remove('resizing');
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+                localStorage.setItem(RESPONSE_HEADERS_HEIGHT_KEY, responseHeaders.style.height);
             }}
         }});
         

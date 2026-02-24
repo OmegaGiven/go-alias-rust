@@ -420,15 +420,15 @@ fn render_note_page(notes: &[Note], current_theme: &Theme, saved_themes: &HashMa
     .tab-content.active { display: flex; }
 
     /* Saved Notes Styles */
-    .saved-note-item { display: flex; align-items: center; justify-content: space-between; background-color: transparent; padding: 2px 5px; cursor: pointer; transition: background 0.2s; }
+    .saved-note-item { display: flex; align-items: center; justify-content: space-between; background-color: transparent; padding: 1px 5px; min-height: 24px; cursor: pointer; transition: background 0.2s; }
     .saved-note-item:hover { background-color: var(--tertiary-bg); }
     .saved-note-item.selected { background-color: var(--tertiary-bg); border-left: 3px solid var(--link-color); padding-left: 2px; }
     
     .saved-note { flex-grow: 1; min-width: 0; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-color); font-size: var(--font-size-small); }
     .saved-note:hover { color: var(--link-hover); }
     
-    .delete-form { margin: 0; display: flex; align-items: center; margin-left: 5px; }
-    .delete-button { background: none; border: none; cursor: pointer; color: var(--text-color); padding: 0 4px; font-size: 1.2em; opacity: 0.3; line-height: 1; }
+    .delete-form { margin: 0 0 0 5px; display: flex; align-items: center; }
+    .delete-button { background: none; border: none; cursor: pointer; color: var(--text-color); padding: 0 4px; font-size: var(--font-size-medium); opacity: 0.3; line-height: 1; margin: 0; align-self: center; display: inline-flex; align-items: center; justify-content: center; }
     .delete-button:hover { color: #ff6b6b; opacity: 1; }
 
     /* File System Styles */

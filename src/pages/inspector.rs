@@ -36,7 +36,7 @@ fn render_inspector_page(current_theme: &Theme, saved_themes: &HashMap<String, T
                     <label for="wrap-toggle" style="font-weight: normal; cursor: pointer;">Word Wrap</label>
                 </div>
 
-                <button onclick="formatJSON()">Prettify JSON</button>
+                <button class="toolbar-action-btn" onclick="formatJSON()">Prettify JSON</button>
             </div>
             
             <textarea id="content-input" placeholder="Paste JSON, XML, or Text content here..." oninput="detectContent()"></textarea>
@@ -50,7 +50,7 @@ fn render_inspector_page(current_theme: &Theme, saved_themes: &HashMap<String, T
                     <label>Column Number</label>
                     <input type="number" id="col-num" min="1" value="1" placeholder="e.g. 12">
                 </div>
-                <button onclick="inspectLocation()" style="align-self: flex-end; margin-bottom: 2px;">Inspect Location</button>
+                <button class="control-action-btn" onclick="inspectLocation()">Inspect Location</button>
             </div>
         </div>
         

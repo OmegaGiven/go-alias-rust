@@ -29,7 +29,7 @@ use pages::note::{
     note_search, note_bookmarks_get, note_bookmark_add, note_bookmark_delete
 };
 use pages::paint::paint_get; 
-use pages::request::{request_get, request_save, request_delete, request_run};
+use pages::request::{request_get, request_save, request_delete, request_run, request_cancel};
 use pages::board::{board_get, board_data_get, board_add_column, board_delete_column, board_save_task, board_move_task, board_delete_task, board_reorder_columns};
 use pages::inspector::inspector_get; 
 use pages::manage_connections::connection_page;
@@ -39,7 +39,7 @@ use pages::not_found::{go, render_shortcuts_table};
 use pages::sql;
 
 // signaling and elements stay the same as they aren't in pages/
-use signaling::{signal_create, signal_offer, signal_get_offer, signal_answer, signal_get_answer, signal_ice, signal_get_ice, signal_permissions, signal_get_permissions};
+use signaling::{signal_create, signal_offer, signal_get_offer, signal_answer, signal_get_answer, signal_ice, signal_get_ice, signal_permissions, signal_get_permissions, signal_disconnect, signal_room_lookup};
 use elements::theme::{save_theme};
 use elements::shortcut::{add_shortcut, delete_shortcut}; 
 use base_page::{render_base_page, render_add_shortcut_button, render_add_shortcut_modal, nav_bar_html};
@@ -94,7 +94,6 @@ async fn index(state: Data<Arc<AppState>>) -> impl Responder {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    
     // --- Shortcut Loading ---
     let shortcuts = load_shortcuts(SHORTCUTS_FILE).unwrap_or_else(|e| {
         eprintln!("Failed to load {SHORTCUTS_FILE}: {e}"); 
@@ -177,6 +176,7 @@ async fn main() -> std::io::Result<()> {
             .service(request_save)
             .service(request_delete)
             .service(request_run) 
+            .service(request_cancel)
             // Register Board handlers
             .service(board_get)
             .service(board_data_get)
@@ -198,6 +198,8 @@ async fn main() -> std::io::Result<()> {
             .service(signal_get_ice)
             .service(signal_permissions)
             .service(signal_get_permissions)
+            .service(signal_room_lookup)
+            .service(signal_disconnect)
             .service(sql::sql_get)
             .service(sql::sql_add)
             .service(sql::sql_run)

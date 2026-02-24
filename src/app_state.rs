@@ -4,6 +4,10 @@ use serde::{Serialize, Deserialize};
 
 use crate::sql::DbConnection;
 
+pub fn default_font_family() -> String {
+    "sans-serif".to_string()
+}
+
 // This struct stores both the subject and the content of a saved note.
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Note {
@@ -26,6 +30,8 @@ pub struct Theme {
     pub font_size_small: u32,
     pub font_size_medium: u32,
     pub font_size_large: u32,
+    #[serde(default = "default_font_family")]
+    pub font_family: String,
 }
 
 // NEW: Structure for P2P Room Signaling

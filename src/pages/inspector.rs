@@ -36,6 +36,7 @@ fn render_inspector_page(current_theme: &Theme, saved_themes: &HashMap<String, T
                     <label for="wrap-toggle" style="font-weight: normal; cursor: pointer;">Word Wrap</label>
                 </div>
 
+                <button class="toolbar-action-btn" onclick="formatSQL()">Prettify SQL</button>
                 <button class="toolbar-action-btn" onclick="formatJSON()">Prettify JSON</button>
             </div>
             
@@ -161,6 +162,86 @@ fn render_inspector_page(current_theme: &Theme, saved_themes: &HashMap<String, T
             } catch (e) {
                 alert("Invalid JSON: " + e.message);
             }
+        }
+
+        function mapOutsideSqlLiterals(sql, mapper) {
+            let output = '';
+            let outside = '';
+            let mode = null; // "'", '"' or '`'
+
+            for (let i = 0; i < sql.length; i++) {
+                const ch = sql[i];
+                const next = i + 1 < sql.length ? sql[i + 1] : '';
+
+                if (!mode) {
+                    if (ch === "'" || ch === '"' || ch === '`') {
+                        output += mapper(outside);
+                        outside = '';
+                        mode = ch;
+                        output += ch;
+                    } else {
+                        outside += ch;
+                    }
+                    continue;
+                }
+
+                output += ch;
+
+                if (mode === "'" && ch === "'" && next === "'") {
+                    output += next;
+                    i++;
+                    continue;
+                }
+
+                if (ch === mode && sql[i - 1] !== '\\') {
+                    mode = null;
+                }
+            }
+
+            output += mapper(outside);
+            return output;
+        }
+
+        function formatSQL() {
+            const val = contentInput.value;
+            if (!val || !val.trim()) return;
+
+            const normalizeOutside = (segment) => segment.replace(/\s+/g, ' ');
+            let formatted = mapOutsideSqlLiterals(val, normalizeOutside).trim();
+
+            const clauseBreaks = [
+                'WITH', 'SELECT', 'FROM', 'WHERE', 'GROUP BY', 'ORDER BY',
+                'HAVING', 'LIMIT', 'OFFSET', 'INSERT INTO', 'VALUES',
+                'UPDATE', 'SET', 'DELETE FROM', 'UNION ALL', 'UNION'
+            ];
+
+            for (const clause of clauseBreaks) {
+                const escaped = clause.replace(/\s+/g, '\\s+');
+                const re = new RegExp(`\\b${escaped}\\b`, 'gi');
+                formatted = mapOutsideSqlLiterals(formatted, (segment) =>
+                    segment.replace(re, `\n${clause}`)
+                );
+            }
+
+            formatted = mapOutsideSqlLiterals(formatted, (segment) =>
+                segment
+                    .replace(/\b(LEFT|RIGHT|INNER|FULL|CROSS)\s+JOIN\b/gi, '\n$1 JOIN')
+                    .replace(/\bJOIN\b/gi, '\nJOIN')
+                    .replace(/\bON\b/gi, '\n  ON')
+                    .replace(/\bAND\b/gi, '\n  AND')
+                    .replace(/\bOR\b/gi, '\n  OR')
+                    .replace(/,\s*/g, ',\n  ')
+                    .replace(/\s*\(\s*/g, ' (')
+                    .replace(/\s*\)\s*/g, ') ')
+            );
+
+            formatted = formatted
+                .replace(/\n{2,}/g, '\n')
+                .replace(/[ \t]+\n/g, '\n')
+                .trim();
+
+            contentInput.value = formatted;
+            detectContent();
         }
         
         function inspectLocation() {

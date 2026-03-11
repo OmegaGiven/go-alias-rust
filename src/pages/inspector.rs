@@ -15,29 +15,98 @@ pub async fn inspector_get(state: Data<Arc<AppState>>) -> impl Responder {
 }
 
 fn render_inspector_page(current_theme: &Theme, saved_themes: &HashMap<String, Theme>) -> String {
+    let page_styles = r#"
+    <style>
+        .inspector-page {
+            width: 100%;
+            height: calc(100vh - 30px);
+            overflow: hidden;
+            padding: 0;
+            margin: 0;
+        }
+
+        .inspector-page .inspector-container {
+            width: 100%;
+            height: 100%;
+            max-width: none;
+            padding: 0;
+            margin: 0;
+            gap: 0;
+        }
+
+        .inspector-page .input-section {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        .inspector-page .toolbar {
+            flex-wrap: nowrap;
+        }
+
+        .inspector-page .toolbar-secondary-controls {
+            display: inline-flex;
+            flex-direction: row;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 0.9375rem;
+            flex-wrap: nowrap;
+        }
+
+        .inspector-page .toolbar-secondary-controls > * {
+            flex: 0 0 auto;
+        }
+
+        .inspector-page .checkbox-group {
+            display: inline-flex;
+            flex-direction: row;
+            align-items: center;
+            margin: 0;
+        }
+
+        .inspector-page #type-indicator,
+        .inspector-page #prettify-btn {
+            display: inline-flex;
+            align-items: center;
+        }
+
+        @media (max-width: 900px) {
+            .inspector-page .toolbar {
+                flex-wrap: wrap;
+            }
+
+            .inspector-page .toolbar-secondary-controls {
+                flex-wrap: wrap;
+            }
+        }
+    </style>
+    "#;
+
     let content = r#"
-    <div class="inspector-container">
-        <h1>Line & Column Inspector</h1>
-        
-        <div class="input-section">
+    <div class="inspector-page">
+        <div class="inspector-container">
+            <div class="input-section">
             <div class="toolbar">
-                <div class="form-group">
-                    <label>Load File</label>
+                <div class="form-group file-picker-group">
+                    <label class="control-spacer-label" aria-hidden="true">&nbsp;</label>
                     <input type="file" id="file-input">
                 </div>
                 
-                <div style="flex-grow: 1;"></div>
-                
-                <!-- Format Indicator -->
-                <div id="type-indicator" class="indicator">Text</div>
+                <div class="toolbar-spacer"></div>
 
-                <div class="checkbox-group">
-                    <input type="checkbox" id="wrap-toggle" onchange="toggleWrap()">
-                    <label for="wrap-toggle" style="font-weight: normal; cursor: pointer;">Word Wrap</label>
+                <div class="form-group action-group toolbar-secondary-wrap">
+                    <label class="control-spacer-label" aria-hidden="true">&nbsp;</label>
+                    <div class="toolbar-secondary-controls">
+                        <div id="type-indicator" class="indicator">Text</div>
+
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="wrap-toggle" onchange="toggleWrap()">
+                            <label for="wrap-toggle" style="font-weight: normal; cursor: pointer;">Word Wrap</label>
+                        </div>
+
+                        <button id="prettify-btn" class="toolbar-action-btn" onclick="prettifyContent()" disabled>Prettify</button>
+                    </div>
                 </div>
-
-                <button class="toolbar-action-btn" onclick="formatSQL()">Prettify SQL</button>
-                <button class="toolbar-action-btn" onclick="formatJSON()">Prettify JSON</button>
             </div>
             
             <textarea id="content-input" placeholder="Paste JSON, XML, or Text content here..." oninput="detectContent()"></textarea>
@@ -51,26 +120,30 @@ fn render_inspector_page(current_theme: &Theme, saved_themes: &HashMap<String, T
                     <label>Column Number</label>
                     <input type="number" id="col-num" min="1" value="1" placeholder="e.g. 12">
                 </div>
-                <button class="control-action-btn" onclick="inspectLocation()">Inspect Location</button>
+                <div class="form-group action-group control-button-wrap">
+                    <label class="control-spacer-label" aria-hidden="true">&nbsp;</label>
+                    <button class="control-action-btn" onclick="inspectLocation()">Inspect Location</button>
+                </div>
             </div>
         </div>
         
-        <div id="result-section" class="result-section">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-                <h2 style="margin:0;">Inspection Result</h2>
-                <button onclick="document.getElementById('result-section').style.display='none'" style="padding:5px 10px;">x</button>
-            </div>
-            <div id="context-view" class="context-display"></div>
-            
-            <div class="char-info">
-                <span class="info-label">Character:</span>
-                <span id="char-preview" style="font-weight: bold; font-family: monospace;"></span>
+            <div id="result-section" class="result-section">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                    <h2 style="margin:0;">Inspection Result</h2>
+                    <button onclick="document.getElementById('result-section').style.display='none'" style="padding:5px 10px;">x</button>
+                </div>
+                <div id="context-view" class="context-display"></div>
                 
-                <span class="info-label">Unicode/Hex:</span>
-                <span id="char-code"></span>
-                
-                <span class="info-label">Line Context:</span>
-                <span id="line-context"></span>
+                <div class="char-info">
+                    <span class="info-label">Character:</span>
+                    <span id="char-preview" style="font-weight: bold; font-family: monospace;"></span>
+                    
+                    <span class="info-label">Unicode/Hex:</span>
+                    <span id="char-code"></span>
+                    
+                    <span class="info-label">Line Context:</span>
+                    <span id="line-context"></span>
+                </div>
             </div>
         </div>
     </div>
@@ -82,6 +155,7 @@ fn render_inspector_page(current_theme: &Theme, saved_themes: &HashMap<String, T
         const colInput = document.getElementById('col-num');
         const resultSection = document.getElementById('result-section');
         const indicator = document.getElementById('type-indicator');
+        const prettifyButton = document.getElementById('prettify-btn');
         
         // Handle File Upload
         fileInput.addEventListener('change', (e) => {
@@ -97,31 +171,67 @@ fn render_inspector_page(current_theme: &Theme, saved_themes: &HashMap<String, T
         });
 
         // Detect content type (JSON, XML, or Text)
+        function detectContentType(text) {
+            if (text.length === 0) {
+                return 'empty';
+            }
+
+            if ((text.startsWith('{') || text.startsWith('[')) && isValidJSON(text)) {
+                return 'json';
+            }
+
+            if (text.startsWith('<') && isValidXML(text)) {
+                return 'xml';
+            }
+
+            if (isLikelySQL(text)) {
+                return 'sql';
+            }
+
+            return 'text';
+        }
+
         function detectContent() {
             const text = contentInput.value.trim();
-            
-            if (text.length === 0) {
+
+            const contentType = detectContentType(text);
+
+            if (contentType === 'empty') {
                 indicator.textContent = "Empty";
                 indicator.className = "indicator";
+                prettifyButton.textContent = "Prettify";
+                prettifyButton.disabled = true;
                 return;
             }
-            
-            // Check JSON
-            if ((text.startsWith('{') || text.startsWith('[')) && isValidJSON(text)) {
+
+            if (contentType === 'json') {
                 indicator.textContent = "Valid JSON";
                 indicator.className = "indicator valid-json";
+                prettifyButton.textContent = "Prettify JSON";
+                prettifyButton.disabled = false;
                 return;
             }
-            
-            // Check XML
-            if (text.startsWith('<') && isValidXML(text)) {
+
+            if (contentType === 'xml') {
                 indicator.textContent = "Valid XML";
                 indicator.className = "indicator valid-xml";
+                prettifyButton.textContent = "Prettify XML";
+                prettifyButton.disabled = false;
                 return;
             }
-            
+
+            if (contentType === 'sql') {
+                indicator.textContent = "SQL";
+                indicator.className = "indicator";
+                prettifyButton.textContent = "Prettify SQL";
+                prettifyButton.disabled = false;
+                return;
+            }
+
             indicator.textContent = "Plain Text";
             indicator.className = "indicator";
+            prettifyButton.textContent = "Prettify";
+            prettifyButton.disabled = true;
         }
 
         function isValidJSON(text) {
@@ -143,6 +253,24 @@ fn render_inspector_page(current_theme: &Theme, saved_themes: &HashMap<String, T
                 return false;
             }
         }
+
+        function isLikelySQL(text) {
+            const normalized = text.trim().replace(/\s+/g, ' ').toUpperCase();
+            if (!normalized) return false;
+
+            const sqlPatterns = [
+                /^SELECT\b.*\bFROM\b/,
+                /^WITH\b/,
+                /^INSERT\s+INTO\b/,
+                /^UPDATE\b.*\bSET\b/,
+                /^DELETE\s+FROM\b/,
+                /^CREATE\s+(TABLE|VIEW|INDEX|OR\s+REPLACE)\b/,
+                /^ALTER\b/,
+                /^DROP\b/
+            ];
+
+            return sqlPatterns.some((pattern) => pattern.test(normalized));
+        }
         
         function toggleWrap() {
             if (document.getElementById('wrap-toggle').checked) {
@@ -161,6 +289,53 @@ fn render_inspector_page(current_theme: &Theme, saved_themes: &HashMap<String, T
                 detectContent();
             } catch (e) {
                 alert("Invalid JSON: " + e.message);
+            }
+        }
+
+        function formatXML() {
+            try {
+                const val = contentInput.value;
+                if (!val) return;
+
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(val, "application/xml");
+
+                if (doc.querySelector("parsererror")) {
+                    throw new Error("Invalid XML");
+                }
+
+                const serializer = new XMLSerializer();
+                const xml = serializer.serializeToString(doc);
+                const formatted = xml
+                    .replace(/>\s*</g, '><')
+                    .replace(/(>)(<)(\/*)/g, '$1\n$2$3');
+
+                let indentLevel = 0;
+                const indented = formatted
+                    .split('\n')
+                    .map((line) => {
+                        const trimmed = line.trim();
+                        if (!trimmed) return '';
+
+                        if (/^<\//.test(trimmed)) {
+                            indentLevel = Math.max(indentLevel - 1, 0);
+                        }
+
+                        const result = `${'    '.repeat(indentLevel)}${trimmed}`;
+
+                        if (/^<[^!?/][^>]*[^/]?>$/.test(trimmed)) {
+                            indentLevel += 1;
+                        }
+
+                        return result;
+                    })
+                    .filter((line) => line.length > 0)
+                    .join('\n');
+
+                contentInput.value = indented;
+                detectContent();
+            } catch (e) {
+                alert("Invalid XML: " + e.message);
             }
         }
 
@@ -243,6 +418,27 @@ fn render_inspector_page(current_theme: &Theme, saved_themes: &HashMap<String, T
             contentInput.value = formatted;
             detectContent();
         }
+
+        function prettifyContent() {
+            const text = contentInput.value.trim();
+            const contentType = detectContentType(text);
+
+            if (contentType === 'json') {
+                formatJSON();
+                return;
+            }
+
+            if (contentType === 'xml') {
+                formatXML();
+                return;
+            }
+
+            if (contentType === 'sql') {
+                formatSQL();
+            }
+        }
+
+        detectContent();
         
         function inspectLocation() {
             const text = contentInput.value;
@@ -325,5 +521,5 @@ fn render_inspector_page(current_theme: &Theme, saved_themes: &HashMap<String, T
     </script>
     "#;
 
-    render_base_page("Inspector", content, current_theme, saved_themes)
+    render_base_page("Inspector", &format!("{}{}", page_styles, content), current_theme, saved_themes)
 }

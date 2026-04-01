@@ -23,6 +23,7 @@ static WORK_SHORTCUTS_FILE: &str = "work-shortcuts.json"; // Added constant for 
 pub struct AddShortcutForm {
     pub shortcut: String,
     pub url: String,
+    pub scope: Option<String>,
     pub hidden: Option<String>,
 }
 
@@ -45,7 +46,13 @@ pub async fn add_shortcut(
     form: Form<AddShortcutForm>,
     state: Data<Arc<AppState>>,
 ) -> impl Responder {
-    let is_hidden = form.hidden.is_some();
+    let scope = form.scope.as_deref().unwrap_or_else(|| {
+        if form.hidden.is_some() {
+            "hidden_global"
+        } else {
+            "global"
+        }
+    });
     let shortcut = form.shortcut.trim();
     let url = form.url.trim();
 
@@ -54,25 +61,30 @@ pub async fn add_shortcut(
         return HttpResponse::BadRequest().body("Shortcut and URL cannot be empty.");
     }
 
-    if is_hidden {
-        // Add to hidden shortcuts
-        let mut hidden_shortcuts = state.hidden_shortcuts.lock().unwrap();
-        hidden_shortcuts.insert(shortcut.to_string(), url.to_string());
-        
-        // Persist to disk
-        if let Err(e) = save_shortcuts(HIDDEN_SHORTCUTS_FILE, &hidden_shortcuts) {
-            eprintln!("Failed to save hidden shortcuts: {}", e);
-            return HttpResponse::InternalServerError().body("Failed to save hidden shortcut.");
-        }
-    } else {
-        // Add to visible shortcuts (using the general 'shortcuts.json' as the default visible file)
-        let mut shortcuts = state.shortcuts.lock().unwrap();
-        shortcuts.insert(shortcut.to_string(), url.to_string());
+    match scope {
+        "hidden_global" => {
+            let mut hidden_shortcuts = state.hidden_shortcuts.lock().unwrap();
+            hidden_shortcuts.insert(shortcut.to_string(), url.to_string());
 
-        // Persist to disk
-        if let Err(e) = save_shortcuts(SHORTCUTS_FILE, &shortcuts) {
-            eprintln!("Failed to save shortcuts: {}", e);
-            return HttpResponse::InternalServerError().body("Failed to save shortcut.");
+            if let Err(e) = save_shortcuts(HIDDEN_SHORTCUTS_FILE, &hidden_shortcuts) {
+                eprintln!("Failed to save hidden shortcuts: {}", e);
+                return HttpResponse::InternalServerError().body("Failed to save hidden shortcut.");
+            }
+        }
+        "global" => {
+            let mut shortcuts = state.shortcuts.lock().unwrap();
+            shortcuts.insert(shortcut.to_string(), url.to_string());
+
+            if let Err(e) = save_shortcuts(SHORTCUTS_FILE, &shortcuts) {
+                eprintln!("Failed to save shortcuts: {}", e);
+                return HttpResponse::InternalServerError().body("Failed to save shortcut.");
+            }
+        }
+        "local" | "hidden_local" => {
+            // Local shortcuts are stored in the browser and should not hit the server.
+        }
+        _ => {
+            return HttpResponse::BadRequest().body("Invalid shortcut scope.");
         }
     }
 

@@ -32,6 +32,11 @@ struct DeleteQueryForm {
     connection: String, 
 }
 
+#[derive(Deserialize)]
+struct DeleteConnectionForm {
+    nickname: String,
+}
+
 fn load_queries() -> Vec<SavedQuery> {
     fs::read_to_string(QUERIES_FILE)
         .ok()
@@ -64,8 +69,17 @@ fn render_connection_list(conns: &[DbConnection], current_theme: &Theme, saved_t
             };
 
             format!(
-                r#"<li><a href="/sql/{nick}">{display_text}</a></li>"#,
+                r#"
+                <li class="saved-connection-item">
+                    <a href="/sql/{nick}" class="saved-connection-link">{display_text}</a>
+                    <form method="POST" action="/sql/connection/delete" class="delete-connection-form" onsubmit="return confirm('Delete saved connection {nick_js}?');">
+                        <input type="hidden" name="nickname" value="{nick}">
+                        <button type="submit" class="delete-connection-button">Delete</button>
+                    </form>
+                </li>
+                "#,
                 nick = htmlescape::encode_minimal(&c.nickname),
+                nick_js = htmlescape::encode_attribute(&c.nickname),
                 display_text = htmlescape::encode_minimal(&display_text)
             )
         })
@@ -218,6 +232,29 @@ fn render_connection_list(conns: &[DbConnection], current_theme: &Theme, saved_t
             margin: 5px 0;
             padding: 10px;
             border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }}
+        .saved-connection-link {{
+            flex: 1;
+            min-width: 0;
+        }}
+        .delete-connection-form {{
+            margin: 0;
+        }}
+        .delete-connection-button {{
+            padding: 8px 12px;
+            cursor: pointer;
+            background-color: transparent;
+            color: var(--link-hover);
+            border: 1px solid var(--link-hover);
+            border-radius: 4px;
+        }}
+        .delete-connection-button:hover {{
+            background-color: var(--link-hover);
+            color: #fff;
         }}
     </style>
     "#, conn_links = conn_links);
@@ -303,6 +340,29 @@ pub async fn sql_delete(form: web::Form<DeleteQueryForm>) -> impl Responder {
     // Redirect back to the specific connection view
     let location = format!("/sql/{}", form.connection);
     HttpResponse::Found().append_header(("Location", location)).finish()
+}
+
+#[post("/sql/connection/delete")]
+pub async fn sql_delete_connection(
+    form: web::Form<DeleteConnectionForm>,
+    state: web::Data<Arc<AppState>>,
+) -> impl Responder {
+    {
+        let mut conns_opt = state.connections.lock().unwrap();
+        if conns_opt.is_none() {
+            *conns_opt = Some(load_and_decrypt());
+        }
+
+        let conns = conns_opt.as_mut().unwrap();
+        if let Some(idx) = conns.iter().position(|c| c.nickname == form.nickname) {
+            conns.remove(idx);
+            if let Err(e) = encrypt_and_save(conns) {
+                eprintln!("Failed to save encrypted connections after delete: {e}");
+            }
+        }
+    }
+
+    HttpResponse::Found().append_header(("Location", "/sql")).finish()
 }
 
 // --- Helper to format unix seconds to readable string (Simplified ISO-like) ---

@@ -10,6 +10,16 @@ use crate::base_page::render_base_page;
 static NOTES_FILE: &str = "notes.json";
 static BOOKMARKS_FILE: &str = "fs_bookmarks.json";
 
+fn note_file_access_enabled() -> bool {
+    std::env::var("ENABLE_NOTE_FILES")
+        .ok()
+        .map(|value| {
+            let normalized = value.trim().to_ascii_lowercase();
+            normalized == "1" || normalized == "true" || normalized == "yes" || normalized == "on"
+        })
+        .unwrap_or(false)
+}
+
 #[derive(Deserialize)]
 pub struct NoteForm {
     pub subject: String,
@@ -98,7 +108,7 @@ pub async fn note_get(state: Data<Arc<AppState>>) -> impl Responder {
 
     HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")
-        .body(render_note_page(&notes, &current_theme, &saved_themes))
+        .body(render_note_page(&notes, &current_theme, &saved_themes, note_file_access_enabled()))
 }
 
 #[post("/note")]
@@ -175,6 +185,10 @@ pub async fn note_delete(
 // --- File System Handlers ---
 #[post("/note/ls")]
 pub async fn note_ls(form: web::Json<LsForm>) -> impl Responder {
+    if !note_file_access_enabled() {
+        return HttpResponse::Forbidden().body("File browser is disabled.");
+    }
+
     let res = web::block(move || {
         // Determine the path to read. Default to current working directory if "." or empty.
         let path_to_read = if form.path.is_empty() || form.path == "." {
@@ -237,6 +251,10 @@ pub async fn note_ls(form: web::Json<LsForm>) -> impl Responder {
 
 #[post("/note/read")]
 pub async fn note_read(form: web::Json<ReadForm>) -> impl Responder {
+    if !note_file_access_enabled() {
+        return HttpResponse::Forbidden().body("File browser is disabled.");
+    }
+
     let path = form.path.clone();
     let res = web::block(move || fs::read_to_string(&path)).await;
     match res {
@@ -249,6 +267,10 @@ pub async fn note_read(form: web::Json<ReadForm>) -> impl Responder {
 
 #[post("/note/save_file")]
 pub async fn note_save_file(form: web::Json<SaveFileForm>) -> impl Responder {
+    if !note_file_access_enabled() {
+        return HttpResponse::Forbidden().body("File browser is disabled.");
+    }
+
     let path = form.path.clone();
     let content = form.content.clone();
     let res = web::block(move || fs::write(&path, &content)).await;
@@ -292,6 +314,10 @@ fn recursive_search(dir: &Path, query: &str, results: &mut Vec<FileEntry>, count
 
 #[post("/note/search")]
 pub async fn note_search(form: web::Json<SearchForm>) -> impl Responder {
+    if !note_file_access_enabled() {
+        return HttpResponse::Forbidden().body("File browser is disabled.");
+    }
+
     let res = web::block(move || {
         let start_path = if form.path.is_empty() || form.path == "." {
             std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf())
@@ -319,12 +345,20 @@ pub async fn note_search(form: web::Json<SearchForm>) -> impl Responder {
 
 #[get("/note/bookmarks")]
 pub async fn note_bookmarks_get() -> impl Responder {
+    if !note_file_access_enabled() {
+        return HttpResponse::Forbidden().finish();
+    }
+
     let bookmarks = load_bookmarks();
     HttpResponse::Ok().json(bookmarks)
 }
 
 #[post("/note/bookmarks/add")]
 pub async fn note_bookmark_add(form: web::Json<Bookmark>) -> impl Responder {
+    if !note_file_access_enabled() {
+        return HttpResponse::Forbidden().finish();
+    }
+
     let mut bookmarks = load_bookmarks();
     // Check if exists
     if !bookmarks.iter().any(|b| b.path == form.path) {
@@ -336,6 +370,10 @@ pub async fn note_bookmark_add(form: web::Json<Bookmark>) -> impl Responder {
 
 #[post("/note/bookmarks/delete")]
 pub async fn note_bookmark_delete(form: web::Json<Bookmark>) -> impl Responder {
+    if !note_file_access_enabled() {
+        return HttpResponse::Forbidden().finish();
+    }
+
     let mut bookmarks = load_bookmarks();
     if let Some(pos) = bookmarks.iter().position(|b| b.path == form.path) {
         bookmarks.remove(pos);
@@ -345,7 +383,12 @@ pub async fn note_bookmark_delete(form: web::Json<Bookmark>) -> impl Responder {
 }
 // ---------------------------------
 
-fn render_note_page(notes: &[Note], current_theme: &Theme, saved_themes: &HashMap<String, Theme>) -> String {
+fn render_note_page(
+    notes: &[Note],
+    current_theme: &Theme,
+    saved_themes: &HashMap<String, Theme>,
+    file_access_enabled: bool,
+) -> String {
     let saved_notes_list = notes
         .iter()
         .enumerate()
@@ -371,20 +414,14 @@ fn render_note_page(notes: &[Note], current_theme: &Theme, saved_themes: &HashMa
         .collect::<Vec<_>>()
         .join("\n");
 
-    let sidebar_content = format!(r#"
-        <div class="tabs">
-            <div class="tab active" onclick="switchTab('db')">Saved Notes</div>
-            <div class="tab" onclick="switchTab('fs')">Files</div>
-        </div>
-        
-        <!-- Database Tab -->
-        <div id="tab-db" class="tab-content active">
-            <div class="sidebar-search"><input type="text" id="note-search-input" placeholder="Search notes..."></div>
-            <ul id="saved-notes-list" style="list-style: none; padding: 0;">
-                {saved_notes_list}
-            </ul>
-        </div>
+    let files_tab = if file_access_enabled {
+        r#"<div class="tab" onclick="switchTab('fs')">Files</div>"#
+    } else {
+        ""
+    };
 
+    let files_panel = if file_access_enabled {
+        r#"
         <!-- File System Tab -->
         <div id="tab-fs" class="tab-content">
             <div class="fs-controls">
@@ -397,7 +434,6 @@ fn render_note_page(notes: &[Note], current_theme: &Theme, saved_themes: &HashMa
             <input type="text" id="fs-path-input" class="fs-path-input" value="." onkeypress="if(event.key === 'Enter') loadDir(this.value)">
             <input type="text" id="fs-search-input" class="fs-path-input" placeholder="Search files in current dir..." onkeypress="if(event.key === 'Enter') searchFs(this.value)">
 
-            <!-- Bookmarks Section -->
             <div id="bookmarks-section" style="border-bottom: 1px solid var(--border-color); padding-bottom: 5px; margin-bottom: 5px; display:none;">
                 <div style="font-size:0.8em; font-weight:bold; color:#888; margin-bottom:2px;">BOOKMARKS</div>
                 <div id="bookmarks-list"></div>
@@ -405,7 +441,27 @@ fn render_note_page(notes: &[Note], current_theme: &Theme, saved_themes: &HashMa
 
             <div id="file-list" style="margin-top: 5px;"></div>
         </div>
-    "#, saved_notes_list = saved_notes_list);
+        "#
+    } else {
+        ""
+    };
+
+    let sidebar_content = format!(r#"
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('db')">Saved Notes</div>
+            {files_tab}
+        </div>
+        
+        <!-- Database Tab -->
+        <div id="tab-db" class="tab-content active">
+            <div class="sidebar-search"><input type="text" id="note-search-input" placeholder="Search notes..."></div>
+            <ul id="saved-notes-list" style="list-style: none; padding: 0;">
+                {saved_notes_list}
+            </ul>
+        </div>
+
+        {files_panel}
+    "#, saved_notes_list = saved_notes_list, files_tab = files_tab, files_panel = files_panel);
     
     let sidebar_html = crate::elements::sidebar::render(&sidebar_content);
     let sidebar_js = crate::elements::sidebar::get_js();

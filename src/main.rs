@@ -94,6 +94,11 @@ async fn index(state: Data<Arc<AppState>>) -> impl Responder {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    let port = std::env::var("PORT")
+        .ok()
+        .and_then(|value| value.parse::<u16>().ok())
+        .unwrap_or(80);
+
     // --- Shortcut Loading ---
     let shortcuts = load_shortcuts(SHORTCUTS_FILE).unwrap_or_else(|e| {
         eprintln!("Failed to load {SHORTCUTS_FILE}: {e}"); 
@@ -207,6 +212,7 @@ async fn main() -> std::io::Result<()> {
             .service(sql::sql_view)
             .service(sql::sql_save) 
             .service(sql::sql_delete) 
+            .service(sql::sql_delete_connection)
             .service(sql::sql_schema_json) 
             .service(Files::new("/static", "./static").prefer_utf8(true))
             .service(add_shortcut)      
@@ -214,7 +220,7 @@ async fn main() -> std::io::Result<()> {
             .service(save_theme)        
             .service(go) 
     })
-    .bind(("0.0.0.0", 80))?
+    .bind(("0.0.0.0", port))?
     .run()
     .await
 }

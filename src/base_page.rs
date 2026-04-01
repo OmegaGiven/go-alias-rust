@@ -279,9 +279,16 @@ pub fn render_add_shortcut_modal() -> String {
       <label for="url">URL:</label>
       <input type="url" id="url" name="url" placeholder="e.g., https://github.com" required>
 
-      <div style="margin-top: 15px;">
-        <input type="checkbox" id="hidden" name="hidden" value="true">
-        <label for="hidden" style="display: inline; font-weight: normal;">Hidden?</label>
+      <label for="shortcutScope">Save As:</label>
+      <select id="shortcutScope" name="scope" required>
+        <option value="local">Add Local</option>
+        <option value="global">Add Global</option>
+        <option value="hidden_local">Add Hidden Local</option>
+        <option value="hidden_global">Add Hidden Global</option>
+      </select>
+
+      <div class="shortcut-scope-note" id="shortcutScopeNote" style="margin-top: 10px; opacity: 0.8; font-size: var(--font-size-small);">
+        Local shortcuts stay in this browser only. Global shortcuts are saved on the server.
       </div>
 
       <div class="form-actions">
@@ -294,35 +301,91 @@ pub fn render_add_shortcut_modal() -> String {
 
     let modal_js = r#"
 <script>
-  document.addEventListener('DOMContentLoaded', (event) => {{
+  document.addEventListener('DOMContentLoaded', () => {
+    const LOCAL_SHORTCUTS_KEY = 'go_service_local_shortcuts';
+    const LOCAL_HIDDEN_SHORTCUTS_KEY = 'go_service_local_hidden_shortcuts';
     var modal = document.getElementById("addShortcutModal");
     var btn = document.getElementById("addShortcutBtn");
     var span = document.getElementById("closeModalBtn");
+    var form = modal ? modal.querySelector('form') : null;
+    var scopeSelect = document.getElementById("shortcutScope");
+    var scopeNote = document.getElementById("shortcutScopeNote");
 
-    if (btn && modal) {{
-      btn.onclick = function() {{
+    function readShortcutBucket(key) {
+      try {
+        return JSON.parse(localStorage.getItem(key) || '{}');
+      } catch (_) {
+        return {};
+      }
+    }
+
+    function writeShortcutBucket(key, value) {
+      localStorage.setItem(key, JSON.stringify(value));
+    }
+
+    function updateScopeNote() {
+      if (!scopeSelect || !scopeNote) return;
+      scopeNote.textContent = scopeSelect.value === 'global' || scopeSelect.value === 'hidden_global'
+        ? 'Global shortcuts are saved on the server and visible to everyone using this instance.'
+        : 'Local shortcuts stay in this browser only and are not sent to the server.';
+    }
+
+    if (btn && modal) {
+      btn.onclick = function() {
         modal.showModal(); 
-      }}
-    }}
+      }
+    }
 
-    if (span && modal) {{
-      span.onclick = function() {{
+    if (span && modal) {
+      span.onclick = function() {
         modal.close();
-      }}
-    }}
+      }
+    }
 
-    if (modal) {{
-        modal.addEventListener('click', (e) => {{
-            if (e.target.nodeName === 'DIALOG') {{
+    if (modal) {
+        modal.addEventListener('click', (e) => {
+            if (e.target.nodeName === 'DIALOG') {
                 const rect = e.target.getBoundingClientRect();
                 if (e.clientY < rect.top || e.clientY > rect.bottom ||
-                    e.clientX < rect.left || e.clientX > rect.right) {{
+                    e.clientX < rect.left || e.clientX > rect.right) {
                     modal.close();
-                }}
-            }}
-        }});
-    }}
-  }});
+                }
+            }
+        });
+    }
+
+    if (scopeSelect) {
+      scopeSelect.addEventListener('change', updateScopeNote);
+      updateScopeNote();
+    }
+
+    if (form) {
+      form.addEventListener('submit', function(e) {
+        const scope = scopeSelect ? scopeSelect.value : 'global';
+        if (scope !== 'local' && scope !== 'hidden_local') {
+          return;
+        }
+
+        e.preventDefault();
+        const shortcutInput = document.getElementById('shortcut');
+        const urlInput = document.getElementById('url');
+        const shortcut = shortcutInput ? shortcutInput.value.trim() : '';
+        const url = urlInput ? urlInput.value.trim() : '';
+
+        if (!shortcut || !url) {
+          return;
+        }
+
+        const storageKey = scope === 'hidden_local' ? LOCAL_HIDDEN_SHORTCUTS_KEY : LOCAL_SHORTCUTS_KEY;
+        const bucket = readShortcutBucket(storageKey);
+        bucket[shortcut] = url;
+        writeShortcutBucket(storageKey, bucket);
+
+        modal.close();
+        window.location.reload();
+      });
+    }
+  });
 </script>
 "#;
 

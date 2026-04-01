@@ -7,10 +7,14 @@
     "alias": "url"
   }
 2. build rust app: cargo run
-or if you have to set privilages for the localhost port it uses (the run.sh file is committed into git repo if you want to just use that.)
+you can choose the port with the PORT env var, for example:
+PORT=8080 cargo run
+or if you want port 80, you may need to grant privileges first (the run.sh file is committed into git repo if you want to just use that.)
 cargo build
 sudo setcap 'cap_net_bind_service=+ep' target/debug/go_service
 target/debug/go_service
+for a system service, set the same env var before launching the binary, for example:
+Environment=PORT=8080
 3. edit to add your own alias as localhost, i personally like "go" but you can use anything.
 file found at
 /etc/hosts
@@ -21,7 +25,7 @@ here is what my mac system looks like:
 ::1             localhost go
 
 
-## USAGE: In browser type localhost or whatever alas you may use for localhost/alias
+## USAGE: In browser type localhost:PORT or whatever alias you use for localhost
 # /
 Mistype any shortcuts to see all your shortcuts
 - has a table of all the shortcuts from the shortcuts.json

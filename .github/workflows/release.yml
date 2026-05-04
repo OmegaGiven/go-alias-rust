@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-latest
+            archive: go-alias-rust-linux-x86_64.tar.gz
+            binary: go_service
+          - name: macos-arm64
+            os: macos-latest
+            archive: go-alias-rust-macos-arm64.tar.gz
+            binary: go_service
+          - name: windows-x86_64
+            os: windows-latest
+            archive: go-alias-rust-windows-x86_64.zip
+            binary: go_service.exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Prepare package
+        shell: bash
+        run: |
+          mkdir -p dist/go-alias-rust
+          cp "target/release/${{ matrix.binary }}" dist/go-alias-rust/
+          cp README.md dist/go-alias-rust/
+          cp -R static dist/go-alias-rust/static
+          cp -R scripts dist/go-alias-rust/scripts
+
+      - name: Package Unix archive
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          cd dist
+          tar -czf "${{ matrix.archive }}" go-alias-rust
+
+      - name: Package Windows archive
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist/go-alias-rust -DestinationPath "dist/${{ matrix.archive }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.archive }}
+          path: dist/${{ matrix.archive }}
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

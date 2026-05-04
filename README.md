@@ -146,6 +146,42 @@ This repo includes installer scripts for local-machine installs. They are not si
 - install a startup service
 - run the app on port 80 so `http://go/` and `http://go/<alias>` work
 
+### GitHub Release Downloads
+
+For the easiest install, download the one release asset that matches your system:
+
+```text
+go-alias-installer-linux-x86_64.tar.gz
+go-alias-installer-macos-arm64.tar.gz
+go-alias-installer-windows-x86_64.zip
+```
+
+Each archive contains the prebuilt app, static assets, README, and one installer script at the top level.
+
+Linux:
+
+```sh
+tar -xzf go-alias-installer-linux-x86_64.tar.gz
+cd go-alias-installer-linux-x86_64
+sudo ./install-linux.sh
+```
+
+macOS:
+
+```sh
+tar -xzf go-alias-installer-macos-arm64.tar.gz
+cd go-alias-installer-macos-arm64
+sudo ./install-macos.sh
+```
+
+Windows:
+
+```powershell
+Expand-Archive .\go-alias-installer-windows-x86_64.zip
+cd .\go-alias-installer-windows-x86_64\go-alias-installer-windows-x86_64
+.\install-windows.ps1
+```
+
 ### macOS and Linux
 
 Run from the repo root:

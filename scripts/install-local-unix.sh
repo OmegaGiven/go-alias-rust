@@ -4,6 +4,7 @@ set -euo pipefail
 APP_NAME="go-alias"
 BIN_NAME="go_service"
 PORT="${PORT:-80}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ "${EUID}" -ne 0 ]]; then
   echo "This installer needs sudo/root so it can write hosts and install a startup service."
@@ -11,8 +12,23 @@ if [[ "${EUID}" -ne 0 ]]; then
   exit 1
 fi
 
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ORIGINAL_USER="${SUDO_USER:-$(id -un)}"
+
+if [[ -f "${SCRIPT_DIR}/Cargo.toml" ]]; then
+  REPO_DIR="${SCRIPT_DIR}"
+elif [[ -f "${SCRIPT_DIR}/../Cargo.toml" ]]; then
+  REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+else
+  REPO_DIR=""
+fi
+
+if [[ -n "${REPO_DIR}" ]]; then
+  SOURCE_BINARY="${REPO_DIR}/target/release/${BIN_NAME}"
+  STATIC_SOURCE="${REPO_DIR}/static"
+else
+  SOURCE_BINARY="${SCRIPT_DIR}/${BIN_NAME}"
+  STATIC_SOURCE="${SCRIPT_DIR}/static"
+fi
 
 case "$(uname -s)" in
   Darwin)
@@ -29,18 +45,22 @@ case "$(uname -s)" in
     ;;
 esac
 
-echo "Building release binary..."
-if command -v sudo >/dev/null 2>&1 && [[ "${ORIGINAL_USER}" != "root" ]]; then
-  sudo -u "${ORIGINAL_USER}" cargo build --release --manifest-path "${REPO_DIR}/Cargo.toml"
+if [[ -n "${REPO_DIR}" ]]; then
+  echo "Building release binary..."
+  if command -v sudo >/dev/null 2>&1 && [[ "${ORIGINAL_USER}" != "root" ]]; then
+    sudo -u "${ORIGINAL_USER}" cargo build --release --manifest-path "${REPO_DIR}/Cargo.toml"
+  else
+    cargo build --release --manifest-path "${REPO_DIR}/Cargo.toml"
+  fi
 else
-  cargo build --release --manifest-path "${REPO_DIR}/Cargo.toml"
+  echo "Using bundled release binary..."
 fi
 
 echo "Installing files into ${INSTALL_DIR}..."
 mkdir -p "${INSTALL_DIR}"
-install -m 0755 "${REPO_DIR}/target/release/${BIN_NAME}" "${INSTALL_DIR}/${BIN_NAME}"
+install -m 0755 "${SOURCE_BINARY}" "${INSTALL_DIR}/${BIN_NAME}"
 rm -rf "${INSTALL_DIR}/static"
-cp -R "${REPO_DIR}/static" "${INSTALL_DIR}/static"
+cp -R "${STATIC_SOURCE}" "${INSTALL_DIR}/static"
 
 echo "Ensuring local hostname 'go' resolves to this machine..."
 if ! grep -Eq '(^|[[:space:]])go([[:space:]]|$)' /etc/hosts; then

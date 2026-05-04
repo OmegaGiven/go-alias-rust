@@ -10,18 +10,33 @@ if (-not (Test-Admin)) {
     Write-Error "Run this installer from an elevated PowerShell prompt so it can update hosts and install a service."
 }
 
-$RepoDir = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ParentDir = Split-Path -Parent $ScriptDir
+if (Test-Path (Join-Path $ScriptDir "Cargo.toml")) {
+    $RepoDir = $ScriptDir
+} elseif (Test-Path (Join-Path $ParentDir "Cargo.toml")) {
+    $RepoDir = $ParentDir
+} else {
+    $RepoDir = $null
+}
+
 $InstallDir = Join-Path $env:ProgramFiles "GoAlias"
-$BinarySource = Join-Path $RepoDir "target\release\go_service.exe"
 $BinaryDest = Join-Path $InstallDir "go_service.exe"
-$StaticSource = Join-Path $RepoDir "static"
 $StaticDest = Join-Path $InstallDir "static"
 $TaskName = "GoAlias"
 
-Write-Host "Building release binary..."
-Push-Location $RepoDir
-cargo build --release
-Pop-Location
+if ($RepoDir) {
+    $BinarySource = Join-Path $RepoDir "target\release\go_service.exe"
+    $StaticSource = Join-Path $RepoDir "static"
+    Write-Host "Building release binary..."
+    Push-Location $RepoDir
+    cargo build --release
+    Pop-Location
+} else {
+    $BinarySource = Join-Path $ScriptDir "go_service.exe"
+    $StaticSource = Join-Path $ScriptDir "static"
+    Write-Host "Using bundled release binary..."
+}
 
 Write-Host "Installing files into $InstallDir..."
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null

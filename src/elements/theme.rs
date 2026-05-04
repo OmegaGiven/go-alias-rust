@@ -21,10 +21,12 @@ pub static CURRENT_THEME_FILE: &str = "current_theme.json";
 pub fn default_dark_theme() -> Theme {
     Theme {
         name: "Dark Default".to_string(),
+        mode: "dark".to_string(),
         primary_bg: "#2e2e2e".to_string(),
         secondary_bg: "#222222".to_string(),
         tertiary_bg: "#3a3a3a".to_string(),
         text_color: "#eeeeee".to_string(),
+        accent_color: "#4da6ff".to_string(),
         link_color: "#4da6ff".to_string(),
         link_visited: "#b366ff".to_string(),
         link_hover: "#66ccff".to_string(),
@@ -32,6 +34,7 @@ pub fn default_dark_theme() -> Theme {
         font_size_small: 14,
         font_size_medium: 16,
         font_size_large: 18,
+        element_margin: 10,
         font_family: "sans-serif".to_string(),
     }
 }
@@ -71,10 +74,12 @@ pub struct ThemeForm {
     pub _original_name: Option<String>, 
     
     pub theme_name: String,
+    pub theme_mode: String,
     pub primary_bg: String,
     pub secondary_bg: String,
     pub tertiary_bg: String,
     pub text_color: String,
+    pub accent_color: String,
     pub link_color: String,
     pub link_visited: String,
     pub link_hover: String,
@@ -82,12 +87,82 @@ pub struct ThemeForm {
     pub font_size_small: u32,
     pub font_size_medium: u32,
     pub font_size_large: u32,
+    pub element_margin: u32,
     pub font_family: String,
     
     pub load_theme_name: Option<String>,
     
     // Action is optional because JS submissions might not include button values
     pub action: Option<String>,                  
+}
+
+fn theme_from_form(form: &ThemeForm) -> Theme {
+    let mode = match form.theme_mode.as_str() {
+        "light" | "dark" | "custom" => form.theme_mode.clone(),
+        _ => "custom".to_string(),
+    };
+
+    let mut theme = match mode.as_str() {
+        "light" => Theme {
+            name: form.theme_name.clone(),
+            mode: mode.clone(),
+            primary_bg: "#f7f8fa".to_string(),
+            secondary_bg: "#ffffff".to_string(),
+            tertiary_bg: "#eef1f5".to_string(),
+            text_color: "#1f2933".to_string(),
+            accent_color: form.accent_color.clone(),
+            link_color: form.accent_color.clone(),
+            link_visited: "#7c3aed".to_string(),
+            link_hover: form.accent_color.clone(),
+            border_color: "#d8dee6".to_string(),
+            font_size_small: form.font_size_small,
+            font_size_medium: form.font_size_medium,
+            font_size_large: form.font_size_large,
+            element_margin: form.element_margin,
+            font_family: form.font_family.clone(),
+        },
+        "dark" => Theme {
+            name: form.theme_name.clone(),
+            mode: mode.clone(),
+            primary_bg: "#1c1c1c".to_string(),
+            secondary_bg: "#111111".to_string(),
+            tertiary_bg: "#292929".to_string(),
+            text_color: "#ffffff".to_string(),
+            accent_color: form.accent_color.clone(),
+            link_color: form.accent_color.clone(),
+            link_visited: "#b366ff".to_string(),
+            link_hover: form.accent_color.clone(),
+            border_color: "#444444".to_string(),
+            font_size_small: form.font_size_small,
+            font_size_medium: form.font_size_medium,
+            font_size_large: form.font_size_large,
+            element_margin: form.element_margin,
+            font_family: form.font_family.clone(),
+        },
+        _ => Theme {
+            name: form.theme_name.clone(),
+            mode: mode.clone(),
+            primary_bg: form.primary_bg.clone(),
+            secondary_bg: form.secondary_bg.clone(),
+            tertiary_bg: form.tertiary_bg.clone(),
+            text_color: form.text_color.clone(),
+            accent_color: form.accent_color.clone(),
+            link_color: form.link_color.clone(),
+            link_visited: form.link_visited.clone(),
+            link_hover: form.link_hover.clone(),
+            border_color: form.border_color.clone(),
+            font_size_small: form.font_size_small,
+            font_size_medium: form.font_size_medium,
+            font_size_large: form.font_size_large,
+            element_margin: form.element_margin,
+            font_family: form.font_family.clone(),
+        },
+    };
+
+    if theme.accent_color.trim().is_empty() {
+        theme.accent_color = "#4da6ff".to_string();
+    }
+    theme
 }
 
 // Handler for POST /save_theme
@@ -117,21 +192,7 @@ pub async fn save_theme(
 
 
     // 2. Create the new theme from form data
-    let new_theme = Theme {
-        name: form.theme_name.clone(),
-        primary_bg: form.primary_bg.clone(),
-        secondary_bg: form.secondary_bg.clone(),
-        tertiary_bg: form.tertiary_bg.clone(),
-        text_color: form.text_color.clone(),
-        link_color: form.link_color.clone(),
-        link_visited: form.link_visited.clone(),
-        link_hover: form.link_hover.clone(),
-        border_color: form.border_color.clone(),
-        font_size_small: form.font_size_small,
-        font_size_medium: form.font_size_medium,
-        font_size_large: form.font_size_large,
-        font_family: form.font_family.clone(),
-    };
+    let new_theme = theme_from_form(&form);
 
     // 3. Update the current theme
     {

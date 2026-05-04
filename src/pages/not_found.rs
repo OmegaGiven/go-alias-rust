@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use crate::app_state::AppState;
 use crate::app_state::Theme;
-use crate::base_page::{render_add_shortcut_button, render_add_shortcut_modal, render_base_page, nav_bar_html};
+use crate::base_page::{render_base_page_with_options, render_inline_add_shortcut_button};
 
 fn grouped_shortcuts_table(shortcuts: &HashMap<String, String>, empty_message: &str) -> String {
     if shortcuts.is_empty() {
@@ -62,71 +62,6 @@ pub fn render_shortcuts_table(global_shortcuts: &HashMap<String, String>) -> Str
 
     format!(
         r#"
-        <style>
-            .shortcut-sections {{
-                display: grid;
-                gap: 18px;
-                margin-top: 16px;
-            }}
-
-            .shortcut-section {{
-                background: var(--secondary-bg);
-                border: 1px solid var(--border-color);
-                border-radius: 8px;
-                padding: 16px;
-            }}
-
-            .shortcut-section h2 {{
-                margin-top: 0;
-                margin-bottom: 8px;
-            }}
-
-            .shortcut-section p {{
-                margin-top: 0;
-            }}
-
-            .shortcut-grid {{
-                margin-bottom: 0;
-            }}
-
-            .shortcut-key-chip {{
-                display: inline-flex;
-                align-items: center;
-                gap: 6px;
-                white-space: nowrap;
-                margin-right: 6px;
-                vertical-align: middle;
-            }}
-
-            .shortcut-empty {{
-                opacity: 0.8;
-                margin-bottom: 0;
-            }}
-
-            .local-shortcut-delete {{
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                background: transparent;
-                border: 1px solid var(--link-hover);
-                color: var(--link-hover);
-                border-radius: 4px;
-                cursor: pointer;
-                padding: 0 6px;
-                font-size: var(--font-size-small);
-                line-height: 1.2;
-                height: 22px;
-                margin: 0;
-                vertical-align: middle;
-                box-sizing: border-box;
-            }}
-
-            .local-shortcut-delete:hover {{
-                background: var(--link-hover);
-                color: var(--primary-bg);
-            }}
-        </style>
-
         <div class="shortcut-sections">
             <section class="shortcut-section">
                 <h2>Global Shortcuts</h2>
@@ -136,141 +71,27 @@ pub fn render_shortcuts_table(global_shortcuts: &HashMap<String, String>) -> Str
 
             <section class="shortcut-section">
                 <h2>Local Shortcuts</h2>
-                <p>Saved only in this browser. These can be removed from this browser without affecting the server.</p>
+                <p>Saved in browser Cookies. These can be removed from this browser without affecting the server.</p>
                 <div id="local-shortcuts-table"></div>
             </section>
-        </div>
-
-        <script>
-            (() => {{
-                const LOCAL_SHORTCUTS_KEY = 'go_service_local_shortcuts';
-                const LOCAL_HIDDEN_SHORTCUTS_KEY = 'go_service_local_hidden_shortcuts';
-
-                function readShortcutBucket(key) {{
-                    try {{
-                        return JSON.parse(localStorage.getItem(key) || '{{}}');
-                    }} catch (_) {{
-                        return {{}};
-                    }}
-                }}
-
-                function writeShortcutBucket(key, value) {{
-                    localStorage.setItem(key, JSON.stringify(value));
-                }}
-
-                function buildShortcutPath(key) {{
-                    return '/' + encodeURIComponent(key).replace(/%2F/g, '/');
-                }}
-
-                function groupByUrl(shortcuts) {{
-                    const grouped = new Map();
-                    Object.entries(shortcuts)
-                        .sort((a, b) => a[0].localeCompare(b[0]))
-                        .forEach(([key, url]) => {{
-                            if (!grouped.has(url)) {{
-                                grouped.set(url, []);
-                            }}
-                            grouped.get(url).push(key);
-                        }});
-                    return Array.from(grouped.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-                }}
-
-                function escapeHtml(value) {{
-                    return value
-                        .replaceAll('&', '&amp;')
-                        .replaceAll('<', '&lt;')
-                        .replaceAll('>', '&gt;')
-                        .replaceAll('"', '&quot;')
-                        .replaceAll("'", '&#39;');
-                }}
-
-                function removeLocalShortcut(storageKey, shortcutKey) {{
-                    const bucket = readShortcutBucket(storageKey);
-                    delete bucket[shortcutKey];
-                    writeShortcutBucket(storageKey, bucket);
-                    renderLocalShortcutSections();
-                }}
-
-                function renderLocalShortcutTable(containerId, storageKey, emptyMessage) {{
-                    const container = document.getElementById(containerId);
-                    if (!container) return;
-
-                    const shortcuts = readShortcutBucket(storageKey);
-                    const grouped = groupByUrl(shortcuts);
-
-                    if (grouped.length === 0) {{
-                        container.innerHTML = `<p class="shortcut-empty">${{escapeHtml(emptyMessage)}}</p>`;
-                        return;
-                    }}
-
-                    const rows = grouped.map(([url, keys]) => {{
-                        const keyLinks = keys.map((key) => {{
-                            const escapedKey = escapeHtml(key);
-                            const escapedUrl = escapeHtml(url);
-                            const storageAttr = escapeHtml(storageKey);
-                            return `
-                                <span class="shortcut-key-chip">
-                                    <a href="${{escapedUrl}}" title="Open ${{escapedKey}}">${{escapedKey}}</a>
-                                    <button
-                                        type="button"
-                                        class="local-shortcut-delete"
-                                        data-storage-key="${{storageAttr}}"
-                                        data-shortcut-key="${{escapedKey}}"
-                                        title="Delete local shortcut ${{escapedKey}}"
-                                    >Delete</button>
-                                </span>
-                            `;
-                        }}).join(' ');
-
-                        return `<tr><td class="keys">${{keyLinks}}</td><td class="url">${{escapeHtml(url)}}</td></tr>`;
-                    }}).join('');
-
-                    container.innerHTML = `
-                        <table class="grid shortcut-grid">
-                            <thead>
-                                <tr><th>Shortcut Keys</th><th>Destination URL</th></tr>
-                            </thead>
-                            <tbody>${{rows}}</tbody>
-                        </table>
-                    `;
-                }}
-
-                function renderLocalShortcutSections() {{
-                    renderLocalShortcutTable('local-shortcuts-table', LOCAL_SHORTCUTS_KEY, 'No local shortcuts saved in this browser.');
-
-                    document.querySelectorAll('.local-shortcut-delete').forEach((button) => {{
-                        button.onclick = () => removeLocalShortcut(button.dataset.storageKey, button.dataset.shortcutKey);
-                    }});
-                }}
-
-                window.resolveLocalShortcutPath = function(reqPath) {{
-                    const localShortcuts = readShortcutBucket(LOCAL_SHORTCUTS_KEY);
-                    const hiddenLocalShortcuts = readShortcutBucket(LOCAL_HIDDEN_SHORTCUTS_KEY);
-                    const direct = localShortcuts[reqPath] || hiddenLocalShortcuts[reqPath];
-                    if (direct) {{
-                        return direct;
-                    }}
-
-                    const slashIndex = reqPath.indexOf('/');
-                    if (slashIndex === -1) {{
-                        return null;
-                    }}
-
-                    const alias = reqPath.slice(0, slashIndex);
-                    const remainder = reqPath.slice(slashIndex + 1);
-                    const baseUrl = localShortcuts[alias] || hiddenLocalShortcuts[alias];
-                    if (!baseUrl) {{
-                        return null;
-                    }}
-
-                    return baseUrl.endsWith('/') ? `${{baseUrl}}${{remainder}}` : `${{baseUrl}}/${{remainder}}`;
-                }};
-
-                document.addEventListener('DOMContentLoaded', renderLocalShortcutSections);
-            }})();
-        </script>
-        "#,
+        </div>        "#,
         global_table = global_table
+    )
+}
+
+pub fn render_home_shortcuts_content(global_shortcuts: &HashMap<String, String>) -> String {
+    format!(
+        r#"
+        <link rel="stylesheet" href="/static/shortcuts.css">
+        <section class="shortcut-home-intro">
+            <p>Type a shortcut key into the URL bar (e.g., <code>/gh</code>) to go directly to the destination.</p>
+            {}
+        </section>
+        {}
+        <script src="/static/shortcuts.js" defer></script>
+        "#,
+        render_inline_add_shortcut_button(),
+        render_shortcuts_table(global_shortcuts)
     )
 }
 
@@ -280,38 +101,32 @@ pub fn not_found_page(
     current_theme: &Theme,
     saved_themes: &HashMap<String, Theme>,
 ) -> String {
-    let table = render_shortcuts_table(global_shortcuts);
-    let requested_path_json = serde_json::to_string(requested_path).unwrap_or_else(|_| "\"\"".to_string());
-
-    let nav_with_button = nav_bar_html()
-        .replace(r#"<div id="optional-button-placeholder"></div>"#, &render_add_shortcut_button());
+    let requested_path_display = encode_minimal(requested_path);
+    let home_content = render_home_shortcuts_content(global_shortcuts);
 
     let content = format!(
         r#"
-        <h1>404 - Shortcut Not Found</h1>
-        <p>The requested shortcut was not found on the server. Checking this browser's local shortcuts first, then showing the available lists below.</p>
-        {}
-        <script>
-            document.addEventListener('DOMContentLoaded', () => {{
-                const requestedPath = {};
-                if (!requestedPath || typeof window.resolveLocalShortcutPath !== 'function') {{
-                    return;
-                }}
+        <div id="shortcut-not-found-popup" class="shortcut-not-found-popup" role="status" data-requested-path="{}">
+            <button type="button" class="shortcut-not-found-popup-close" aria-label="Dismiss shortcut not found message">&times;</button>
+            <div class="shortcut-not-found-popup-title">Shortcut not found</div>
+            <p class="shortcut-not-found-popup-message">No shortcut exists for <code>/{}</code>.</p>
+        </div>
 
-                const localUrl = window.resolveLocalShortcutPath(requestedPath);
-                if (localUrl) {{
-                    window.location.replace(localUrl);
-                }}
-            }});
-        </script>
+        {}
         "#,
-        table,
-        requested_path_json
+        requested_path_display,
+        requested_path_display,
+        home_content
     );
 
-    render_base_page("Shortcut Not Found", &content, current_theme, saved_themes)
-        .replace(&nav_bar_html(), &nav_with_button)
-        .replace("</body>", &format!("{}</body>", render_add_shortcut_modal()))
+    render_base_page_with_options(
+        "Aliases",
+        &content,
+        current_theme,
+        saved_themes,
+        true,
+        true,
+    )
 }
 
 #[get("/{tail:.*}")]

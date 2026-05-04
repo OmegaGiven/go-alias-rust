@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>{{ title }}</title>
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    {{ theme_vars|safe }}
+    <link rel="stylesheet" href="/static/style.css">
+  </head>
+  <body>
+    <div class="modern-nav">
+      <div class="nav-left">
+        <a href="/" class="nav-link-item">Aliases</a>
+        <a href="/sql" class="nav-link-item">SQL</a>
+        <a href="/requests" class="nav-link-item">Requests</a>
+        <a href="/inspector" class="nav-link-item">Inspector</a>
+      </div>
+      <div class="nav-right">
+        <div id="optional-button-placeholder">
+          {% if show_add_shortcut_button %}
+          <button class="nav-link-item" id="addShortcutBtn" data-add-shortcut-trigger>+ Add Shortcut</button>
+          {% endif %}
+        </div>
+        <div class="tools-dropdown">
+          <button class="nav-link-item tools-menu-button" title="Tools" aria-label="Tools">&#9776;</button>
+          <div class="tools-dropdown-menu">
+            <button class="tools-dropdown-item" onclick="toggleSettings()">Appearance</button>
+            <button class="tools-dropdown-item" onclick="toggleCalculator()">Calculator</button>
+            <button class="tools-dropdown-item" onclick="toggleJwtDecoder()">JWT Decoder</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {{ body_content|safe }}
+
+    <div id="floating-calculator">
+      <div class="floating-window-header calc-header" id="calc-drag-handle">
+        <span>Calculator</span>
+        <button class="floating-window-close calc-close-btn" id="calc-close-btn" onclick="toggleCalculator()">&times;</button>
+      </div>
+      <div class="calculator-app">
+        <div class="calculator-container">
+          <button id="mode-toggle" class="calc-button mode-toggle">Switch to Scientific</button>
+          <div class="display">
+            <div id="current-input" class="current-input">0</div>
+          </div>
+          <div class="buttons-wrapper">
+            <div id="scientific-buttons" class="scientific-buttons">
+              <button class="calc-button scientific" data-key="sin">sin</button>
+              <button class="calc-button scientific" data-key="cos">cos</button>
+              <button class="calc-button scientific" data-key="tan">tan</button>
+              <button class="calc-button scientific" data-key="log">log</button>
+              <button class="calc-button scientific" data-key="ln">ln</button>
+              <button class="calc-button scientific" data-key="^">x&#696;</button>
+              <button class="calc-button scientific" data-key="sqrt">&#8730;</button>
+              <button class="calc-button scientific" data-key="pi">&#960;</button>
+              <button class="calc-button scientific" data-key="e">e</button>
+              <button class="calc-button scientific" data-key="!">x!</button>
+              <button class="calc-button scientific" data-key="(">(</button>
+              <button class="calc-button scientific" data-key=")">)</button>
+            </div>
+            <div id="standard-buttons" class="standard-buttons">
+              <button class="calc-button clear" data-key="c">C</button>
+              <button class="calc-button operator" data-key="backspace">&#9003;</button>
+              <button class="calc-button operator" data-key="%">%</button>
+              <button class="calc-button operator" data-key="/">&#247;</button>
+              <button class="calc-button" data-key="7">7</button>
+              <button class="calc-button" data-key="8">8</button>
+              <button class="calc-button" data-key="9">9</button>
+              <button class="calc-button operator" data-key="*">&#215;</button>
+              <button class="calc-button" data-key="4">4</button>
+              <button class="calc-button" data-key="5">5</button>
+              <button class="calc-button" data-key="6">6</button>
+              <button class="calc-button operator" data-key="-">-</button>
+              <button class="calc-button" data-key="1">1</button>
+              <button class="calc-button" data-key="2">2</button>
+              <button class="calc-button" data-key="3">3</button>
+              <button class="calc-button operator" data-key="+">+</button>
+              <button class="calc-button" data-key="0">0</button>
+              <button class="calc-button" data-key=".">.</button>
+              <button class="calc-button equals" data-key="Enter">=</button>
+            </div>
+          </div>
+        </div>
+        <div class="history-container">
+          <h2>History</h2>
+          <ul id="history-list">
+            <li id="history-empty">No history yet.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div id="floating-jwt-decoder">
+      <div class="floating-window-header jwt-header" id="jwt-drag-handle">
+        <span>JWT Decoder</span>
+        <button class="floating-window-close jwt-close-btn" onclick="toggleJwtDecoder()">&times;</button>
+      </div>
+      <div class="jwt-body">
+        <label for="jwt-input">Paste JWT / API key token</label>
+        <textarea id="jwt-input" class="jwt-input" placeholder="eyJhbGciOi..." spellcheck="false"></textarea>
+        <div class="jwt-actions">
+          <button class="jwt-action-btn jwt-decode-btn" id="jwt-decode-btn">Decode</button>
+          <button class="jwt-action-btn jwt-clear-btn" id="jwt-clear-btn">Clear</button>
+        </div>
+        <div id="jwt-error" class="jwt-error"></div>
+        <div class="jwt-output">
+          <div class="jwt-output-block">
+            <h4 class="jwt-output-title">Header</h4>
+            <pre id="jwt-header-output">Awaiting token...</pre>
+          </div>
+          <div class="jwt-output-block">
+            <h4 class="jwt-output-title">Payload</h4>
+            <pre id="jwt-payload-output">Awaiting token...</pre>
+          </div>
+          <div class="jwt-output-block">
+            <h4 class="jwt-output-title">Signature</h4>
+            <pre id="jwt-signature-output">Awaiting token...</pre>
+          </div>
+        </div>
+        <div id="jwt-meta" class="jwt-meta">
+          <div class="jwt-meta-line">Expiration: N/A</div>
+          <div class="jwt-meta-line">Issued At: N/A</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="floating-settings" style="display: none;">
+      <div class="floating-window-header settings-header" id="settings-drag-handle">
+        <h3>Theme Settings</h3>
+        <button class="floating-window-close settings-close-btn" onclick="toggleSettings()">&times;</button>
+      </div>
+      <div class="settings-content-wrapper">
+        <form action="/save_theme" method="POST" class="settings-form">
+          <input type="hidden" id="original_name" name="original_name" value="{{ current_theme.name }}">
+          <div class="settings-grid">
+            <div class="settings-section">
+              <div class="appearance-mode-group">
+                <label class="appearance-mode-option">
+                  <input type="radio" name="theme_mode" value="light" {% if current_theme.mode == "light" %}checked{% endif %}>
+                  <span>Light</span>
+                </label>
+                <label class="appearance-mode-option">
+                  <input type="radio" name="theme_mode" value="dark" {% if current_theme.mode == "dark" %}checked{% endif %}>
+                  <span>Dark</span>
+                </label>
+                <label class="appearance-mode-option">
+                  <input type="radio" name="theme_mode" value="custom" {% if current_theme.mode != "light" && current_theme.mode != "dark" %}checked{% endif %}>
+                  <span>Custom</span>
+                </label>
+              </div>
+            </div>
+            <div class="settings-section appearance-shared-controls">
+              <div class="appearance-control-row">
+                <label for="font_family">Font Family:</label>
+                <select id="font_family" name="font_family">
+                  {% for option in font_options %}
+                  <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="appearance-control-row">
+                <label for="accent_color">Accent Color:</label>
+                <input type="color" id="accent_color" name="accent_color" value="{{ current_theme.accent_color }}">
+              </div>
+              <div class="appearance-control-row">
+                <label for="font_size_small">Small:</label>
+                <input type="number" id="font_size_small" name="font_size_small" value="{{ current_theme.font_size_small }}" style="width: 70px;">
+              </div>
+              <div class="appearance-control-row">
+                <label for="font_size_medium">Medium:</label>
+                <input type="number" id="font_size_medium" name="font_size_medium" value="{{ current_theme.font_size_medium }}" style="width: 70px;">
+              </div>
+              <div class="appearance-control-row">
+                <label for="font_size_large">Large:</label>
+                <input type="number" id="font_size_large" name="font_size_large" value="{{ current_theme.font_size_large }}" style="width: 70px;">
+              </div>
+              <div class="appearance-control-row">
+                <label for="element_margin">Margin:</label>
+                <input type="number" id="element_margin" name="element_margin" min="0" max="80" value="{{ current_theme.element_margin }}" style="width: 70px;">
+              </div>
+            </div>
+            <div id="custom-color-controls" class="settings-section custom-color-controls" style="display: flex; flex-direction: column; gap: 15px;">
+              <div class="settings-section-title">Custom Theme</div>
+              <div class="custom-color-row">
+                <label for="theme_name">Theme Name:</label>
+                <input type="text" id="theme_name" name="theme_name" value="{{ current_theme.name }}">
+              </div>
+              <div class="custom-color-row">
+                <label for="primary_bg">Primary BG:</label>
+                <input type="color" id="primary_bg" name="primary_bg" value="{{ current_theme.primary_bg }}">
+              </div>
+              <div class="custom-color-row">
+                <label for="secondary_bg">Secondary BG:</label>
+                <input type="color" id="secondary_bg" name="secondary_bg" value="{{ current_theme.secondary_bg }}">
+              </div>
+              <div class="custom-color-row">
+                <label for="text_color">Text Color:</label>
+                <input type="color" id="text_color" name="text_color" value="{{ current_theme.text_color }}">
+              </div>
+              <div class="custom-color-row">
+                <label for="link_color">Link Color:</label>
+                <input type="color" id="link_color" name="link_color" value="{{ current_theme.link_color }}">
+              </div>
+              <div class="custom-color-row">
+                <label for="border_color">Border Color:</label>
+                <input type="color" id="border_color" name="border_color" value="{{ current_theme.border_color }}">
+              </div>
+              <div class="custom-color-row">
+                <label for="tertiary_bg">Tertiary BG:</label>
+                <input type="color" id="tertiary_bg" name="tertiary_bg" value="{{ current_theme.tertiary_bg }}">
+              </div>
+              <div class="custom-color-row">
+                <label for="link_visited">Visited Color:</label>
+                <input type="color" id="link_visited" name="link_visited" value="{{ current_theme.link_visited }}">
+              </div>
+              <div class="custom-color-row">
+                <label for="link_hover">Hover Color:</label>
+                <input type="color" id="link_hover" name="link_hover" value="{{ current_theme.link_hover }}">
+              </div>
+              <div class="custom-color-row">
+                <label for="load_theme">Load Saved Theme:</label>
+                <select id="load_theme" onchange="if (this.value) { document.getElementById('theme_name_input').value = this.value; document.querySelector('.settings-form').submit(); }">
+                  <option value="">--- No Loaded Theme ---</option>
+                  {% for option in saved_theme_options %}
+                  <option value="{{ option.name }}" {% if option.selected %}selected{% endif %}>{{ option.name }}</option>
+                  {% endfor %}
+                </select>
+                <input type="hidden" id="theme_name_input" name="load_theme_name" value="">
+              </div>
+            </div>
+          </div>
+          <div class="theme-action-buttons">
+            <button type="submit" name="action" value="save" class="form-submit-btn" style="flex:1;">Save</button>
+            <button type="submit" name="action" value="apply_only" class="form-submit-btn" style="flex:1;">Apply</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    {% if include_add_shortcut_modal %}
+    <dialog id="addShortcutModal">
+      <div class="modal-content">
+        <span class="close-btn" id="closeModalBtn">&times;</span>
+        <h2>Add New Shortcut</h2>
+        <form action="/add_shortcut" method="POST" class="modal-form">
+          <label for="shortcut">Shortcut:</label>
+          <input type="text" id="shortcut" name="shortcut" placeholder="e.g., gh" required>
+          <label for="url">URL:</label>
+          <input type="url" id="url" name="url" placeholder="e.g., https://github.com" required>
+          <label for="shortcutScope">Save As:</label>
+          <select id="shortcutScope" name="scope" required>
+            <option value="local">Add Local</option>
+            <option value="global">Add Global</option>
+            <option value="hidden_local">Add Hidden Local</option>
+            <option value="hidden_global">Add Hidden Global</option>
+          </select>
+          <div class="shortcut-scope-note" id="shortcutScopeNote">
+            Local shortcuts stay in this browser only. Global shortcuts are saved on the server.
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="form-submit-btn">Save Shortcut</button>
+          </div>
+        </form>
+      </div>
+    </dialog>
+    {% endif %}
+
+    <script src="/static/app.js" defer></script>
+    <script src="/static/settings.js" defer></script>
+    <script src="/static/calculator.js" defer></script>
+    <script src="/static/jwt_decoder.js" defer></script>
+    <script src="/static/sidebar.js" defer></script>
+  </body>
+</html>

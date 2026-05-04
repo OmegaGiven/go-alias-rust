@@ -35,7 +35,7 @@ pub fn render_table(headers: &[String], results: &[Vec<String>]) -> String {
     }).collect::<Vec<_>>().join("");
 
     format!(
-        "<table class=\"grid\" style=\"margin: 0;\"><thead>{}</thead><tbody>{}</tbody></table>",
+        "<table class=\"grid\" style=\"margin: calc(var(--element-margin) / 2) var(--element-margin);\"><thead>{}</thead><tbody>{}</tbody></table>",
         thead, tbody
     )
 }

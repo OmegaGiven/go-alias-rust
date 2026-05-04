@@ -1,0 +1,24 @@
+# Rust build output
+/target/
+
+# Local runtime data
+/current_theme.json
+/themes.json
+/shortcuts.json
+/hidden-shortcuts.json
+/work-shortcuts.json
+/saved_requests.json
+/saved_queries.json
+
+# Local SQL connection secrets/state
+/connections.json.enc
+/connections.key
+
+# Local SQLite databases
+/*.db
+/*.sqlite
+/*.sqlite3
+
+# Local environment files
+.env
+.env.*

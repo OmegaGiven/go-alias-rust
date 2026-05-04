@@ -9,16 +9,31 @@
     "alias": "url",
     "alias": "url"
   }
-2. build rust app: cargo run
-you can choose the port with the PORT env var, for example:
+2. run the app locally:
+```sh
 PORT=8080 cargo run
+```
+Then open:
+```text
+http://localhost:8080
+```
+If you do not set `PORT`, the app defaults to port 80.
+
+3. build rust app:
+```sh
+cargo build
+```
 or if you want port 80, you may need to grant privileges first (the run.sh file is committed into git repo if you want to just use that.)
+```sh
 cargo build
 sudo setcap 'cap_net_bind_service=+ep' target/debug/go_service
 target/debug/go_service
+```
 for a system service, set the same env var before launching the binary, for example:
+```text
 Environment=PORT=8080
-3. edit to add your own alias as localhost, i personally like "go" but you can use anything.
+```
+4. edit to add your own alias as localhost, i personally like "go" but you can use anything.
 file found at
 /etc/hosts
 
@@ -46,24 +61,11 @@ then
 - securely save on encrypted file 
 - offer as selection of all the connections and default to last used
 
-# /note
-
-- if you paste a json or dict it will auto format
-- has a basic save button just historically store whatever notes you want
-- previews a note below and when clicked it loads it into the text section
-- delete button next to the note
-- has a way to send as a composed message to google
-- be able to open .txt and .md files and preview .md files
-
 # /calc or /calculator
 
 - top bar asking for basic, scientific
 - calculator buttons are below the input output line of what is being input.
 - below is a history of what has been inputted.
-
-# /paint
-
-- basic paint functionality
 
 # /request
 

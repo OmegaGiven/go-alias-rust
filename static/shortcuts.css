@@ -1,0 +1,127 @@
+.shortcut-sections {
+    display: grid;
+    gap: 0;
+    margin: 0;
+}
+
+.shortcut-section,
+.shortcut-home-intro {
+    background: var(--secondary-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    margin: calc(var(--element-margin) / 2) var(--element-margin);
+    padding: 16px;
+}
+
+.shortcut-section h2,
+.shortcut-section p,
+.shortcut-home-intro p {
+    margin: 0 0 8px 0;
+}
+
+.shortcut-home-intro {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.shortcut-home-intro p {
+    line-height: 1.5;
+}
+
+.shortcut-home-intro .inline-add-shortcut {
+    flex: 0 0 auto;
+}
+
+.shortcut-grid {
+    width: 100%;
+    margin: 0;
+}
+
+.shortcut-key-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    margin: 0 6px 0 0;
+    vertical-align: middle;
+}
+
+.shortcut-empty {
+    opacity: 0.8;
+    margin: 0;
+}
+
+.local-shortcut-delete {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid var(--link-hover);
+    color: var(--link-hover);
+    border-radius: 4px;
+    cursor: pointer;
+    padding: 0 6px;
+    font-size: var(--font-size-small);
+    line-height: 1.2;
+    height: 22px;
+    margin: 0;
+    vertical-align: middle;
+    box-sizing: border-box;
+}
+
+.local-shortcut-delete:hover {
+    background: var(--link-hover);
+    color: var(--primary-bg);
+}
+
+.shortcut-not-found-popup {
+    position: fixed;
+    top: 48px;
+    right: 16px;
+    max-width: 420px;
+    background: var(--secondary-bg);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    border-left: 4px solid var(--accent-color);
+    border-radius: 6px;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+    padding: 12px;
+    z-index: 10030;
+}
+
+.shortcut-not-found-popup.is-hidden {
+    display: none;
+}
+
+.shortcut-not-found-popup-title {
+    font-weight: bold;
+    margin: 0 24px 6px 0;
+}
+
+.shortcut-not-found-popup-message {
+    margin: 0;
+    font-size: var(--font-size-small);
+    opacity: 0.9;
+}
+
+.shortcut-not-found-popup-close {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    margin: 0 !important;
+    padding: 0 6px;
+    background: transparent;
+    border: none;
+    color: var(--text-color);
+    cursor: pointer;
+    font-size: var(--font-size-medium);
+}
+
+@media (max-width: 640px) {
+    .shortcut-home-intro {
+        align-items: stretch;
+        flex-direction: column;
+    }
+}

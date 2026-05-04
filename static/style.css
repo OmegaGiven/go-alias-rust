@@ -934,7 +934,7 @@ ul li a:hover {
 
 .floating-window-header {
     background-color: var(--tertiary-bg);
-    padding: 10px 15px;
+    padding: 6px 12px;
     cursor: move;
     display: flex;
     justify-content: space-between;
@@ -942,6 +942,8 @@ ul li a:hover {
     border-bottom: 1px solid var(--border-color);
     user-select: none;
     font-size: var(--font-size-medium);
+    min-height: 32px;
+    box-sizing: border-box;
 }
 
 .floating-window-header h3 {
@@ -957,7 +959,8 @@ ul li a:hover {
     cursor: pointer;
     opacity: 0.7;
     margin: 0 !important;
-    padding: 0 6px;
+    padding: 0 4px;
+    line-height: 1;
 }
 
 .floating-window-close:hover {
@@ -1308,6 +1311,228 @@ ul li a:hover {
     flex-direction: column;
     user-select: none;
     overflow: hidden;
+}
+
+/* Floating scratch pad */
+#floating-scratch-pad {
+    position: fixed;
+    top: 120px;
+    right: 20px;
+    width: 420px;
+    height: 340px;
+    max-width: calc(100vw - 40px);
+    max-height: calc(100vh - 80px);
+    background-color: var(--secondary-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+    z-index: 1001;
+    display: none;
+    flex-direction: column;
+    user-select: none;
+    overflow: hidden;
+    box-sizing: border-box;
+}
+
+.scratchpad-body {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    background: var(--secondary-bg);
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+.scratchpad-surface {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    margin: 0;
+    border: none;
+    border-radius: 0;
+    background: var(--primary-bg);
+    overflow: hidden;
+}
+
+.scratchpad-tabs-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0;
+    border: none;
+    border-bottom: 1px solid var(--border-color);
+    border-radius: 0;
+    background: var(--primary-bg);
+    margin: 0;
+    padding: 0;
+    flex-shrink: 0;
+    min-width: 0;
+    box-sizing: border-box;
+    height: 24px;
+    line-height: 0;
+}
+
+.scratchpad-tabs {
+    display: flex;
+    gap: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    min-width: 0;
+    flex: 1;
+    scrollbar-width: none;
+    max-width: 100%;
+    scroll-snap-type: x proximity;
+    align-self: flex-start;
+    align-items: flex-start;
+    height: 24px;
+    line-height: 24px;
+    margin: 0;
+    padding: 0;
+}
+
+.scratchpad-tabs::-webkit-scrollbar {
+    display: none;
+}
+
+.scratchpad-tab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    max-width: 96px;
+    min-width: 0;
+    height: 24px;
+    padding: 0 4px;
+    border: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
+    border-left-width: 0;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    background: transparent;
+    color: var(--text-color);
+    cursor: pointer;
+    font-size: var(--font-size-small);
+    line-height: 24px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    scroll-snap-align: start;
+    box-sizing: border-box;
+    appearance: none;
+    -webkit-appearance: none;
+    font-family: inherit;
+    margin: 0;
+    vertical-align: top;
+}
+
+.scratchpad-tab.active {
+    background: color-mix(in srgb, var(--link-color) 18%, transparent);
+    color: var(--text-color);
+    border-bottom-color: var(--link-color);
+}
+
+.scratchpad-tab:first-child {
+    border-left-width: 1px;
+    border-top-left-radius: 3px;
+    border-bottom-left-radius: 3px;
+}
+
+.scratchpad-tab:last-child {
+    border-top-right-radius: 3px;
+    border-bottom-right-radius: 3px;
+}
+
+.scratchpad-tab:hover {
+    background: var(--tertiary-bg);
+}
+
+.scratchpad-icon-btn,
+.scratchpad-text-btn {
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--tertiary-bg);
+    color: var(--text-color);
+    cursor: pointer;
+    font-size: var(--font-size-small);
+    height: 24px;
+    line-height: 24px;
+    margin: 0;
+    box-sizing: border-box;
+}
+
+.scratchpad-icon-btn {
+    width: 24px;
+    padding: 0;
+    font-weight: bold;
+    flex: 0 0 auto;
+    border-radius: 0;
+    border-top: none;
+    border-bottom: none;
+    border-left: none;
+}
+
+.scratchpad-text-btn {
+    padding: 0 8px;
+}
+
+.scratchpad-icon-btn:hover,
+.scratchpad-text-btn:hover {
+    background: var(--link-hover);
+    border-color: var(--link-hover);
+    color: #fff;
+}
+
+.scratchpad-editor {
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    width: 100%;
+    margin: 0;
+    resize: none;
+    border: none;
+    border-radius: 0;
+    outline: none;
+    background: var(--primary-bg);
+    color: var(--text-color);
+    font-family: monospace;
+    font-size: var(--font-size-small);
+    line-height: 1.45;
+    padding: 10px;
+    box-sizing: border-box;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.scratchpad-footer {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px;
+    border: none;
+    border-radius: 0;
+    background: var(--primary-bg);
+    flex-shrink: 0;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
+.scratchpad-title-input {
+    flex: 1;
+    min-width: 0;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--primary-bg);
+    color: var(--text-color);
+    font-size: var(--font-size-small);
+    padding: 4px 6px;
+}
+
+.scratchpad-save-status {
+    font-size: var(--font-size-small);
+    opacity: 0.75;
+    white-space: nowrap;
 }
 
 .jwt-body {

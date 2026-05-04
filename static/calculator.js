@@ -180,8 +180,34 @@
             }
 
             calcHandle.addEventListener('mousedown', dragStart);
+            calcWindow.addEventListener('dblclick', centerOnEdgeDoubleClick);
             document.addEventListener('mousemove', drag);
             document.addEventListener('mouseup', dragEnd);
+
+            function isOuterEdgeClick(e) {
+                if (e.target.closest('button, input, textarea, select, a')) return false;
+                const rect = calcWindow.getBoundingClientRect();
+                const edge = 18;
+                const onEdge = e.clientX - rect.left <= edge ||
+                    rect.right - e.clientX <= edge ||
+                    e.clientY - rect.top <= edge ||
+                    rect.bottom - e.clientY <= edge;
+                return onEdge || calcHandle.contains(e.target);
+            }
+
+            function centerOnEdgeDoubleClick(e) {
+                if (!isOuterEdgeClick(e)) return;
+
+                const rect = calcWindow.getBoundingClientRect();
+                const targetLeft = Math.max(0, (window.innerWidth - rect.width) / 2);
+                const targetTop = Math.max(0, (window.innerHeight - rect.height) / 2);
+                xOffset += targetLeft - rect.left;
+                yOffset += targetTop - rect.top;
+                currentX = xOffset;
+                currentY = yOffset;
+                setTranslate(xOffset, yOffset, calcWindow);
+                localStorage.setItem('calc-pos', JSON.stringify({x: xOffset, y: yOffset}));
+            }
 
             function dragStart(e) {
                 initialX = e.clientX - xOffset;

@@ -1,10 +1,10 @@
         .sql-connections-page {
             max-width: 900px;
-            margin: 0 auto;
+            margin: calc(var(--element-margin) / 2) 0;
         }
         .forms-container {
             display: flex;
-            gap: var(--element-margin);
+            gap: 0;
             flex-wrap: wrap;
             margin: 0;
         }
@@ -13,13 +13,12 @@
             border: 1px solid var(--border-color);
             border-radius: 8px;
             margin: calc(var(--element-margin) / 2) var(--element-margin);
-            padding: 20px;
+            padding: 12px;
             box-sizing: border-box;
         }
         .forms-container .sql-connections-panel {
             flex: 1;
             min-width: 300px;
-            margin: 0;
         }
         .sql-connections-panel h2 {
             margin-top: 0;
@@ -27,12 +26,17 @@
         .connection-form input, .connection-form select {
             width: 100%;
             padding: 10px;
-            margin: calc(var(--element-margin) / 2) var(--element-margin);
+            margin: calc(var(--element-margin) / 2) 0 !important;
             box-sizing: border-box;
             background-color: var(--primary-bg);
             color: var(--text-color);
             border: 1px solid var(--border-color);
             border-radius: 4px;
+        }
+        .connection-form label,
+        .connection-form p {
+            margin-left: 0 !important;
+            margin-right: 0 !important;
         }
         .connection-form button {
             width: 100%;

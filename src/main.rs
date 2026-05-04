@@ -20,7 +20,10 @@ use std::{
 
 use app_state::AppState;
 
-use pages::request::{request_get, request_save, request_delete, request_run, request_cancel};
+use pages::request::{
+    request_cancel, request_create_folder, request_delete, request_get, request_import_postman,
+    request_run, request_save, request_save_variables,
+};
 use pages::inspector::inspector_get; 
 use pages::not_found::{go, render_home_shortcuts_content}; 
 
@@ -136,6 +139,9 @@ async fn main() -> std::io::Result<()> {
             .service(request_get)
             .service(request_save)
             .service(request_delete)
+            .service(request_create_folder)
+            .service(request_save_variables)
+            .service(request_import_postman)
             .service(request_run) 
             .service(request_cancel)
             .service(inspector_get)
@@ -147,6 +153,7 @@ async fn main() -> std::io::Result<()> {
             .service(sql::sql_view)
             .service(sql::sql_save) 
             .service(sql::sql_delete) 
+            .service(sql::sql_create_folder)
             .service(sql::sql_delete_connection)
             .service(sql::sql_schema_json) 
             .service(Files::new("/static", "./static").prefer_utf8(true))

@@ -8,9 +8,16 @@ const mainContent = document.getElementById('main');
       const querySearchInput = document.getElementById('query-search-input');
       const savedQueriesList = document.getElementById('saved-queries-list');
       const saveQueryForm = document.getElementById('save-query-form');
+      const saveQueryBtn = document.getElementById('save-query-btn');
       const queryNameInput = document.getElementById('query-name');
       const querySqlInput = document.getElementById('query-sql');
+      const queryFolderInput = document.getElementById('query-folder');
+      const newSqlFileBtn = document.getElementById('new-sql-file-btn');
+      const createQueryFolderBtn = document.getElementById('create-query-folder-btn');
+      const createQueryFolderForm = document.getElementById('create-query-folder-form');
+      const newQueryFolderName = document.getElementById('new-query-folder-name');
       const variablesSection = document.getElementById('variables-section');
+      const variableHelpBtn = document.getElementById('variable-help-btn');
       const autocompleteList = document.getElementById('autocomplete-list');
       const saveSqlFileBtn = document.getElementById('save-sql-file-btn');
       let currentFocus = -1;
@@ -46,6 +53,207 @@ const mainContent = document.getElementById('main');
           link.click();
           URL.revokeObjectURL(link.href);
       });
+
+      if (saveQueryBtn && saveQueryForm) {
+          saveQueryBtn.addEventListener('click', () => {
+              if (queryNameInput.value.trim() === '') {
+                  openSaveQueryDialog();
+                  return;
+              }
+
+              if (typeof saveQueryForm.requestSubmit === 'function') {
+                  saveQueryForm.requestSubmit();
+                  return;
+              }
+
+              querySqlInput.value = editor.value;
+              if (queryNameInput.value.trim() !== '') {
+                  saveQueryForm.submit();
+              }
+          });
+      }
+
+      function submitSavedQuery() {
+          if (typeof saveQueryForm.requestSubmit === 'function') {
+              saveQueryForm.requestSubmit();
+              return;
+          }
+
+          querySqlInput.value = editor.value;
+          if (queryNameInput.value.trim() !== '') {
+              saveQueryForm.submit();
+          }
+      }
+
+      function closeSaveQueryDialog() {
+          const existingDialog = document.getElementById('save-query-dialog-backdrop');
+          if (existingDialog) {
+              existingDialog.remove();
+          }
+      }
+
+      function openSaveQueryDialog() {
+          closeSaveQueryDialog();
+
+          const backdropEl = document.createElement('div');
+          backdropEl.id = 'save-query-dialog-backdrop';
+          backdropEl.className = 'sql-dialog-backdrop';
+
+          const dialogEl = document.createElement('div');
+          dialogEl.className = 'sql-dialog';
+          dialogEl.setAttribute('role', 'dialog');
+          dialogEl.setAttribute('aria-modal', 'true');
+          dialogEl.setAttribute('aria-labelledby', 'save-query-dialog-title');
+
+          const titleEl = document.createElement('h3');
+          titleEl.id = 'save-query-dialog-title';
+          titleEl.textContent = 'Save Query';
+
+          const nameLabel = document.createElement('label');
+          nameLabel.textContent = 'Query name';
+          const nameInput = document.createElement('input');
+          nameInput.type = 'text';
+          nameInput.placeholder = 'Name this query';
+          nameInput.autocomplete = 'off';
+
+          const folderLabel = document.createElement('label');
+          folderLabel.textContent = 'Folder';
+          const folderSelect = document.createElement('select');
+          if (queryFolderInput) {
+              Array.from(queryFolderInput.options).forEach((option) => {
+                  folderSelect.appendChild(option.cloneNode(true));
+              });
+              folderSelect.value = queryFolderInput.value;
+          } else {
+              const option = document.createElement('option');
+              option.value = '';
+              option.textContent = 'Unfiled';
+              folderSelect.appendChild(option);
+          }
+
+          const actionsEl = document.createElement('div');
+          actionsEl.className = 'sql-dialog-actions';
+
+          const cancelBtn = document.createElement('button');
+          cancelBtn.type = 'button';
+          cancelBtn.textContent = 'Cancel';
+          cancelBtn.addEventListener('click', closeSaveQueryDialog);
+
+          const saveBtn = document.createElement('button');
+          saveBtn.type = 'button';
+          saveBtn.textContent = 'Save';
+          saveBtn.addEventListener('click', () => {
+              const name = nameInput.value.trim();
+              if (name === '') {
+                  nameInput.focus();
+                  return;
+              }
+
+              queryNameInput.value = name;
+              if (queryFolderInput) {
+                  queryFolderInput.value = folderSelect.value;
+              }
+              closeSaveQueryDialog();
+              submitSavedQuery();
+          });
+
+          backdropEl.addEventListener('click', (event) => {
+              if (event.target === backdropEl) {
+                  closeSaveQueryDialog();
+              }
+          });
+
+          dialogEl.addEventListener('keydown', (event) => {
+              if (event.key === 'Escape') {
+                  closeSaveQueryDialog();
+              }
+              if (event.key === 'Enter') {
+                  event.preventDefault();
+                  saveBtn.click();
+              }
+          });
+
+          actionsEl.appendChild(cancelBtn);
+          actionsEl.appendChild(saveBtn);
+          dialogEl.appendChild(titleEl);
+          dialogEl.appendChild(nameLabel);
+          dialogEl.appendChild(nameInput);
+          dialogEl.appendChild(folderLabel);
+          dialogEl.appendChild(folderSelect);
+          dialogEl.appendChild(actionsEl);
+          backdropEl.appendChild(dialogEl);
+          document.body.appendChild(backdropEl);
+          nameInput.focus();
+      }
+
+      function closeVariableHelpDialog() {
+          const existingDialog = document.getElementById('variable-help-dialog-backdrop');
+          if (existingDialog) {
+              existingDialog.remove();
+          }
+      }
+
+      function openVariableHelpDialog() {
+          closeVariableHelpDialog();
+
+          const backdropEl = document.createElement('div');
+          backdropEl.id = 'variable-help-dialog-backdrop';
+          backdropEl.className = 'sql-dialog-backdrop';
+
+          const dialogEl = document.createElement('div');
+          dialogEl.className = 'sql-dialog sql-help-dialog';
+          dialogEl.setAttribute('role', 'dialog');
+          dialogEl.setAttribute('aria-modal', 'true');
+          dialogEl.setAttribute('aria-labelledby', 'variable-help-dialog-title');
+
+          const titleEl = document.createElement('h3');
+          titleEl.id = 'variable-help-dialog-title';
+          titleEl.textContent = 'SQL Variables';
+
+          const bodyEl = document.createElement('div');
+          bodyEl.className = 'sql-help-dialog-body';
+          bodyEl.innerHTML = `
+              <p>Use variables when a query needs values you may change each run.</p>
+              <p>Type a placeholder in SQL using double braces, like <code>{{customer_id}}</code>. The variable bar will create an input for it automatically.</p>
+              <p>Use <strong>+ Var</strong> to add a manual variable input, then use that same name in the query.</p>
+              <pre>SELECT *
+FROM orders
+WHERE customer_id = {{customer_id}}
+  AND status = '{{status}}';</pre>
+          `;
+
+          const actionsEl = document.createElement('div');
+          actionsEl.className = 'sql-dialog-actions';
+
+          const closeBtn = document.createElement('button');
+          closeBtn.type = 'button';
+          closeBtn.textContent = 'Close';
+          closeBtn.addEventListener('click', closeVariableHelpDialog);
+
+          backdropEl.addEventListener('click', (event) => {
+              if (event.target === backdropEl) {
+                  closeVariableHelpDialog();
+              }
+          });
+
+          dialogEl.addEventListener('keydown', (event) => {
+              if (event.key === 'Escape') {
+                  closeVariableHelpDialog();
+              }
+          });
+
+          actionsEl.appendChild(closeBtn);
+          dialogEl.appendChild(titleEl);
+          dialogEl.appendChild(bodyEl);
+          dialogEl.appendChild(actionsEl);
+          backdropEl.appendChild(dialogEl);
+          document.body.appendChild(backdropEl);
+          closeBtn.focus();
+      }
+
+      if (variableHelpBtn) {
+          variableHelpBtn.addEventListener('click', openVariableHelpDialog);
+      }
       
       const outputResizer = document.getElementById('output-resizer');
       const outputPane = document.getElementById('output');
@@ -82,6 +290,54 @@ const mainContent = document.getElementById('main');
               document.body.style.cursor = '';
               document.body.style.userSelect = '';
           }
+      });
+
+      const tableQueryResizer = document.getElementById('table-query-resizer');
+      const tableListPane = document.getElementById('table-list');
+      const tableListHeightKey = `sql_table_list_height_${connectionNickname}`;
+      let isTableListResizing = false;
+      let lastTableListDownY = 0;
+      let startTableListHeight = 0;
+
+      const savedTableListHeight = Number(localStorage.getItem(tableListHeightKey));
+      if (savedTableListHeight > 40) {
+          tableListPane.style.flex = '0 0 auto';
+          tableListPane.style.height = `${savedTableListHeight}px`;
+      }
+
+      if (tableQueryResizer && tableListPane) {
+          tableQueryResizer.addEventListener('mousedown', (event) => {
+              isTableListResizing = true;
+              lastTableListDownY = event.clientY;
+              startTableListHeight = tableListPane.offsetHeight;
+              tableQueryResizer.classList.add('resizing');
+              document.body.style.cursor = 'row-resize';
+              document.body.style.userSelect = 'none';
+          });
+      }
+
+      document.addEventListener('mousemove', (event) => {
+          if (!isTableListResizing) return;
+
+          const delta = event.clientY - lastTableListDownY;
+          const sidebarHeight = document.getElementById('sidebar')?.clientHeight || 300;
+          const maxHeight = Math.max(80, sidebarHeight - 170);
+          let nextHeight = startTableListHeight + delta;
+          if (nextHeight < 40) nextHeight = 40;
+          if (nextHeight > maxHeight) nextHeight = maxHeight;
+
+          tableListPane.style.flex = '0 0 auto';
+          tableListPane.style.height = `${nextHeight}px`;
+      });
+
+      document.addEventListener('mouseup', () => {
+          if (!isTableListResizing) return;
+
+          isTableListResizing = false;
+          tableQueryResizer.classList.remove('resizing');
+          document.body.style.cursor = '';
+          document.body.style.userSelect = '';
+          localStorage.setItem(tableListHeightKey, tableListPane.offsetHeight.toString());
       });
 
       function renderTableList() {
@@ -132,16 +388,227 @@ const mainContent = document.getElementById('main');
 
       function filterSavedQueries() {
           const filter = querySearchInput.value.toUpperCase();
-          const listItems = savedQueriesList.getElementsByTagName('li');
-          for (let i = 0; i < listItems.length; i++) {
-              const itemText = listItems[i].querySelector('.query-link').textContent || listItems[i].querySelector('.query-link').innerText;
-              if (itemText.toUpperCase().indexOf(filter) > -1) { listItems[i].style.display = 'flex'; } else { listItems[i].style.display = 'none'; }
+          const folderStates = [];
+          let currentFolder = null;
+          let folderHasVisibleQuery = false;
+
+          Array.from(savedQueriesList.children).forEach((item) => {
+              if (item.classList.contains('saved-query-folder')) {
+                  if (currentFolder) {
+                      folderStates.push({ element: currentFolder, hasVisibleQuery: folderHasVisibleQuery });
+                  }
+
+                  currentFolder = item;
+                  folderHasVisibleQuery = false;
+                  item.style.display = 'none';
+                  return;
+              }
+
+              const queryLink = item.querySelector('.query-link');
+              if (!queryLink) return;
+
+              const itemText = queryLink.textContent || queryLink.innerText || '';
+              const isVisible = itemText.toUpperCase().indexOf(filter) > -1;
+              item.style.display = isVisible ? 'flex' : 'none';
+
+              if (isVisible) {
+                  folderHasVisibleQuery = true;
+              }
+          });
+
+          if (currentFolder) {
+              folderStates.push({ element: currentFolder, hasVisibleQuery: folderHasVisibleQuery });
           }
+
+          folderStates.forEach((folder) => {
+              folder.element.style.display = folder.hasVisibleQuery || filter === '' ? 'block' : 'none';
+          });
       }
       querySearchInput.addEventListener('keyup', filterSavedQueries);
 
+      if (createQueryFolderBtn && createQueryFolderForm && newQueryFolderName) {
+          createQueryFolderBtn.addEventListener('click', () => {
+              const folderName = window.prompt('Folder name');
+              if (!folderName || folderName.trim() === '') return;
+
+              newQueryFolderName.value = folderName.trim();
+              createQueryFolderForm.submit();
+          });
+      }
+
+      if (newSqlFileBtn) {
+          newSqlFileBtn.addEventListener('click', () => {
+              editor.value = '';
+              queryNameInput.value = '';
+              if (queryFolderInput) {
+                  queryFolderInput.value = '';
+              }
+              scanForVariables();
+              handleInput();
+              editor.focus();
+          });
+      }
+
       const form = document.getElementById('sql-form');
       const output = document.getElementById('output');
+      const outputFilterInput = document.getElementById('output-filter');
+      const outputHistorySelect = document.getElementById('output-history-select');
+      const deleteOutputHistoryBtn = document.getElementById('delete-output-history-btn');
+      const clearOutputHistoryBtn = document.getElementById('clear-output-history-btn');
+      const outputHistoryStorageKey = "sql_output_history_" + connectionNickname;
+      const maxOutputHistoryEntries = 8;
+      const maxOutputHistoryEntryChars = 500000;
+      const maxOutputHistoryTotalChars = 1500000;
+
+      function loadOutputHistory() {
+          try {
+              const history = JSON.parse(localStorage.getItem(outputHistoryStorageKey) || '[]');
+              if (!Array.isArray(history)) return [];
+
+              return history.map((entry, index) => ({
+                  ...entry,
+                  id: entry.id || `${entry.createdAt || 'history'}-${index}`
+              }));
+          } catch (e) {
+              console.error('Failed to load SQL output history', e);
+              return [];
+          }
+      }
+
+      function saveOutputHistory(history) {
+          try {
+              localStorage.setItem(outputHistoryStorageKey, JSON.stringify(history));
+          } catch (e) {
+              console.error('Failed to save SQL output history', e);
+          }
+      }
+
+      function getOutputRowCount() {
+          const table = output.querySelector('table');
+          if (!table) return '';
+
+          const rows = table.querySelectorAll('tbody tr');
+          return rows.length + " rows";
+      }
+
+      function applyOutputHtml(html, rowCountText = '') {
+          output.innerHTML = html;
+          if (outputFilterInput) {
+              outputFilterInput.value = '';
+          }
+
+          const table = output.querySelector('table');
+          if (table) {
+              makeTableInteractable(table);
+          }
+
+          const countSpan = document.getElementById('row-count');
+          if (countSpan) {
+              countSpan.innerText = rowCountText || getOutputRowCount();
+          }
+          updateSelectionCount();
+      }
+
+      function outputHistoryLabel(entry) {
+          const date = new Date(entry.createdAt);
+          const time = Number.isNaN(date.getTime()) ? '' : date.toLocaleString();
+          const name = entry.queryName || entry.sql.replace(/\s+/g, ' ').trim().slice(0, 64) || 'SQL output';
+          const rows = entry.rowCountText ? ` - ${entry.rowCountText}` : '';
+          return `${time} - ${name}${rows}`;
+      }
+
+      function renderOutputHistoryOptions(selectedId = '') {
+          if (!outputHistorySelect) return;
+
+          const nextSelectedId = selectedId || outputHistorySelect.value;
+          const history = loadOutputHistory();
+          outputHistorySelect.innerHTML = '<option value="">Output history</option>';
+          history.forEach((entry) => {
+              const option = document.createElement('option');
+              option.value = entry.id;
+              option.textContent = outputHistoryLabel(entry);
+              outputHistorySelect.appendChild(option);
+          });
+          if (nextSelectedId && history.some((entry) => entry.id === nextSelectedId)) {
+              outputHistorySelect.value = nextSelectedId;
+          }
+      }
+
+      function pruneOutputHistory(history) {
+          let pruned = history.slice(0, maxOutputHistoryEntries);
+          let totalChars = 0;
+          pruned = pruned.filter((entry) => {
+              totalChars += entry.html.length;
+              return totalChars <= maxOutputHistoryTotalChars;
+          });
+          return pruned;
+      }
+
+      function cacheOutputHistory(html, sql) {
+          if (!html || html.length > maxOutputHistoryEntryChars) return;
+
+          const entry = {
+              id: String(Date.now()) + "-" + Math.random().toString(16).slice(2),
+              createdAt: new Date().toISOString(),
+              sql: sql,
+              queryName: queryNameInput.value.trim(),
+              queryFolder: queryFolderInput ? queryFolderInput.value : '',
+              rowCountText: getOutputRowCount(),
+              html: html
+          };
+
+          const history = loadOutputHistory().filter((existing) => existing.html !== html || existing.sql !== sql);
+          history.unshift(entry);
+          saveOutputHistory(pruneOutputHistory(history));
+          renderOutputHistoryOptions(entry.id);
+      }
+
+      function getSelectedOutputHistoryEntry(id = '') {
+          const selectedId = id || outputHistorySelect?.value || '';
+          if (selectedId === '') return null;
+
+          return loadOutputHistory().find((entry) => entry.id === selectedId) || null;
+      }
+
+      renderOutputHistoryOptions();
+
+      function restoreSelectedOutputHistory() {
+          const entry = getSelectedOutputHistoryEntry();
+          if (!entry) return;
+
+          applyOutputHtml(entry.html, entry.rowCountText);
+          editor.value = entry.sql || editor.value;
+          queryNameInput.value = entry.queryName || '';
+          if (queryFolderInput) {
+              queryFolderInput.value = entry.queryFolder || '';
+          }
+          scanForVariables();
+          handleInput();
+      }
+
+      if (outputHistorySelect) {
+          outputHistorySelect.addEventListener('input', restoreSelectedOutputHistory);
+          outputHistorySelect.addEventListener('change', restoreSelectedOutputHistory);
+      }
+
+      if (deleteOutputHistoryBtn) {
+          deleteOutputHistoryBtn.addEventListener('click', () => {
+              if (!outputHistorySelect || outputHistorySelect.value === '') return;
+
+              const nextHistory = loadOutputHistory().filter((entry) => entry.id !== outputHistorySelect.value);
+              saveOutputHistory(nextHistory);
+              renderOutputHistoryOptions();
+          });
+      }
+
+      if (clearOutputHistoryBtn) {
+          clearOutputHistoryBtn.addEventListener('click', () => {
+              if (!window.confirm('Clear all cached SQL output history for this connection?')) return;
+
+              saveOutputHistory([]);
+              renderOutputHistoryOptions();
+          });
+      }
       
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -168,16 +635,8 @@ const mainContent = document.getElementById('main');
                 body: JSON.stringify(payload) 
             });
             const html = await resp.text();
-            output.innerHTML = html;
-            
-            const table = output.querySelector('table');
-            if(table) {
-                makeTableInteractable(table);
-                // UPDATE ROW COUNT
-                const rows = table.querySelectorAll('tbody tr');
-                const countSpan = document.getElementById('row-count');
-                if(countSpan) countSpan.innerText = rows.length + " rows";
-            }
+            applyOutputHtml(html);
+            cacheOutputHistory(html, payload.sql);
 
             // AUTO-REFRESH SCHEMA on DDL
             const upperSql = payload.sql.toUpperCase();
@@ -242,7 +701,7 @@ const mainContent = document.getElementById('main');
       });
       
       // Filtering Logic
-      document.getElementById('output-filter').addEventListener('input', (e) => {
+      outputFilterInput.addEventListener('input', (e) => {
           const term = e.target.value.toLowerCase();
           const table = output.querySelector('table');
           if(!table) return;
@@ -291,6 +750,20 @@ const mainContent = document.getElementById('main');
         const ths = table.querySelectorAll('th');
         const tbody = table.querySelector('tbody');
         const rows = Array.from(tbody.querySelectorAll('tr'));
+        const minColumnWidth = 36;
+
+        table.classList.add('resizable-output-table');
+
+        let colgroup = table.querySelector('colgroup');
+        if (!colgroup) {
+            colgroup = document.createElement('colgroup');
+            ths.forEach((th) => {
+                const col = document.createElement('col');
+                col.style.width = Math.max(th.offsetWidth, minColumnWidth) + 'px';
+                colgroup.appendChild(col);
+            });
+            table.insertBefore(colgroup, table.firstChild);
+        }
         
         rows.forEach((row, i) => {
             row.dataset.originalIndex = i;
@@ -329,6 +802,45 @@ const mainContent = document.getElementById('main');
         let currentSortDir = 'none'; 
 
         ths.forEach((th, colIndex) => {
+            const sortIndicator = document.createElement('span');
+            sortIndicator.className = 'column-sort-indicator';
+            th.appendChild(sortIndicator);
+
+            const handle = document.createElement('span');
+            handle.className = 'column-resize-handle';
+            handle.title = 'Drag to resize column';
+            th.appendChild(handle);
+
+            handle.addEventListener('mousedown', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+
+                const col = colgroup.children[colIndex];
+                const startX = event.clientX;
+                const startWidth = col?.getBoundingClientRect().width || th.getBoundingClientRect().width;
+                handle.classList.add('resizing');
+                document.body.style.cursor = 'col-resize';
+                document.body.style.userSelect = 'none';
+
+                const onMouseMove = (moveEvent) => {
+                    const nextWidth = Math.max(minColumnWidth, startWidth + moveEvent.clientX - startX);
+                    if (col) {
+                        col.style.width = nextWidth + 'px';
+                    }
+                };
+
+                const onMouseUp = () => {
+                    handle.classList.remove('resizing');
+                    document.body.style.cursor = '';
+                    document.body.style.userSelect = '';
+                    document.removeEventListener('mousemove', onMouseMove);
+                    document.removeEventListener('mouseup', onMouseUp);
+                };
+
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+            });
+
             th.addEventListener('click', () => {
                 if (currentSortCol === colIndex) {
                     if (currentSortDir === 'none') currentSortDir = 'asc';
@@ -339,9 +851,12 @@ const mainContent = document.getElementById('main');
                     currentSortDir = 'asc';
                 }
 
-                ths.forEach(h => h.innerHTML = h.innerHTML.replace(/ [▲▼]$/, '')); 
-                if (currentSortDir === 'asc') th.innerHTML += ' ▲';
-                if (currentSortDir === 'desc') th.innerHTML += ' ▼';
+                ths.forEach(h => {
+                    const indicator = h.querySelector('.column-sort-indicator');
+                    if (indicator) indicator.textContent = '';
+                });
+                if (currentSortDir === 'asc') sortIndicator.textContent = ' ▲';
+                if (currentSortDir === 'desc') sortIndicator.textContent = ' ▼';
 
                 const newRows = Array.from(rows);
                 if (currentSortDir !== 'none') {
@@ -380,8 +895,12 @@ const mainContent = document.getElementById('main');
               e.preventDefault(); 
               const sql = target.getAttribute('data-sql'); 
               const name = target.getAttribute('data-name'); 
+              const folder = target.getAttribute('data-folder') || '';
               editor.value = sql; 
               queryNameInput.value = name; 
+              if (queryFolderInput) {
+                  queryFolderInput.value = folder;
+              }
               scanForVariables(); 
               handleInput(); 
           }

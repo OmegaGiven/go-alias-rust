@@ -17,6 +17,11 @@
         const loadThemeSelect = document.getElementById('load_theme');
         const loadThemeNameInput = document.getElementById('theme_name_input');
         const themeNameInput = document.getElementById('theme_name');
+        const returnToInput = document.getElementById('theme_return_to');
+
+        if (returnToInput) {
+            returnToInput.value = window.location.pathname + window.location.search;
+        }
 
         const palettes = {
             light: {
@@ -155,8 +160,34 @@
         }
 
         handle.addEventListener('mousedown', dragStart);
+        settings.addEventListener('dblclick', centerOnEdgeDoubleClick);
         document.addEventListener('mousemove', drag);
         document.addEventListener('mouseup', dragEnd);
+
+        function isOuterEdgeClick(event, element) {
+            if (event.target.closest('button, input, textarea, select, a')) return false;
+            const rect = element.getBoundingClientRect();
+            const edge = 18;
+            const onEdge = event.clientX - rect.left <= edge ||
+                rect.right - event.clientX <= edge ||
+                event.clientY - rect.top <= edge ||
+                rect.bottom - event.clientY <= edge;
+            return onEdge || handle.contains(event.target);
+        }
+
+        function centerOnEdgeDoubleClick(event) {
+            if (!isOuterEdgeClick(event, settings)) return;
+
+            const rect = settings.getBoundingClientRect();
+            const targetLeft = Math.max(0, (window.innerWidth - rect.width) / 2);
+            const targetTop = Math.max(0, (window.innerHeight - rect.height) / 2);
+            xOffset += targetLeft - rect.left;
+            yOffset += targetTop - rect.top;
+            currentX = xOffset;
+            currentY = yOffset;
+            settings.style.transform = `translate3d(${xOffset}px, ${yOffset}px, 0)`;
+            localStorage.setItem('settings-pos', JSON.stringify({ x: xOffset, y: yOffset }));
+        }
 
         function dragStart(event) {
             initialX = event.clientX - xOffset;

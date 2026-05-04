@@ -27,6 +27,7 @@
             <button class="tools-dropdown-item" onclick="toggleSettings()">Appearance</button>
             <button class="tools-dropdown-item" onclick="toggleCalculator()">Calculator</button>
             <button class="tools-dropdown-item" onclick="toggleJwtDecoder()">JWT Decoder</button>
+            <button class="tools-dropdown-item" onclick="toggleScratchPad()">Scratch Pad</button>
           </div>
         </div>
       </div>
@@ -126,6 +127,27 @@
       </div>
     </div>
 
+    <div id="floating-scratch-pad">
+      <div class="floating-window-header scratchpad-header" id="scratchpad-drag-handle">
+        <span>Scratch Pad</span>
+        <button class="floating-window-close scratchpad-close-btn" onclick="toggleScratchPad()">&times;</button>
+      </div>
+      <div class="scratchpad-body">
+        <div class="scratchpad-surface">
+          <div class="scratchpad-tabs-row">
+            <button type="button" id="scratchpad-add-tab" class="scratchpad-icon-btn" title="New scratch pad" aria-label="New scratch pad">+</button>
+            <div id="scratchpad-tabs" class="scratchpad-tabs" role="tablist" aria-label="Scratch pad entries"></div>
+          </div>
+          <textarea id="scratchpad-editor" class="scratchpad-editor" placeholder="Temporary notes, queries, snippets..." spellcheck="false"></textarea>
+          <div class="scratchpad-footer">
+            <input type="text" id="scratchpad-title" class="scratchpad-title-input" aria-label="Scratch pad title">
+            <span id="scratchpad-save-status" class="scratchpad-save-status">Saved</span>
+            <button type="button" id="scratchpad-delete-tab" class="scratchpad-text-btn">Delete</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div id="floating-settings" style="display: none;">
       <div class="floating-window-header settings-header" id="settings-drag-handle">
         <h3>Theme Settings</h3>
@@ -134,6 +156,7 @@
       <div class="settings-content-wrapper">
         <form action="/save_theme" method="POST" class="settings-form">
           <input type="hidden" id="original_name" name="original_name" value="{{ current_theme.name }}">
+          <input type="hidden" id="theme_return_to" name="return_to" value="/">
           <div class="settings-grid">
             <div class="settings-section">
               <div class="appearance-mode-group">
@@ -271,6 +294,7 @@
     <script src="/static/settings.js" defer></script>
     <script src="/static/calculator.js" defer></script>
     <script src="/static/jwt_decoder.js" defer></script>
+    <script src="/static/scratchpad.js" defer></script>
     <script src="/static/sidebar.js" defer></script>
   </body>
 </html>

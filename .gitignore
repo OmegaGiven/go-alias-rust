@@ -8,7 +8,10 @@
 /hidden-shortcuts.json
 /work-shortcuts.json
 /saved_requests.json
+/saved_request_folders.json
+/request_variables.json
 /saved_queries.json
+/saved_query_folders.json
 
 # Local SQL connection secrets/state
 /connections.json.enc

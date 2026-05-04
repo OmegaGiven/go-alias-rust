@@ -10,9 +10,49 @@
         const resTime = document.getElementById('res-time');
         const resSize = document.getElementById('res-size');
         const downloadResBtn = document.getElementById('download-res-btn');
+        const viewCurlBtn = document.getElementById('view-curl-btn');
+        const curlViewModal = document.getElementById('curl-view-modal');
+        const curlViewOutput = document.getElementById('curl-view-output');
+        const closeCurlViewBtn = document.getElementById('close-curl-view-btn');
         const requestDebugInfo = document.getElementById('request-debug-info');
+        const savedRequestSearch = document.getElementById('saved-request-search');
+        const savedList = document.getElementById('saved-list');
+        const newRequestBtn = document.getElementById('new-request-btn');
+        const importPostmanBtn = document.getElementById('import-postman-btn');
+        const postmanImportModal = document.getElementById('postman-import-modal');
+        const closePostmanImportBtn = document.getElementById('close-postman-import-btn');
+        const postmanImportFile = document.getElementById('postman-import-file');
+        const postmanDuplicateMode = document.getElementById('postman-duplicate-mode');
+        const postmanImportPreview = document.getElementById('postman-import-preview');
+        const confirmPostmanImportBtn = document.getElementById('confirm-postman-import-btn');
+        const createRequestFolderBtn = document.getElementById('create-request-folder-btn');
+        const createRequestFolderForm = document.getElementById('create-request-folder-form');
+        const newRequestFolderName = document.getElementById('new-request-folder-name');
+        const requestVariablesBtn = document.getElementById('request-variables-btn');
+        const requestVariablesModal = document.getElementById('request-variables-modal');
+        const closeRequestVariablesBtn = document.getElementById('close-request-variables-btn');
+        const requestVariableSetSelect = document.getElementById('request-variable-set-select');
+        const newRequestVariableSetModal = document.getElementById('new-request-variable-set-modal');
+        const newRequestVariableSetName = document.getElementById('new-request-variable-set-name');
+        const addRequestVariableSetBtn = document.getElementById('add-request-variable-set-btn');
+        const renameRequestVariableSetBtn = document.getElementById('rename-request-variable-set-btn');
+        const copyRequestVariableSetBtn = document.getElementById('copy-request-variable-set-btn');
+        const deleteRequestVariableSetBtn = document.getElementById('delete-request-variable-set-btn');
+        const createRequestVariableSetBtn = document.getElementById('create-request-variable-set-btn');
+        const cancelRequestVariableSetBtn = document.getElementById('cancel-request-variable-set-btn');
+        const requestVariableSetModalTitle = document.getElementById('request-variable-set-modal-title');
+        const requestVariableSetModalDescription = document.getElementById('request-variable-set-modal-description');
+        const requestVariablesContainer = document.getElementById('request-variables-container');
+        const addRequestVariableBtn = document.getElementById('add-request-variable-btn');
+        const saveRequestVariablesBtn = document.getElementById('save-request-variables-btn');
+        const requestVariablesStatus = document.getElementById('request-variables-status');
         const RESPONSE_HEIGHT_KEY = 'request-response-height';
         const RESPONSE_HEADERS_HEIGHT_KEY = 'request-response-headers-height';
+        const SAVED_REQUEST_FOLDERS_COLLAPSED_KEY = 'saved-request-folders-collapsed';
+        let pendingPostmanCollection = null;
+        let collapsedRequestFolders = readCollapsedRequestFolders();
+        let latestCurlCommand = '';
+        let variableSetDialogMode = 'create';
         
         // Save Logic Elements
         const toggleSaveBtn = document.getElementById('toggle-save-btn');
@@ -26,6 +66,8 @@
         const saveOAuthClientId = document.getElementById('save-oauth-client-id');
         const saveOAuthClientSecret = document.getElementById('save-oauth-client-secret');
         const saveOAuthScope = document.getElementById('save-oauth-scope');
+        const reqNameInput = document.getElementById('req-name');
+        const reqFolderSelect = document.getElementById('req-folder');
 
         // Auth Elements
         const authTypeSelect = document.getElementById('auth-type');
@@ -33,6 +75,34 @@
         let fetchedOAuthToken = ''; // Store the token here
         let currentRequestId = null;
         let currentAbortController = null;
+        let requestVariables = readInitialRequestVariables();
+
+        function readInitialRequestVariables() {
+            const data = document.getElementById('request-variables-data');
+            if (!data) return normalizeRequestVariables({});
+            try {
+                const parsed = JSON.parse(data.textContent || '{}');
+                return normalizeRequestVariables(parsed);
+            } catch (_) {
+                return normalizeRequestVariables({});
+            }
+        }
+
+        function readCollapsedRequestFolders() {
+            try {
+                const values = JSON.parse(localStorage.getItem(SAVED_REQUEST_FOLDERS_COLLAPSED_KEY) || '[]');
+                return new Set(Array.isArray(values) ? values : []);
+            } catch (_) {
+                return new Set();
+            }
+        }
+
+        function saveCollapsedRequestFolders() {
+            localStorage.setItem(
+                SAVED_REQUEST_FOLDERS_COLLAPSED_KEY,
+                JSON.stringify(Array.from(collapsedRequestFolders))
+            );
+        }
 
         // --- Helper: Create Key-Value Row ---
         function addKvRow(containerId, key = '', val = '', isReadOnlyKey = false) {
@@ -71,6 +141,232 @@
                 if (k) pairs.push([k, v]);
             });
             return pairs;
+        }
+
+        function substituteRequestVariables(value) {
+            const variables = getActiveVariableSet().values || {};
+            return String(value || '').replace(/\{\{([^}]+)\}\}/g, (fullMatch, rawKey) => {
+                const key = rawKey.trim();
+                return Object.prototype.hasOwnProperty.call(variables, key) ? variables[key] : fullMatch;
+            });
+        }
+
+        function normalizeRequestVariables(value) {
+            const legacyGlobal = value.global && typeof value.global === 'object' ? value.global : {};
+            let sets = Array.isArray(value.sets) ? value.sets : [];
+            sets = sets
+                .map((set) => ({
+                    name: String(set.name || '').trim(),
+                    values: set.values && typeof set.values === 'object' ? { ...set.values } : {},
+                }))
+                .filter((set) => set.name);
+
+            if (sets.length === 0 && Object.keys(legacyGlobal).length > 0) {
+                sets = [{ name: 'Default', values: { ...legacyGlobal } }];
+            }
+
+            const activeSet = String(value.active_set || '').trim();
+            return {
+                active_set: sets.some((set) => set.name === activeSet) ? activeSet : (sets[0]?.name || ''),
+                sets,
+                global: {},
+            };
+        }
+
+        function getActiveVariableSet() {
+            let active = requestVariables.sets.find((set) => set.name === requestVariables.active_set);
+            if (!active && requestVariables.sets.length > 0) {
+                requestVariables.active_set = requestVariables.sets[0].name;
+                active = requestVariables.sets[0];
+            }
+            return active || { name: '', values: {} };
+        }
+
+        function updateRequestVariablesButtonLabel() {
+            if (!requestVariablesBtn) return;
+            const activeName = getActiveVariableSet().name;
+            requestVariablesBtn.textContent = activeName ? `Vars: ${activeName}` : 'Variables';
+            requestVariablesBtn.title = activeName ? `Request variables: ${activeName}` : 'Request variables';
+        }
+
+        function ensureVariableSet() {
+            if (requestVariables.sets.length === 0) {
+                requestVariables.sets.push({ name: 'Default', values: {} });
+                requestVariables.active_set = 'Default';
+            }
+        }
+
+        function renderVariableSetSelect() {
+            if (!requestVariableSetSelect) return;
+            requestVariableSetSelect.innerHTML = '';
+            requestVariables.sets.forEach((set) => {
+                const option = document.createElement('option');
+                option.value = set.name;
+                option.textContent = set.name;
+                option.selected = set.name === requestVariables.active_set;
+                requestVariableSetSelect.appendChild(option);
+            });
+        }
+
+        function renderRequestVariables() {
+            if (!requestVariablesContainer) return;
+            ensureVariableSet();
+            renderVariableSetSelect();
+            updateRequestVariablesButtonLabel();
+            requestVariablesContainer.innerHTML = '';
+            const entries = Object.entries(getActiveVariableSet().values || {}).sort(([a], [b]) => a.localeCompare(b));
+            if (entries.length === 0) {
+                addRequestVariableRow('', '');
+                return;
+            }
+            entries.forEach(([key, value]) => addRequestVariableRow(key, value));
+        }
+
+        function addRequestVariableRow(key = '', value = '') {
+            if (!requestVariablesContainer) return;
+            const row = document.createElement('div');
+            row.className = 'request-var-row';
+
+            const keyInput = document.createElement('input');
+            keyInput.type = 'text';
+            keyInput.className = 'request-var-key';
+            keyInput.placeholder = 'Variable';
+            keyInput.value = key;
+
+            const valueInput = document.createElement('input');
+            valueInput.type = 'text';
+            valueInput.className = 'request-var-value';
+            valueInput.placeholder = 'Value';
+            valueInput.value = value;
+
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'kv-remove';
+            removeBtn.textContent = 'x';
+            removeBtn.addEventListener('click', () => row.remove());
+
+            row.appendChild(keyInput);
+            row.appendChild(valueInput);
+            row.appendChild(removeBtn);
+            requestVariablesContainer.appendChild(row);
+        }
+
+        function collectRequestVariables() {
+            ensureVariableSet();
+            const values = {};
+            if (!requestVariablesContainer) return requestVariables;
+            requestVariablesContainer.querySelectorAll('.request-var-row').forEach((row) => {
+                const key = row.querySelector('.request-var-key')?.value.trim();
+                const value = row.querySelector('.request-var-value')?.value || '';
+                if (key) values[key] = value;
+            });
+            const active = getActiveVariableSet();
+            active.values = values;
+            return normalizeRequestVariables(requestVariables);
+        }
+
+        function addVariableSet(name) {
+            const trimmed = String(name || '').trim();
+            if (!trimmed) return;
+            collectRequestVariables();
+            const existing = requestVariables.sets.find((set) => set.name.toLowerCase() === trimmed.toLowerCase());
+            if (existing) {
+                requestVariables.active_set = existing.name;
+            } else {
+                requestVariables.sets.push({ name: trimmed, values: {} });
+                requestVariables.active_set = trimmed;
+            }
+            if (newRequestVariableSetName) newRequestVariableSetName.value = '';
+            renderRequestVariables();
+        }
+
+        function renameActiveVariableSet(name) {
+            const trimmed = String(name || '').trim();
+            if (!trimmed) return;
+            collectRequestVariables();
+            const active = getActiveVariableSet();
+            if (!active.name) return;
+
+            const duplicate = requestVariables.sets.find((set) => (
+                set.name.toLowerCase() === trimmed.toLowerCase() && set.name !== active.name
+            ));
+            if (duplicate) {
+                requestVariablesStatus.textContent = 'A set with that name already exists.';
+                if (requestVariableSetModalDescription) {
+                    requestVariableSetModalDescription.textContent = 'A set with that name already exists.';
+                }
+                return;
+            }
+
+            active.name = trimmed;
+            requestVariables.active_set = trimmed;
+            if (newRequestVariableSetName) newRequestVariableSetName.value = '';
+            renderRequestVariables();
+        }
+
+        function copyActiveVariableSet(name) {
+            const trimmed = String(name || '').trim();
+            if (!trimmed) return;
+            collectRequestVariables();
+            const active = getActiveVariableSet();
+            const copiedValues = { ...(active.values || {}) };
+            const existing = requestVariables.sets.find((set) => set.name.toLowerCase() === trimmed.toLowerCase());
+            if (existing) {
+                requestVariablesStatus.textContent = 'A set with that name already exists.';
+                if (requestVariableSetModalDescription) {
+                    requestVariableSetModalDescription.textContent = 'A set with that name already exists.';
+                }
+                return;
+            }
+
+            requestVariables.sets.push({ name: trimmed, values: copiedValues });
+            requestVariables.active_set = trimmed;
+            if (newRequestVariableSetName) newRequestVariableSetName.value = '';
+            renderRequestVariables();
+        }
+
+        function deleteActiveVariableSet() {
+            collectRequestVariables();
+            ensureVariableSet();
+            const active = getActiveVariableSet();
+            if (!active.name) return;
+
+            if (requestVariables.sets.length <= 1) {
+                active.values = {};
+                requestVariablesStatus.textContent = 'Cleared the only variable set.';
+                renderRequestVariables();
+                return;
+            }
+
+            const shouldDelete = window.confirm(`Delete variable set "${active.name}"?`);
+            if (!shouldDelete) return;
+
+            requestVariables.sets = requestVariables.sets.filter((set) => set.name !== active.name);
+            requestVariables.active_set = requestVariables.sets[0]?.name || '';
+            requestVariablesStatus.textContent = 'Variable set deleted. Save to keep this change.';
+            renderRequestVariables();
+        }
+
+        function openVariableSetNameDialog(mode) {
+            if (!newRequestVariableSetModal || !newRequestVariableSetName) return;
+            collectRequestVariables();
+            variableSetDialogMode = mode;
+            requestVariablesStatus.textContent = '';
+
+            const active = getActiveVariableSet();
+            const isRename = mode === 'rename';
+            const isCopy = mode === 'copy';
+            requestVariableSetModalTitle.textContent = isRename
+                ? 'Rename Variable Set'
+                : (isCopy ? 'Copy Variable Set' : 'New Variable Set');
+            requestVariableSetModalDescription.textContent = isRename
+                ? 'Rename the active variable set.'
+                : (isCopy ? 'Copy the active variable values into a new named set.' : 'Name the set, then add variables for that environment.');
+            createRequestVariableSetBtn.textContent = isRename ? 'Rename' : (isCopy ? 'Copy' : 'Create');
+            newRequestVariableSetName.value = isRename ? active.name : '';
+            newRequestVariableSetModal.showModal();
+            newRequestVariableSetName.focus();
+            newRequestVariableSetName.select();
         }
 
         // --- Body Type Toggle ---
@@ -129,10 +425,10 @@
 
         function detectPathVariables() {
             const url = urlInput.value;
-            const regex = /\{([^}]+)\}/g;
+            const regex = /(^|[^{])\{([^{}]+)\}(?!\})/g;
             let match;
             const foundKeys = new Set();
-            while ((match = regex.exec(url)) !== null) { foundKeys.add(match[1]); }
+            while ((match = regex.exec(url)) !== null) { foundKeys.add(match[2]); }
 
             const container = document.getElementById('path-container');
             const currentValues = getKvMap('path-container');
@@ -386,11 +682,330 @@
         // Init
         window.addKvRow = addKvRow; window.openTab = openTab; window.onKvChange = onKvChange; window.fetchOAuthToken = fetchOAuthToken; window.toggleBodyType = toggleBodyType; window.copyToClipboard = copyToClipboard;
         addKvRow('params-container'); addKvRow('headers-container'); parseUrlToParams(); detectPathVariables();
+        renderRequestVariables();
+
+        function filterSavedRequests() {
+            if (!savedRequestSearch || !savedList) return;
+
+            const filter = savedRequestSearch.value.toUpperCase();
+            const folderStates = [];
+            let currentFolder = null;
+            let currentFolderKey = '';
+            let currentFolderCollapsed = false;
+            let folderHasVisibleRequest = false;
+
+            Array.from(savedList.children).forEach((item) => {
+                if (item.classList.contains('saved-req-folder')) {
+                    if (currentFolder) {
+                        folderStates.push({
+                            element: currentFolder,
+                            hasVisibleRequest: folderHasVisibleRequest,
+                            collapsed: currentFolderCollapsed,
+                        });
+                    }
+
+                    currentFolder = item;
+                    currentFolderKey = item.dataset.folder || '';
+                    currentFolderCollapsed = collapsedRequestFolders.has(currentFolderKey);
+                    folderHasVisibleRequest = false;
+                    item.style.display = 'none';
+                    item.classList.toggle('collapsed', currentFolderCollapsed);
+                    const toggle = item.querySelector('.saved-req-folder-toggle');
+                    if (toggle) toggle.textContent = currentFolderCollapsed ? '▸' : '▾';
+                    return;
+                }
+
+                const link = item.querySelector('.req-link');
+                if (!link) return;
+
+                const itemText = [
+                    link.dataset.name || '',
+                    link.dataset.method || '',
+                    link.dataset.url || '',
+                ].join(' ');
+                const matchesFilter = itemText.toUpperCase().includes(filter);
+                const isVisible = matchesFilter && !currentFolderCollapsed;
+                item.style.display = isVisible ? 'flex' : 'none';
+                if (matchesFilter) {
+                    folderHasVisibleRequest = true;
+                }
+            });
+
+            if (currentFolder) {
+                folderStates.push({
+                    element: currentFolder,
+                    hasVisibleRequest: folderHasVisibleRequest,
+                    collapsed: currentFolderCollapsed,
+                });
+            }
+
+            folderStates.forEach((folder) => {
+                folder.element.style.display = folder.hasVisibleRequest || filter === '' ? 'flex' : 'none';
+            });
+        }
+
+        function resetRequestBuilder() {
+            methodSelect.value = 'GET';
+            urlInput.value = '';
+            bodyInput.value = '';
+            fetchedOAuthToken = '';
+            currentRequestId = null;
+            currentAbortController = null;
+            cancelBtn.disabled = true;
+            reqNameInput.value = '';
+            if (reqFolderSelect) reqFolderSelect.value = '';
+            saveControls.style.display = 'none';
+            authTypeSelect.value = 'none';
+            renderAuthInputs();
+            const rawBodyOption = document.querySelector('input[name="body-type"][value="raw"]');
+            if (rawBodyOption) rawBodyOption.checked = true;
+            toggleBodyType();
+            document.getElementById('params-container').innerHTML = '';
+            document.getElementById('headers-container').innerHTML = '';
+            document.getElementById('path-container').innerHTML = '';
+            document.getElementById('form-body-rows').innerHTML = '';
+            addKvRow('params-container');
+            addKvRow('headers-container');
+            parseUrlToParams();
+            detectPathVariables();
+            document.querySelectorAll('.saved-req-item').forEach(el => el.classList.remove('selected'));
+            responseBody.innerText = 'Response body will appear here...';
+            responseHeaders.innerText = 'Response headers will appear here...';
+            resStatus.innerText = 'Status: -';
+            resTime.innerText = 'Time: - ms';
+            resSize.innerText = 'Size: -';
+            requestDebugInfo.innerHTML = '';
+            requestDebugInfo.style.display = 'none';
+            latestCurlCommand = '';
+            if (viewCurlBtn) viewCurlBtn.disabled = true;
+            urlInput.focus();
+        }
+
+        if (savedRequestSearch) {
+            savedRequestSearch.addEventListener('input', filterSavedRequests);
+            filterSavedRequests();
+        }
+
+        if (newRequestBtn) {
+            newRequestBtn.addEventListener('click', resetRequestBuilder);
+        }
+
+        if (createRequestFolderBtn && createRequestFolderForm && newRequestFolderName) {
+            createRequestFolderBtn.addEventListener('click', () => {
+                const folderName = window.prompt('Folder name');
+                if (!folderName || folderName.trim() === '') return;
+
+                newRequestFolderName.value = folderName.trim();
+                createRequestFolderForm.submit();
+            });
+        }
+
+        if (requestVariablesBtn && requestVariablesModal) {
+            requestVariablesBtn.addEventListener('click', () => {
+                renderRequestVariables();
+                requestVariablesStatus.textContent = '';
+                requestVariablesModal.showModal();
+            });
+        }
+
+        if (closeRequestVariablesBtn && requestVariablesModal) {
+            closeRequestVariablesBtn.addEventListener('click', () => {
+                renderRequestVariables();
+                requestVariablesModal.close();
+            });
+        }
+
+        if (requestVariableSetSelect) {
+            requestVariableSetSelect.addEventListener('change', () => {
+                collectRequestVariables();
+                requestVariables.active_set = requestVariableSetSelect.value;
+                renderRequestVariables();
+                requestVariablesStatus.textContent = '';
+            });
+        }
+
+        function createNamedVariableSet() {
+            const setName = newRequestVariableSetName?.value || '';
+            if (variableSetDialogMode === 'rename') {
+                renameActiveVariableSet(setName);
+            } else if (variableSetDialogMode === 'copy') {
+                copyActiveVariableSet(setName);
+            } else {
+                addVariableSet(setName);
+            }
+
+            if (!requestVariablesStatus.textContent) {
+                requestVariablesStatus.textContent = '';
+                if (newRequestVariableSetName) newRequestVariableSetName.value = '';
+                if (newRequestVariableSetModal?.open) newRequestVariableSetModal.close();
+            }
+        }
+
+        if (addRequestVariableSetBtn) {
+            addRequestVariableSetBtn.addEventListener('click', () => openVariableSetNameDialog('create'));
+        }
+
+        if (renameRequestVariableSetBtn) {
+            renameRequestVariableSetBtn.addEventListener('click', () => openVariableSetNameDialog('rename'));
+        }
+
+        if (copyRequestVariableSetBtn) {
+            copyRequestVariableSetBtn.addEventListener('click', () => openVariableSetNameDialog('copy'));
+        }
+
+        if (deleteRequestVariableSetBtn) {
+            deleteRequestVariableSetBtn.addEventListener('click', deleteActiveVariableSet);
+        }
+
+        if (cancelRequestVariableSetBtn && newRequestVariableSetModal) {
+            cancelRequestVariableSetBtn.addEventListener('click', () => {
+                if (newRequestVariableSetName) newRequestVariableSetName.value = '';
+                newRequestVariableSetModal.close();
+            });
+        }
+
+        if (createRequestVariableSetBtn) {
+            createRequestVariableSetBtn.addEventListener('click', createNamedVariableSet);
+        }
+
+        if (newRequestVariableSetName) {
+            newRequestVariableSetName.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    createNamedVariableSet();
+                }
+            });
+        }
+
+        if (addRequestVariableBtn) {
+            addRequestVariableBtn.addEventListener('click', () => addRequestVariableRow('', ''));
+        }
+
+        if (saveRequestVariablesBtn) {
+            saveRequestVariablesBtn.addEventListener('click', async () => {
+                requestVariables = collectRequestVariables();
+                requestVariablesStatus.textContent = 'Saving...';
+                try {
+                    const resp = await fetch('/requests/variables', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(requestVariables),
+                    });
+                    if (!resp.ok) throw new Error(await resp.text());
+                    requestVariables = normalizeRequestVariables(await resp.json());
+                    renderRequestVariables();
+                    requestVariablesStatus.textContent = 'Saved';
+                    window.setTimeout(() => {
+                        if (requestVariablesModal?.open) requestVariablesModal.close();
+                    }, 300);
+                } catch (err) {
+                    requestVariablesStatus.textContent = 'Save failed: ' + err.message;
+                }
+            });
+        }
+
+        function countPostmanItems(items, folderDepth = 0, result = { requests: 0, folders: 0 }) {
+            if (!Array.isArray(items)) return result;
+            items.forEach((item) => {
+                if (Array.isArray(item.item)) {
+                    result.folders += 1;
+                    countPostmanItems(item.item, folderDepth + 1, result);
+                } else if (item.request) {
+                    result.requests += 1;
+                }
+            });
+            return result;
+        }
+
+        function renderPostmanPreview(collection) {
+            const counts = countPostmanItems(collection.item || []);
+            const variables = Array.isArray(collection.variable) ? collection.variable.length : 0;
+            const collectionName = collection.info?.name || 'Unnamed collection';
+            postmanImportPreview.textContent = '';
+            const title = document.createElement('strong');
+            title.textContent = collectionName;
+            const summary = document.createElement('div');
+            summary.textContent = `${counts.requests} requests, ${counts.folders} folders, ${variables} variables found.`;
+            postmanImportPreview.appendChild(title);
+            postmanImportPreview.appendChild(summary);
+        }
+
+        if (importPostmanBtn && postmanImportModal) {
+            importPostmanBtn.addEventListener('click', () => {
+                pendingPostmanCollection = null;
+                confirmPostmanImportBtn.disabled = true;
+                postmanImportPreview.textContent = 'Choose a Postman collection export to preview it.';
+                postmanImportFile.value = '';
+                postmanImportModal.showModal();
+            });
+        }
+
+        if (closePostmanImportBtn && postmanImportModal) {
+            closePostmanImportBtn.addEventListener('click', () => postmanImportModal.close());
+        }
+
+        if (postmanImportFile) {
+            postmanImportFile.addEventListener('change', async () => {
+                pendingPostmanCollection = null;
+                confirmPostmanImportBtn.disabled = true;
+                const file = postmanImportFile.files?.[0];
+                if (!file) return;
+                try {
+                    const text = await file.text();
+                    const collection = JSON.parse(text);
+                    if (!Array.isArray(collection.item)) {
+                        throw new Error('This does not look like a Postman collection export.');
+                    }
+                    pendingPostmanCollection = collection;
+                    renderPostmanPreview(collection);
+                    confirmPostmanImportBtn.disabled = false;
+                } catch (err) {
+                    postmanImportPreview.textContent = 'Could not read collection: ' + err.message;
+                }
+            });
+        }
+
+        if (confirmPostmanImportBtn) {
+            confirmPostmanImportBtn.addEventListener('click', async () => {
+                if (!pendingPostmanCollection) return;
+                confirmPostmanImportBtn.disabled = true;
+                postmanImportPreview.textContent = 'Importing...';
+                try {
+                    const resp = await fetch('/requests/import/postman', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            collection: pendingPostmanCollection,
+                            duplicate_mode: postmanDuplicateMode?.value || 'rename',
+                        }),
+                    });
+                    if (!resp.ok) throw new Error(await resp.text());
+                    const result = await resp.json();
+                    const warningText = result.warnings?.length ? ` ${result.warnings.length} warnings.` : '';
+                    postmanImportPreview.textContent = `Imported ${result.imported} requests and ${result.variables} variables.${warningText}`;
+                    window.setTimeout(() => window.location.reload(), 700);
+                } catch (err) {
+                    confirmPostmanImportBtn.disabled = false;
+                    postmanImportPreview.textContent = 'Import failed: ' + err.message;
+                }
+            });
+        }
+
+        if (viewCurlBtn && curlViewModal && curlViewOutput) {
+            viewCurlBtn.addEventListener('click', () => {
+                curlViewOutput.textContent = latestCurlCommand || 'Run a request to generate curl.';
+                curlViewModal.showModal();
+            });
+        }
+
+        if (closeCurlViewBtn && curlViewModal) {
+            closeCurlViewBtn.addEventListener('click', () => curlViewModal.close());
+        }
 
         toggleSaveBtn.addEventListener('click', () => {
             saveControls.style.display = saveControls.style.display === 'flex' ? 'none' : 'flex';
             if (saveControls.style.display === 'flex') {
-                document.getElementById('req-name').focus();
+                reqNameInput.focus();
             }
         });
 
@@ -411,7 +1026,20 @@
             }
         });
 
-        document.getElementById('saved-list').addEventListener('click', (e) => {
+        savedList.addEventListener('click', (e) => {
+            const folder = e.target.closest('.saved-req-folder');
+            if (folder) {
+                const folderKey = folder.dataset.folder || '';
+                if (collapsedRequestFolders.has(folderKey)) {
+                    collapsedRequestFolders.delete(folderKey);
+                } else {
+                    collapsedRequestFolders.add(folderKey);
+                }
+                saveCollapsedRequestFolders();
+                filterSavedRequests();
+                return;
+            }
+
             const link = e.target.closest('.req-link');
             if (link) {
                 e.preventDefault();
@@ -424,7 +1052,10 @@
                 urlInput.value = link.dataset.url;
                 stringToHeadersTable(link.dataset.headers);
                 bodyInput.value = link.dataset.body;
-                document.getElementById('req-name').value = link.dataset.name; 
+                reqNameInput.value = link.dataset.name;
+                if (reqFolderSelect) {
+                    reqFolderSelect.value = link.dataset.folder || '';
+                }
                 
                 let savedAuthType = link.dataset.authType || 'none';
                 if (savedAuthType === 'none') {
@@ -455,7 +1086,10 @@
             resStatus.innerText = 'Status: -';
             resTime.innerText = 'Time: -';
             resSize.innerText = 'Size: -';
-            requestDebugInfo.innerHTML = ''; // Clear old debug info
+            requestDebugInfo.innerHTML = ''; // Keep old hidden debug area clear.
+            requestDebugInfo.style.display = 'none';
+            latestCurlCommand = '';
+            if (viewCurlBtn) viewCurlBtn.disabled = true;
             currentAbortController = new AbortController();
             currentRequestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
             cancelBtn.disabled = false;
@@ -468,10 +1102,14 @@
             for (const [key, val] of Object.entries(pathMap)) {
                 finalUrl = finalUrl.split(`{${key}}`).join(val);
             }
+            finalUrl = substituteRequestVariables(finalUrl);
 
             const requestParts = getRequestBodyAndHeaders(methodSelect.value, constructHeaders());
-            const headers = requestParts.headerPairs;
-            const body = requestParts.body;
+            const headers = requestParts.headerPairs.map(([key, value]) => [
+                substituteRequestVariables(key),
+                substituteRequestVariables(value),
+            ]);
+            const body = substituteRequestVariables(requestParts.body);
 
             const options = {
                 method: methodSelect.value,
@@ -494,9 +1132,8 @@
                 }
             }
             
-            // Display the debug info
-            requestDebugInfo.style.display = 'block';
-            requestDebugInfo.innerText = curlCmd;
+            latestCurlCommand = curlCmd;
+            if (viewCurlBtn) viewCurlBtn.disabled = false;
 
             try {
                 const resp = await fetch('/requests/run', {
@@ -627,7 +1264,7 @@
                 const respRect = respSection.getBoundingClientRect();
                 const topOffset = e.clientY - respRect.top;
                 const headerOffset = document.querySelector('.response-header').offsetHeight;
-                const debugOffset = requestDebugInfo.style.display === 'none' ? 0 : requestDebugInfo.offsetHeight;
+                const debugOffset = 0;
                 const minHeaders = 50;
                 const minBody = 80;
                 const maxHeaders = respRect.height - headerOffset - debugOffset - minBody - headersBodyResizer.offsetHeight;

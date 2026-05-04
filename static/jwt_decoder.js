@@ -147,6 +147,20 @@
                     }
                 });
 
+                root.addEventListener('dblclick', (event) => {
+                    if (!isOuterEdgeClick(event)) return;
+
+                    const rect = root.getBoundingClientRect();
+                    const targetLeft = Math.max(0, (window.innerWidth - rect.width) / 2);
+                    const targetTop = Math.max(0, (window.innerHeight - rect.height) / 2);
+                    xOffset += targetLeft - rect.left;
+                    yOffset += targetTop - rect.top;
+                    currentX = xOffset;
+                    currentY = yOffset;
+                    setTranslate(xOffset, yOffset, root);
+                    localStorage.setItem('jwt-pos', JSON.stringify({ x: xOffset, y: yOffset }));
+                });
+
                 document.addEventListener('mousemove', (e) => {
                     if (!isDragging) return;
                     e.preventDefault();
@@ -165,6 +179,17 @@
 
                 function setTranslate(xPos, yPos, el) {
                     el.style.transform = `translate3d(${xPos}px, ${yPos}px, 0)`;
+                }
+
+                function isOuterEdgeClick(event) {
+                    if (event.target.closest('button, input, textarea, select, a')) return false;
+                    const rect = root.getBoundingClientRect();
+                    const edge = 18;
+                    const onEdge = event.clientX - rect.left <= edge ||
+                        rect.right - event.clientX <= edge ||
+                        event.clientY - rect.top <= edge ||
+                        rect.bottom - event.clientY <= edge;
+                    return onEdge || dragHandle.contains(event.target);
                 }
             }
 

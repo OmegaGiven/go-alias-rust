@@ -12,11 +12,14 @@ use crate::pages::sql::{
 use sqlx::{Row, Column, TypeInfo, postgres::PgPoolOptions, sqlite::SqlitePoolOptions, types::JsonValue, ValueRef}; 
 
 const QUERIES_FILE: &str = "saved_queries.json";
+const QUERY_FOLDERS_FILE: &str = "saved_query_folders.json";
 
 #[derive(Serialize, Deserialize, Clone)]
 struct SavedQuery {
     name: String,
     sql: String,
+    #[serde(default)]
+    folder: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -24,12 +27,19 @@ struct SaveQueryForm {
     query_name: String,
     sql: String,
     connection: String, 
+    folder: Option<String>,
 }
 
 #[derive(Deserialize)]
 struct DeleteQueryForm {
     query_name: String,
     connection: String, 
+}
+
+#[derive(Deserialize)]
+struct CreateQueryFolderForm {
+    folder_name: String,
+    connection: String,
 }
 
 #[derive(Deserialize)]
@@ -47,6 +57,18 @@ fn load_queries() -> Vec<SavedQuery> {
 fn save_queries(queries: &[SavedQuery]) -> io::Result<()> {
     let data = serde_json::to_string_pretty(queries)?;
     fs::write(QUERIES_FILE, data)
+}
+
+fn load_query_folders() -> Vec<String> {
+    fs::read_to_string(QUERY_FOLDERS_FILE)
+        .ok()
+        .and_then(|data| serde_json::from_str(&data).ok())
+        .unwrap_or_default()
+}
+
+fn save_query_folders(folders: &[String]) -> io::Result<()> {
+    let data = serde_json::to_string_pretty(folders)?;
+    fs::write(QUERY_FOLDERS_FILE, data)
 }
 
 fn delete_query(name: &str) -> io::Result<()> {
@@ -199,13 +221,20 @@ pub async fn sql_add(form: web::Form<AddConnForm>, state: web::Data<Arc<AppState
 #[post("/sql/save")]
 pub async fn sql_save(form: web::Form<SaveQueryForm>) -> impl Responder {
     let mut queries = load_queries();
+    let folder = form
+        .folder
+        .as_ref()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
     
     if let Some(idx) = queries.iter().position(|q| q.name == form.query_name) {
         queries[idx].sql = form.sql.clone();
+        queries[idx].folder = folder;
     } else {
         queries.push(SavedQuery {
             name: form.query_name.clone(),
             sql: form.sql.clone(),
+            folder,
         });
     }
     
@@ -214,6 +243,24 @@ pub async fn sql_save(form: web::Form<SaveQueryForm>) -> impl Responder {
     }
     
     // Redirect back to the specific connection view
+    let location = format!("/sql/{}", form.connection);
+    HttpResponse::Found().append_header(("Location", location)).finish()
+}
+
+#[post("/sql/folder")]
+pub async fn sql_create_folder(form: web::Form<CreateQueryFolderForm>) -> impl Responder {
+    let folder_name = form.folder_name.trim();
+    if !folder_name.is_empty() {
+        let mut folders = load_query_folders();
+        if !folders.iter().any(|folder| folder.eq_ignore_ascii_case(folder_name)) {
+            folders.push(folder_name.to_string());
+            folders.sort_by_key(|folder| folder.to_lowercase());
+            if let Err(e) = save_query_folders(&folders) {
+                eprintln!("Failed to save query folders: {e}");
+            }
+        }
+    }
+
     let location = format!("/sql/{}", form.connection);
     HttpResponse::Found().append_header(("Location", location)).finish()
 }
@@ -559,52 +606,120 @@ pub async fn sql_export(state: web::Data<Arc<AppState>>) -> impl Responder {
 
 fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &crate::app_state::Theme, saved_themes: &HashMap<String, Theme>) -> String {
     let saved_queries = load_queries();
+    let mut query_folders = load_query_folders();
+    for query in &saved_queries {
+        if let Some(folder) = query.folder.as_ref().filter(|folder| !folder.trim().is_empty()) {
+            if !query_folders.iter().any(|existing| existing.eq_ignore_ascii_case(folder)) {
+                query_folders.push(folder.clone());
+            }
+        }
+    }
+    query_folders.sort_by_key(|folder| folder.to_lowercase());
+
     let nickname_safe = htmlescape::encode_minimal(nickname);
-    
-    let saved_query_list = saved_queries.iter()
-        .map(|q| {
-            let sql_safe = htmlescape::encode_minimal(&q.sql);
-            let name_safe = htmlescape::encode_minimal(&q.name);
-            
-            format!(
-                "<li class=\"saved-query-item\">\
-                    <form method=\"POST\" action=\"/sql/delete\" class=\"delete-query-form\">\
-                        <input type=\"hidden\" name=\"query_name\" value=\"{}\">\
-                        <input type=\"hidden\" name=\"connection\" value=\"{}\">\
-                        <button type=\"submit\" class=\"delete-btn\" title=\"Delete\">x</button>\
-                    </form>\
-                    <a href=\"#\" data-sql=\"{}\" data-name=\"{}\" class=\"query-link\">{}</a>\
-                </li>",
-                name_safe, nickname_safe, sql_safe, name_safe, name_safe
-            )
+    let nickname_attr = htmlescape::encode_attribute(nickname);
+    let table_schema_json_safe = table_schema_json.replace("</", "<\\/");
+
+    let render_query_item = |q: &SavedQuery| {
+        let sql_attr = htmlescape::encode_attribute(&q.sql);
+        let name_attr = htmlescape::encode_attribute(&q.name);
+        let name_safe = htmlescape::encode_minimal(&q.name);
+        let folder_attr = htmlescape::encode_attribute(q.folder.as_deref().unwrap_or(""));
+
+        format!(
+            "<li class=\"saved-query-item\">\
+                <a href=\"#\" data-sql=\"{}\" data-name=\"{}\" data-folder=\"{}\" class=\"query-link\">{}</a>\
+                <form method=\"POST\" action=\"/sql/delete\" class=\"delete-query-form\">\
+                    <input type=\"hidden\" name=\"query_name\" value=\"{}\">\
+                    <input type=\"hidden\" name=\"connection\" value=\"{}\">\
+                    <button type=\"submit\" class=\"delete-btn\" title=\"Delete\">x</button>\
+                </form>\
+            </li>",
+            sql_attr, name_attr, folder_attr, name_safe, name_attr, nickname_attr
+        )
+    };
+
+    let mut saved_query_list_parts = Vec::new();
+    let unfiled_queries = saved_queries
+        .iter()
+        .filter(|query| query.folder.as_deref().unwrap_or("").trim().is_empty())
+        .map(render_query_item)
+        .collect::<Vec<_>>();
+    if !unfiled_queries.is_empty() {
+        saved_query_list_parts.push(r#"<li class="saved-query-folder">Unfiled</li>"#.to_string());
+        saved_query_list_parts.extend(unfiled_queries);
+    }
+    for folder in &query_folders {
+        saved_query_list_parts.push(format!(
+            r#"<li class="saved-query-folder">{}</li>"#,
+            htmlescape::encode_minimal(folder)
+        ));
+        saved_query_list_parts.extend(
+            saved_queries
+                .iter()
+                .filter(|query| query.folder.as_deref() == Some(folder.as_str()))
+                .map(render_query_item)
+        );
+    }
+    let saved_query_list = saved_query_list_parts.join("\n");
+
+    let query_folder_options = query_folders
+        .iter()
+        .map(|folder| {
+            let folder_attr = htmlescape::encode_attribute(folder);
+            let folder_safe = htmlescape::encode_minimal(folder);
+            format!(r#"<option value="{folder_attr}">{folder_safe}</option>"#)
         })
         .collect::<Vec<_>>()
         .join("\n");
+
     let sidebar_content = format!(r###"
         <div class="sidebar-fixed-section">
-            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-color); padding-bottom:2px; margin: calc(var(--element-margin) / 2) var(--element-margin);">
-                 <h2 style="margin: calc(var(--element-margin) / 2) var(--element-margin); border:none;">Tables</h2>
-                 <button id="refresh-schema-btn" type="button" class="delete-btn" style="width:auto; font-size:1.2em;" title="Refresh Tables">&#x21bb;</button>
+            <div class="sql-sidebar-heading">
+                 <h2 class="sql-sidebar-title">Tables</h2>
+                 <button id="refresh-schema-btn" type="button" class="delete-btn sql-sidebar-refresh" title="Refresh Tables">&#x21bb;</button>
             </div>
             <div class="sidebar-search"><input type="text" id="sidebar-search-input" placeholder="Search tables..."></div>
         </div>
         <ul id="table-list" class="sidebar-scroll-area"></ul>
+        <div id="table-query-resizer" class="sql-sidebar-section-resizer" title="Drag to resize tables and saved queries"></div>
         
         <div class="sidebar-fixed-section">
-            <h2 style="margin: calc(var(--element-margin) / 2) var(--element-margin);">Saved Queries</h2>
+            <div class="sql-sidebar-heading">
+                <h2 class="sql-sidebar-title">Saved Queries</h2>
+                <div class="sql-sidebar-actions">
+                    <button type="button" id="new-sql-file-btn" class="delete-btn sql-sidebar-refresh" title="New SQL file" aria-label="New SQL file">
+                        <svg class="sql-sidebar-button-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M6 3.5h7.5L18 8v12.5H6V3.5Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                            <path d="M13.5 3.5V8H18M12 11v6M9 14h6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
+                    <form id="create-query-folder-form" method="POST" action="/sql/folder" class="create-query-folder-form">
+                        <input type="hidden" id="new-query-folder-name" name="folder_name">
+                        <input type="hidden" name="connection" value="{nickname}">
+                        <button type="button" id="create-query-folder-btn" class="delete-btn sql-sidebar-refresh" title="New query folder" aria-label="New query folder">
+                        <svg class="sql-sidebar-button-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M3 6.5A2.5 2.5 0 0 1 5.5 4h4.1l2 2H18.5A2.5 2.5 0 0 1 21 8.5v9A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5v-11Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                            <path d="M12 10v6M9 13h6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                        </svg>
+                        </button>
+                    </form>
+                </div>
+            </div>
             <div class="sidebar-search"><input type="text" id="query-search-input" placeholder="Search queries..."></div>
         </div>
         <ul id="saved-queries-list" class="sidebar-scroll-area">{saved_query_list}</ul>
         
-        <div class="sidebar-fixed-section">
-            <form id="save-query-form" method="POST" action="/sql/save" class="query-save-form">
-                <input type="text" id="query-name" name="query_name" placeholder="Name query to save" required>
-                <input type="hidden" id="query-sql" name="sql">
-                <input type="hidden" name="connection" value="{nickname}">
-                <button type="submit">Save Current Query</button>
-            </form>
-        </div>
-    "###, saved_query_list = saved_query_list, nickname = nickname_safe);
+        <form id="save-query-form" method="POST" action="/sql/save" hidden>
+            <input type="hidden" id="query-name" name="query_name">
+            <select id="query-folder" name="folder" hidden>
+                <option value="">Unfiled</option>
+                {query_folder_options}
+            </select>
+            <input type="hidden" id="query-sql" name="sql">
+            <input type="hidden" name="connection" value="{nickname}">
+        </form>
+    "###, saved_query_list = saved_query_list, nickname = nickname_attr, query_folder_options = query_folder_options);
     
     let sidebar_html = crate::elements::sidebar::render(&sidebar_content);
 
@@ -619,6 +734,7 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
           <div class="variables-section" id="variables-section">
              <!-- Variables injected here -->
              <button type="button" class="add-var-btn" onclick="addVariable()">+ Var</button>
+             <button type="button" id="variable-help-btn" class="sql-var-help-btn" title="SQL variables help" aria-label="SQL variables help">?</button>
           </div>
 
           <div class="editor-container">
@@ -629,7 +745,8 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
           <div class="action-bar">
             <button type="submit">Run Query</button>
             <button type="button" id="clear-editor-btn" style="background-color: var(--tertiary-bg); opacity: 0.8;">Clear</button>
-            <button type="button" id="save-sql-file-btn">Save SQL File</button>
+            <button type="button" id="save-query-btn">Save Query</button>
+            <button type="button" id="save-sql-file-btn">Save SQL to File</button>
           </div>
         </form>
         
@@ -637,6 +754,11 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
         <div class="result-tools">
             <input type="text" id="output-filter" placeholder="Filter results...">
             <span id="row-count" style="font-size: 0.9em; margin: calc(var(--element-margin) / 2) var(--element-margin); color: var(--text-color);"></span>
+            <select id="output-history-select" title="Cached output history">
+                <option value="">Output history</option>
+            </select>
+            <button type="button" id="delete-output-history-btn" class="add-var-btn" style="width:auto; background-color: var(--tertiary-bg);">Delete</button>
+            <button type="button" id="clear-output-history-btn" class="add-var-btn" style="width:auto; background-color: var(--tertiary-bg);">Clear History</button>
             <label><input type="checkbox" id="export-headers" checked> Headers</label>
             <button type="button" id="export-client-btn" class="add-var-btn" style="width:auto;">Export Select CSV</button>
             <button type="button" id="clear-selection-btn" class="add-var-btn" style="width:auto; background-color: var(--tertiary-bg); display: none;">Clear (0)</button>
@@ -648,9 +770,9 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
     
     <!-- Autocomplete container attached to body for proper floating behavior -->
     <div id="autocomplete-list"></div>
-    <template id="sql-schema-data">{table_schema_json}</template>
+    <script type="application/json" id="sql-schema-data">{table_schema_json}</script>
     <script src="/static/sql.js" defer></script>
-    "###, nickname = nickname_safe, table_schema_json = table_schema_json, sidebar_html = sidebar_html);
+    "###, nickname = nickname_safe, table_schema_json = table_schema_json_safe, sidebar_html = sidebar_html);
 
     render_base_page(
         &format!("SQL View: {}", htmlescape::encode_minimal(&nickname)),

@@ -93,7 +93,17 @@ pub struct ThemeForm {
     pub load_theme_name: Option<String>,
     
     // Action is optional because JS submissions might not include button values
-    pub action: Option<String>,                  
+    pub action: Option<String>,
+
+    pub return_to: Option<String>,
+}
+
+fn theme_redirect_target(form: &ThemeForm) -> String {
+    form.return_to
+        .as_deref()
+        .filter(|path| path.starts_with('/') && !path.starts_with("//"))
+        .unwrap_or("/")
+        .to_string()
 }
 
 fn theme_from_form(form: &ThemeForm) -> Theme {
@@ -171,6 +181,8 @@ pub async fn save_theme(
     form: Form<ThemeForm>,
     state: Data<Arc<AppState>>,
 ) -> impl Responder {
+    let redirect_target = theme_redirect_target(&form);
+
     // 1. Handle loading a theme first (if requested via dropdown)
     if let Some(load_name) = form.load_theme_name.clone().filter(|n| !n.is_empty()) {
         let mut current_theme = state.current_theme.lock().unwrap();
@@ -184,9 +196,8 @@ pub async fn save_theme(
             }
         }
         
-        // Redirect back to settings page to show the loaded theme
         return HttpResponse::Found()
-            .append_header(("Location", "/settings"))
+            .append_header(("Location", redirect_target))
             .finish();
     }
 
@@ -220,8 +231,7 @@ pub async fn save_theme(
         }
     }
 
-    // Redirect back to settings page
     HttpResponse::Found()
-        .append_header(("Location", "/settings"))
+        .append_header(("Location", redirect_target))
         .finish()
 }

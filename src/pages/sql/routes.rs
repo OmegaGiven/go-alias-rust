@@ -1,7 +1,8 @@
-use actix_web::{get, post, web, HttpResponse, Responder};
-use std::{collections::HashMap, sync::Arc, fs, io};
+use actix_web::{cookie::{time::Duration, Cookie}, get, post, web, HttpRequest, HttpResponse, Responder};
+use std::{collections::HashMap, sync::Arc, fs, io, time::{SystemTime, UNIX_EPOCH}};
 use serde::{Deserialize, Serialize};
-use crate::app_state::{AppState, Theme};
+use crate::app_db;
+use crate::app_state::{AppState, Theme, SqlJob};
 use crate::base_page::render_base_page;
 use crate::pages::sql::{
     DbConnection, SqlForm, AddConnForm,
@@ -13,6 +14,8 @@ use sqlx::{Row, Column, TypeInfo, postgres::PgPoolOptions, sqlite::SqlitePoolOpt
 
 const QUERIES_FILE: &str = "saved_queries.json";
 const QUERY_FOLDERS_FILE: &str = "saved_query_folders.json";
+const ACTIVE_SQL_CONNECTION_COOKIE: &str = "active_sql_connection";
+const APP_DB_CONNECTION_NICKNAME: &str = "app_db";
 
 #[derive(Serialize, Deserialize, Clone)]
 struct SavedQuery {
@@ -20,6 +23,8 @@ struct SavedQuery {
     sql: String,
     #[serde(default)]
     folder: Option<String>,
+    #[serde(default)]
+    connection: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -37,14 +42,41 @@ struct DeleteQueryForm {
 }
 
 #[derive(Deserialize)]
+struct RenameQueryForm {
+    query_name: String,
+    new_query_name: String,
+    connection: String,
+}
+
+#[derive(Deserialize)]
 struct CreateQueryFolderForm {
     folder_name: String,
     connection: String,
 }
 
+#[derive(Serialize, Deserialize)]
+struct SavedQueryExport {
+    version: u32,
+    source_connection: String,
+    queries: Vec<SavedQuery>,
+    folders: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct ImportQueriesForm {
+    connection: String,
+    payload: String,
+    duplicate_mode: Option<String>,
+}
+
 #[derive(Deserialize)]
 struct DeleteConnectionForm {
     nickname: String,
+}
+
+#[derive(Serialize)]
+struct StartSqlJobResponse {
+    job_id: String,
 }
 
 fn load_queries() -> Vec<SavedQuery> {
@@ -55,6 +87,9 @@ fn load_queries() -> Vec<SavedQuery> {
 }
 
 fn save_queries(queries: &[SavedQuery]) -> io::Result<()> {
+    if let Err(err) = app_db::put_json_blocking("sql", "queries", &queries) {
+        eprintln!("Failed to save SQL queries to app database: {err}");
+    }
     let data = serde_json::to_string_pretty(queries)?;
     fs::write(QUERIES_FILE, data)
 }
@@ -67,17 +102,81 @@ fn load_query_folders() -> Vec<String> {
 }
 
 fn save_query_folders(folders: &[String]) -> io::Result<()> {
+    if let Err(err) = app_db::put_json_blocking("sql", "query_folders", &folders) {
+        eprintln!("Failed to save SQL query folders to app database: {err}");
+    }
     let data = serde_json::to_string_pretty(folders)?;
     fs::write(QUERY_FOLDERS_FILE, data)
 }
 
-fn delete_query(name: &str) -> io::Result<()> {
-    let mut queries = load_queries();
-    if let Some(pos) = queries.iter().position(|q| q.name == name) {
-        queries.remove(pos);
-        save_queries(&queries)?;
+fn query_matches_connection(query: &SavedQuery, connection: &str) -> bool {
+    query.connection.as_deref().map(|value| value == connection).unwrap_or(true)
+}
+
+fn query_identity_matches(query: &SavedQuery, name: &str, connection: &str) -> bool {
+    query.name == name && query.connection.as_deref().map(|value| value == connection).unwrap_or(true)
+}
+
+fn folder_matches_connection(folder: &str, connection: &str) -> bool {
+    folder
+        .split_once("::")
+        .map(|(prefix, _)| prefix == connection)
+        .unwrap_or(true)
+}
+
+fn stored_folder_name(folder: &str, connection: &str) -> String {
+    format!("{connection}::{folder}")
+}
+
+fn display_folder_name(folder: &str) -> &str {
+    folder.split_once("::").map(|(_, name)| name).unwrap_or(folder)
+}
+
+fn stored_folder_exists(folders: &[String], display_name: &str, connection: &str) -> bool {
+    let stored = stored_folder_name(display_name, connection);
+    folders.iter().any(|folder| {
+        folder.eq_ignore_ascii_case(&stored)
+            || (folder_matches_connection(folder, connection)
+                && display_folder_name(folder).eq_ignore_ascii_case(display_name))
+    })
+}
+
+fn unique_query_name(existing_queries: &[SavedQuery], base_name: &str, connection: &str) -> String {
+    if !existing_queries
+        .iter()
+        .any(|query| query.name == base_name && query.connection.as_deref() == Some(connection))
+    {
+        return base_name.to_string();
     }
-    Ok(())
+
+    let mut suffix = 2;
+    loop {
+        let candidate = format!("{base_name} ({suffix})");
+        if !existing_queries
+            .iter()
+            .any(|query| query.name == candidate && query.connection.as_deref() == Some(connection))
+        {
+            return candidate;
+        }
+        suffix += 1;
+    }
+}
+
+fn app_db_connection() -> DbConnection {
+    DbConnection {
+        db_type: "sqlite".to_string(),
+        host: app_db::db_path(),
+        db_name: String::new(),
+        user: String::new(),
+        password: String::new(),
+        nickname: APP_DB_CONNECTION_NICKNAME.to_string(),
+    }
+}
+
+fn include_app_db_connection(conns: &mut Vec<DbConnection>) {
+    if !conns.iter().any(|conn| conn.nickname == APP_DB_CONNECTION_NICKNAME) {
+        conns.insert(0, app_db_connection());
+    }
 }
 
 fn render_connection_list(conns: &[DbConnection], current_theme: &Theme, saved_themes: &HashMap<String, Theme>) -> String {
@@ -173,20 +272,41 @@ fn render_connection_list(conns: &[DbConnection], current_theme: &Theme, saved_t
 
 
 #[get("/sql")]
-pub async fn sql_get(state: web::Data<Arc<AppState>>) -> impl Responder {
+pub async fn sql_get(req: HttpRequest, state: web::Data<Arc<AppState>>) -> impl Responder {
     let conns = {
         let mut conns_opt = state.connections.lock().unwrap();
         if conns_opt.is_none() {
             *conns_opt = Some(load_and_decrypt());
         }
+        include_app_db_connection(conns_opt.as_mut().unwrap());
         conns_opt.clone().unwrap()
     };
+
+    if let Some(active_connection) = req.cookie(ACTIVE_SQL_CONNECTION_COOKIE).map(|cookie| cookie.value().to_string()) {
+        if conns.iter().any(|conn| conn.nickname == active_connection) {
+            let location = format!("/sql/{active_connection}");
+            return HttpResponse::Found()
+                .append_header(("Location", location))
+                .finish();
+        }
+    }
+
     let current_theme = state.current_theme.lock().unwrap();
     let saved_themes = state.saved_themes.lock().unwrap();
 
     HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")
         .body(render_connection_list(&conns, &current_theme, &saved_themes))
+}
+
+#[post("/sql/disconnect")]
+pub async fn sql_disconnect() -> impl Responder {
+    let expired_cookie = Cookie::build(ACTIVE_SQL_CONNECTION_COOKIE, "")
+        .path("/sql")
+        .max_age(Duration::seconds(0))
+        .finish();
+
+    HttpResponse::NoContent().cookie(expired_cookie).finish()
 }
 
 #[post("/sql/add")]
@@ -227,14 +347,16 @@ pub async fn sql_save(form: web::Form<SaveQueryForm>) -> impl Responder {
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
     
-    if let Some(idx) = queries.iter().position(|q| q.name == form.query_name) {
+    if let Some(idx) = queries.iter().position(|q| q.name == form.query_name && q.connection.as_deref() == Some(&form.connection)) {
         queries[idx].sql = form.sql.clone();
         queries[idx].folder = folder;
+        queries[idx].connection = Some(form.connection.clone());
     } else {
         queries.push(SavedQuery {
             name: form.query_name.clone(),
             sql: form.sql.clone(),
             folder,
+            connection: Some(form.connection.clone()),
         });
     }
     
@@ -252,8 +374,8 @@ pub async fn sql_create_folder(form: web::Form<CreateQueryFolderForm>) -> impl R
     let folder_name = form.folder_name.trim();
     if !folder_name.is_empty() {
         let mut folders = load_query_folders();
-        if !folders.iter().any(|folder| folder.eq_ignore_ascii_case(folder_name)) {
-            folders.push(folder_name.to_string());
+        if !stored_folder_exists(&folders, folder_name, &form.connection) {
+            folders.push(stored_folder_name(folder_name, &form.connection));
             folders.sort_by_key(|folder| folder.to_lowercase());
             if let Err(e) = save_query_folders(&folders) {
                 eprintln!("Failed to save query folders: {e}");
@@ -267,13 +389,155 @@ pub async fn sql_create_folder(form: web::Form<CreateQueryFolderForm>) -> impl R
 
 #[post("/sql/delete")]
 pub async fn sql_delete(form: web::Form<DeleteQueryForm>) -> impl Responder {
-    if let Err(e) = delete_query(&form.query_name) {
-        eprintln!("Failed to delete query: {e}");
+    let mut queries = load_queries();
+    if let Some(pos) = queries.iter().position(|query| query_identity_matches(query, &form.query_name, &form.connection)) {
+        queries.remove(pos);
+        if let Err(e) = save_queries(&queries) {
+            eprintln!("Failed to delete query: {e}");
+        }
     }
     
     // Redirect back to the specific connection view
     let location = format!("/sql/{}", form.connection);
     HttpResponse::Found().append_header(("Location", location)).finish()
+}
+
+#[post("/sql/rename")]
+pub async fn sql_rename(form: web::Form<RenameQueryForm>) -> impl Responder {
+    let new_name = form.new_query_name.trim();
+    if !new_name.is_empty() {
+        let mut queries = load_queries();
+        let duplicate_exists = queries.iter().any(|query| query.name == new_name && query.connection.as_deref() == Some(&form.connection));
+        if !duplicate_exists {
+            if let Some(query) = queries.iter_mut().find(|query| query_identity_matches(query, &form.query_name, &form.connection)) {
+                query.name = new_name.to_string();
+                query.connection = Some(form.connection.clone());
+                if let Err(e) = save_queries(&queries) {
+                    eprintln!("Failed to rename query: {e}");
+                }
+            }
+        }
+    }
+
+    let location = format!("/sql/{}", form.connection);
+    HttpResponse::Found().append_header(("Location", location)).finish()
+}
+
+#[get("/sql/{connection}/queries/export")]
+pub async fn sql_export_queries(path: web::Path<String>) -> impl Responder {
+    let connection = path.into_inner();
+    let queries = load_queries()
+        .into_iter()
+        .filter(|query| query_matches_connection(query, &connection))
+        .map(|mut query| {
+            query.connection = None;
+            query
+        })
+        .collect::<Vec<_>>();
+    let folders = load_query_folders()
+        .into_iter()
+        .filter(|folder| folder_matches_connection(folder, &connection))
+        .map(|folder| display_folder_name(&folder).to_string())
+        .chain(
+            queries
+                .iter()
+                .filter_map(|query| query.folder.as_ref())
+                .map(|folder| folder.trim().to_string())
+                .filter(|folder| !folder.is_empty())
+        )
+        .fold(Vec::<String>::new(), |mut folders, folder| {
+            if !folders.iter().any(|existing| existing.eq_ignore_ascii_case(&folder)) {
+                folders.push(folder);
+            }
+            folders
+        });
+    let export = SavedQueryExport {
+        version: 1,
+        source_connection: connection.clone(),
+        queries,
+        folders,
+    };
+    let body = serde_json::to_string_pretty(&export).unwrap_or_else(|_| "{}".to_string());
+    HttpResponse::Ok()
+        .content_type("application/json")
+        .append_header(("Content-Disposition", format!("attachment; filename=\"{connection}-saved-queries.json\"")))
+        .body(body)
+}
+
+#[post("/sql/queries/import")]
+pub async fn sql_import_queries(form: web::Form<ImportQueriesForm>) -> impl Responder {
+    let parsed = serde_json::from_str::<SavedQueryExport>(&form.payload)
+        .or_else(|_| serde_json::from_str::<Vec<SavedQuery>>(&form.payload).map(|queries| SavedQueryExport {
+            version: 1,
+            source_connection: String::new(),
+            queries,
+            folders: Vec::new(),
+        }));
+
+    match parsed {
+        Ok(export) => {
+            let duplicate_mode = form.duplicate_mode.as_deref().unwrap_or("rename");
+            let mut existing_queries = load_queries();
+            for mut query in export.queries {
+                let base_name = query.name.trim();
+                if base_name.is_empty() {
+                    continue;
+                }
+                query.name = base_name.to_string();
+                query.connection = Some(form.connection.clone());
+                if let Some(folder) = query.folder.as_ref().map(|folder| folder.trim()).filter(|folder| !folder.is_empty()) {
+                    query.folder = Some(folder.to_string());
+                }
+
+                if let Some(idx) = existing_queries.iter().position(|existing| existing.name == query.name && existing.connection.as_deref() == Some(&form.connection)) {
+                    if duplicate_mode == "overwrite" {
+                        existing_queries[idx] = query;
+                    } else {
+                        query.name = unique_query_name(&existing_queries, &query.name, &form.connection);
+                        existing_queries.push(query);
+                    }
+                } else {
+                    existing_queries.push(query);
+                }
+            }
+
+            let mut folders = load_query_folders();
+            for folder in export.folders {
+                let folder = folder.trim();
+                if folder.is_empty() {
+                    continue;
+                }
+                let stored = stored_folder_name(folder, &form.connection);
+                if !folders.iter().any(|existing| existing.eq_ignore_ascii_case(&stored)) {
+                    folders.push(stored);
+                }
+            }
+            for query in &existing_queries {
+                if query.connection.as_deref() != Some(&form.connection) {
+                    continue;
+                }
+                if let Some(folder) = query.folder.as_ref().map(|folder| folder.trim()).filter(|folder| !folder.is_empty()) {
+                    if !stored_folder_exists(&folders, folder, &form.connection) {
+                        folders.push(stored_folder_name(folder, &form.connection));
+                    }
+                }
+            }
+            folders.sort_by_key(|folder| folder.to_lowercase());
+            if let Err(err) = save_queries(&existing_queries) {
+                eprintln!("Failed to import SQL queries: {err}");
+            }
+            if let Err(err) = save_query_folders(&folders) {
+                eprintln!("Failed to import SQL query folders: {err}");
+            }
+        }
+        Err(err) => {
+            eprintln!("Failed to parse SQL query import: {err}");
+        }
+    }
+
+    HttpResponse::Found()
+        .append_header(("Location", format!("/sql/{}", form.connection)))
+        .finish()
 }
 
 #[post("/sql/connection/delete")]
@@ -331,35 +595,51 @@ fn format_ts(seconds: i64) -> String {
     format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", yr, mo, d, h, m, s)
 }
 
+fn now_millis() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+}
 
-#[post("/sql/run")]
-pub async fn sql_run(form: web::Json<SqlForm>, state: web::Data<Arc<AppState>>) -> impl Responder {
-    use std::convert::TryInto; 
+fn now_isoish() -> String {
+    format_ts((now_millis() / 1000) as i64)
+}
+
+fn row_count_text_from_html(html: &str) -> String {
+    let rows = html.matches("<tr").count().saturating_sub(1);
+    if rows == 0 { String::new() } else { format!("{rows} rows") }
+}
+
+struct SqlExecution {
+    html: String,
+    results: Vec<HashMap<String, String>>,
+}
+
+async fn execute_sql(form: SqlForm, state: Arc<AppState>) -> SqlExecution {
+    use std::convert::TryInto;
 
     let conn_opt = {
-        let mut conns_opt = state.connections.lock().unwrap();
+        let mut conns_opt = state.connections.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         if conns_opt.is_none() {
             *conns_opt = Some(load_and_decrypt());
         }
+        include_app_db_connection(conns_opt.as_mut().unwrap());
         let conns = conns_opt.as_ref().unwrap();
         find_connection(&form.connection, conns).cloned()
     };
 
-    if conn_opt.is_none() {
-        return HttpResponse::Ok()
-            .content_type("text/html; charset=utf-8")
-            .body(format!("<div style=\"color:var(--link-hover);\">Error: Connection '{}' not found.</div>", htmlescape::encode_minimal(&form.connection)));
-    }
+    let Some(conn) = conn_opt else {
+        return SqlExecution {
+            html: format!("<div style=\"color:var(--link-hover);\">Error: Connection '{}' not found.</div>", htmlescape::encode_minimal(&form.connection)),
+            results: Vec::new(),
+        };
+    };
 
-    let conn = conn_opt.unwrap();
-    
-    // --- Variable Substitution ---
     let mut final_sql = form.sql.clone();
     if let Some(vars) = &form.variables {
         for (key, val) in vars {
-            // Replace {{key}} with val
-            let placeholder = format!("{{{{{}}}}}", key);
-            final_sql = final_sql.replace(&placeholder, val);
+            final_sql = final_sql.replace(&format!("{{{{{}}}}}", key), val);
         }
     }
 
@@ -367,31 +647,26 @@ pub async fn sql_run(form: web::Json<SqlForm>, state: web::Data<Arc<AppState>>) 
     let mut data_rows: Vec<Vec<String>> = Vec::new();
     let mut results_vec_for_export: Vec<HashMap<String, String>> = Vec::new();
 
-    // --- EXECUTION BRANCHING ---
     if conn.db_type == "sqlite" {
-        // --- SQLITE EXECUTION ---
         let dsn = format!("sqlite:{}?mode=rwc", conn.host);
-        
-        let pool = {
-            let mut pools = state.sqlite_pools.lock().unwrap();
-            if let Some(p) = pools.get(&dsn) {
-                p.clone()
-            } else {
-                let p = match SqlitePoolOptions::new()
-                    .max_connections(1)
-                    .connect(&dsn).await 
-                {
-                    Ok(p) => p,
-                    Err(e) => return HttpResponse::Ok().body(format!("SQLite Connect Error: {}", e)),
-                };
-                pools.insert(dsn.clone(), p.clone());
-                p
-            }
+        let existing_pool = {
+            let pools = state.sqlite_pools.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            pools.get(&dsn).cloned()
+        };
+        let pool = if let Some(pool) = existing_pool {
+            pool
+        } else {
+            let p = match SqlitePoolOptions::new().max_connections(1).connect(&dsn).await {
+                Ok(p) => p,
+                Err(e) => return SqlExecution { html: format!("SQLite Connect Error: {}", htmlescape::encode_minimal(&e.to_string())), results: Vec::new() },
+            };
+            let mut pools = state.sqlite_pools.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            pools.entry(dsn.clone()).or_insert_with(|| p.clone()).clone()
         };
 
         let rows = match sqlx::query(&final_sql).fetch_all(&pool).await {
             Ok(r) => r,
-            Err(e) => return HttpResponse::Ok().body(format!("Query Error: {}", e)),
+            Err(e) => return SqlExecution { html: format!("Query Error: {}", htmlescape::encode_minimal(&e.to_string())), results: Vec::new() },
         };
 
         if !rows.is_empty() {
@@ -399,13 +674,10 @@ pub async fn sql_run(form: web::Json<SqlForm>, state: web::Data<Arc<AppState>>) 
         }
 
         for row in rows {
-            let mut ordered_row_data: Vec<String> = Vec::new();
-            let mut map_for_export: HashMap<String, String> = HashMap::new();
-
+            let mut ordered_row_data = Vec::new();
+            let mut map_for_export = HashMap::new();
             for (idx, col) in row.columns().iter().enumerate() {
                 let name = col.name().to_string();
-                
-                // Generic SQLite displayer
                 let val_str = if let Ok(s) = row.try_get::<String, _>(idx) {
                     s
                 } else if let Ok(i) = row.try_get::<i64, _>(idx) {
@@ -415,158 +687,208 @@ pub async fn sql_run(form: web::Json<SqlForm>, state: web::Data<Arc<AppState>>) 
                 } else if let Ok(b) = row.try_get::<Vec<u8>, _>(idx) {
                     format!("<blob len={}>", b.len())
                 } else if row.try_get_raw(idx).map(|r| r.is_null()).unwrap_or(true) {
-                    "".to_string()
+                    String::new()
                 } else {
                     "?".to_string()
                 };
-
                 ordered_row_data.push(val_str.clone());
                 map_for_export.insert(name, val_str);
             }
             data_rows.push(ordered_row_data);
             results_vec_for_export.push(map_for_export);
         }
-
     } else {
-        // --- POSTGRES EXECUTION ---
         let dsn = format!("postgres://{}:{}@{}/{}", conn.user, conn.password, conn.host, conn.db_name);
-        
-        let pool = {
-            let mut pools = state.pg_pools.lock().unwrap();
-            if let Some(p) = pools.get(&dsn) {
-                p.clone()
-            } else {
-                let p = match PgPoolOptions::new()
-                    .max_connections(5)
-                    .connect(&dsn).await 
-                {
-                    Ok(p) => p,
-                    Err(e) => {
-                        return HttpResponse::Ok()
-                            .content_type("text/html; charset=utf-8")
-                            .body(format!("<div style=\"color:var(--link-hover);\">DB connect error: {}</div>", htmlescape::encode_minimal(&e.to_string())));
-                    }
-                };
-                pools.insert(dsn.clone(), p.clone());
-                p
-            }
+        let existing_pool = {
+            let pools = state.pg_pools.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            pools.get(&dsn).cloned()
+        };
+        let pool = if let Some(pool) = existing_pool {
+            pool
+        } else {
+            let p = match PgPoolOptions::new().max_connections(5).connect(&dsn).await {
+                Ok(p) => p,
+                Err(e) => return SqlExecution { html: format!("<div style=\"color:var(--link-hover);\">DB connect error: {}</div>", htmlescape::encode_minimal(&e.to_string())), results: Vec::new() },
+            };
+            let mut pools = state.pg_pools.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            pools.entry(dsn.clone()).or_insert_with(|| p.clone()).clone()
         };
 
         let rows = match sqlx::query(&final_sql).fetch_all(&pool).await {
             Ok(r) => r,
-            Err(e) => {
-                return HttpResponse::Ok()
-                    .content_type("text/html; charset=utf-8")
-                    .body(format!("<div style=\"color:var(--link-hover);\">Query error: {}</div></div>", htmlescape::encode_minimal(&e.to_string())));
-            }
+            Err(e) => return SqlExecution { html: format!("<div style=\"color:var(--link-hover);\">Query error: {}</div>", htmlescape::encode_minimal(&e.to_string())), results: Vec::new() },
         };
 
         headers = rows.get(0)
             .map(|row| row.columns().iter().map(|col| col.name().to_string()).collect())
             .unwrap_or_default();
 
-        
         for row in rows {
-            let mut ordered_row_data: Vec<String> = Vec::new();
-            let mut map_for_export: HashMap<String, String> = HashMap::new();
-
-            let get_display_val = |row: &sqlx::postgres::PgRow, idx: usize| -> String {
-                let col = row.column(idx);
-                let type_name = col.type_info().name();
-
-                // 1. Try standard string/text decoding first
-                if let Ok(s) = row.try_get::<String, usize>(idx) { 
-                    return s; 
-                }
-
-                // 2. Try generic primitive decoding BEFORE binary/raw fallbacks
-                // This prevents misinterpreting numeric/binary data as UTF-8
-                if let Ok(i) = row.try_get::<i32, usize>(idx) { return i.to_string(); }
-                if let Ok(i) = row.try_get::<i16, usize>(idx) { return i.to_string(); }
-                if let Ok(i) = row.try_get::<i64, usize>(idx) { return i.to_string(); }
-                
-                // Floats
-                if let Ok(f) = row.try_get::<f64, usize>(idx) { return f.to_string(); }
-                if let Ok(f) = row.try_get::<f32, usize>(idx) { return f.to_string(); }
-                
-                // Booleans
-                if let Ok(b) = row.try_get::<bool, usize>(idx) { return b.to_string(); }
-
-                // 3. Handle specific types manually via raw bytes IF string decoding failed
-                if let Ok(raw_val) = row.try_get_raw(idx) {
-                    if raw_val.is_null() {
-                        return "".to_string();
-                    }
-
-                    if let Ok(bytes) = raw_val.as_bytes() {
-                        match type_name {
-                            "TIMESTAMPTZ" | "TIMESTAMP" => {
-                                if bytes.len() == 8 {
-                                    let micros = i64::from_be_bytes(bytes.try_into().unwrap_or([0; 8]));
-                                    let seconds = (micros / 1_000_000) + 946_684_800; 
-                                    return format_ts(seconds);
-                                }
-                            },
-                            "DATE" => {
-                                if bytes.len() == 4 {
-                                    let days = i32::from_be_bytes(bytes.try_into().unwrap_or([0; 4]));
-                                    let seconds = (days as i64) * 86400 + 946_684_800;
-                                    return format_ts(seconds).split_whitespace().next().unwrap_or("").to_string();
-                                }
-                            },
-                            "UUID" => {
-                                if bytes.len() == 16 {
-                                    let b = bytes;
-                                    return format!("{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-                                        b[0],b[1],b[2],b[3], b[4],b[5], b[6],b[7], b[8],b[9], b[10],b[11],b[12],b[13],b[14],b[15]);
-                                }
-                            },
-                            "MONEY" => {
-                                if bytes.len() == 8 {
-                                    let cents = i64::from_be_bytes(bytes.try_into().unwrap_or([0; 8]));
-                                    return format!("${:.2}", cents as f64 / 100.0);
-                                }
-                            },
-                            _ => {
-                                // Generic UTF-8 Fallback ONLY if we haven't found a better match
-                                if let Ok(s) = std::str::from_utf8(bytes) {
-                                    return s.to_string();
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // 4. Try JSON
-                if let Ok(json) = row.try_get::<JsonValue, usize>(idx) {
-                    let s = json.to_string();
-                    return s.trim_matches('"').to_string();
-                }
-
-                // Fallback with Type Name for debugging
-                format!("[Complex: {}]", type_name)
-            };
-
+            let mut ordered_row_data = Vec::new();
+            let mut map_for_export = HashMap::new();
             for (idx, col) in row.columns().iter().enumerate() {
                 let name = col.name().to_string();
-                let display_val = get_display_val(&row, idx);
+                let type_name = col.type_info().name();
+                let display_val = if let Ok(s) = row.try_get::<String, usize>(idx) {
+                    s
+                } else if let Ok(i) = row.try_get::<i32, usize>(idx) {
+                    i.to_string()
+                } else if let Ok(i) = row.try_get::<i16, usize>(idx) {
+                    i.to_string()
+                } else if let Ok(i) = row.try_get::<i64, usize>(idx) {
+                    i.to_string()
+                } else if let Ok(f) = row.try_get::<f64, usize>(idx) {
+                    f.to_string()
+                } else if let Ok(f) = row.try_get::<f32, usize>(idx) {
+                    f.to_string()
+                } else if let Ok(b) = row.try_get::<bool, usize>(idx) {
+                    b.to_string()
+                } else if let Ok(json) = row.try_get::<JsonValue, usize>(idx) {
+                    json.to_string().trim_matches('"').to_string()
+                } else if let Ok(raw_val) = row.try_get_raw(idx) {
+                    if raw_val.is_null() {
+                        String::new()
+                    } else if let Ok(bytes) = raw_val.as_bytes() {
+                        match type_name {
+                            "TIMESTAMPTZ" | "TIMESTAMP" if bytes.len() == 8 => {
+                                let micros = i64::from_be_bytes(bytes.try_into().unwrap_or([0; 8]));
+                                format_ts((micros / 1_000_000) + 946_684_800)
+                            }
+                            "DATE" if bytes.len() == 4 => {
+                                let days = i32::from_be_bytes(bytes.try_into().unwrap_or([0; 4]));
+                                format_ts((days as i64) * 86400 + 946_684_800).split_whitespace().next().unwrap_or("").to_string()
+                            }
+                            "UUID" if bytes.len() == 16 => {
+                                let b = bytes;
+                                format!("{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+                                    b[0],b[1],b[2],b[3], b[4],b[5], b[6],b[7], b[8],b[9], b[10],b[11],b[12],b[13],b[14],b[15])
+                            }
+                            "MONEY" if bytes.len() == 8 => {
+                                let cents = i64::from_be_bytes(bytes.try_into().unwrap_or([0; 8]));
+                                format!("${:.2}", cents as f64 / 100.0)
+                            }
+                            _ => std::str::from_utf8(bytes).map(|s| s.to_string()).unwrap_or_else(|_| format!("[Complex: {}]", type_name)),
+                        }
+                    } else {
+                        format!("[Complex: {}]", type_name)
+                    }
+                } else {
+                    format!("[Complex: {}]", type_name)
+                };
                 ordered_row_data.push(display_val.clone());
                 map_for_export.insert(name, display_val);
             }
             data_rows.push(ordered_row_data);
             results_vec_for_export.push(map_for_export);
         }
-    } // End Postgres Branch
-
-    {
-        let mut last = state.last_results.lock().unwrap();
-        *last = results_vec_for_export;
     }
 
-    let table = render_table(&headers, &data_rows);
+    SqlExecution {
+        html: render_table(&headers, &data_rows),
+        results: results_vec_for_export,
+    }
+}
+
+
+#[post("/sql/run")]
+pub async fn sql_run(form: web::Json<SqlForm>, state: web::Data<Arc<AppState>>) -> impl Responder {
+    let execution = execute_sql(form.into_inner(), state.get_ref().clone()).await;
+    {
+        let mut last = state.last_results.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        *last = execution.results;
+    }
     HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")
-        .body(table)
+        .body(execution.html)
+}
+
+#[post("/sql/run-background")]
+pub async fn sql_run_background(form: web::Json<SqlForm>, state: web::Data<Arc<AppState>>) -> impl Responder {
+    let form = form.into_inner();
+    let job_id = format!("sql-{}-{}", now_millis(), std::process::id());
+    let job = SqlJob {
+        id: job_id.clone(),
+        connection: form.connection.clone(),
+        sql: form.sql.clone(),
+        query_name: String::new(),
+        query_folder: String::new(),
+        status: "running".to_string(),
+        created_at: now_isoish(),
+        completed_at: None,
+        html: None,
+        row_count_text: None,
+        error: None,
+        results: Vec::new(),
+    };
+
+    {
+        let mut jobs = state.sql_jobs.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        jobs.insert(job_id.clone(), job);
+    }
+
+    let state_for_task = state.get_ref().clone();
+    let job_id_for_task = job_id.clone();
+    tokio::spawn(async move {
+        let execution = execute_sql(form, state_for_task.clone()).await;
+        let row_count_text = row_count_text_from_html(&execution.html);
+        let mut jobs = state_for_task.sql_jobs.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(job) = jobs.get_mut(&job_id_for_task) {
+            job.status = "completed".to_string();
+            job.completed_at = Some(now_isoish());
+            job.row_count_text = Some(row_count_text);
+            job.html = Some(execution.html);
+            job.results = execution.results;
+        }
+    });
+
+    HttpResponse::Ok().json(StartSqlJobResponse { job_id })
+}
+
+#[get("/sql/jobs/{connection}")]
+pub async fn sql_jobs(path: web::Path<String>, state: web::Data<Arc<AppState>>) -> impl Responder {
+    let connection = path.into_inner();
+    let mut jobs = {
+        let jobs = state.sql_jobs.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        jobs.values()
+            .filter(|job| job.connection == connection)
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    jobs.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    jobs.truncate(25);
+    HttpResponse::Ok().json(jobs)
+}
+
+#[get("/sql/job/{job_id}")]
+pub async fn sql_job(path: web::Path<String>, state: web::Data<Arc<AppState>>) -> impl Responder {
+    let job_id = path.into_inner();
+    let job = {
+        let jobs = state.sql_jobs.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        jobs.get(&job_id).cloned()
+    };
+
+    match job {
+        Some(job) => HttpResponse::Ok().json(job),
+        None => HttpResponse::NotFound().body("SQL job not found"),
+    }
+}
+
+#[post("/sql/job/{job_id}/activate")]
+pub async fn sql_job_activate(path: web::Path<String>, state: web::Data<Arc<AppState>>) -> impl Responder {
+    let job_id = path.into_inner();
+    let results = {
+        let jobs = state.sql_jobs.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        jobs.get(&job_id).map(|job| job.results.clone())
+    };
+
+    match results {
+        Some(results) => {
+            let mut last = state.last_results.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            *last = results;
+            HttpResponse::NoContent().finish()
+        }
+        None => HttpResponse::NotFound().body("SQL job not found"),
+    }
 }
 
 #[get("/sql/export")]
@@ -605,8 +927,15 @@ pub async fn sql_export(state: web::Data<Arc<AppState>>) -> impl Responder {
 }
 
 fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &crate::app_state::Theme, saved_themes: &HashMap<String, Theme>) -> String {
-    let saved_queries = load_queries();
-    let mut query_folders = load_query_folders();
+    let saved_queries = load_queries()
+        .into_iter()
+        .filter(|query| query_matches_connection(query, nickname))
+        .collect::<Vec<_>>();
+    let mut query_folders = load_query_folders()
+        .into_iter()
+        .filter(|folder| folder_matches_connection(folder, nickname))
+        .map(|folder| display_folder_name(&folder).to_string())
+        .collect::<Vec<_>>();
     for query in &saved_queries {
         if let Some(folder) = query.folder.as_ref().filter(|folder| !folder.trim().is_empty()) {
             if !query_folders.iter().any(|existing| existing.eq_ignore_ascii_case(folder)) {
@@ -629,13 +958,19 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
         format!(
             "<li class=\"saved-query-item\">\
                 <a href=\"#\" data-sql=\"{}\" data-name=\"{}\" data-folder=\"{}\" class=\"query-link\">{}</a>\
+                <form method=\"POST\" action=\"/sql/rename\" class=\"rename-query-form\">\
+                    <input type=\"hidden\" name=\"query_name\" value=\"{}\">\
+                    <input type=\"hidden\" name=\"new_query_name\" value=\"\">\
+                    <input type=\"hidden\" name=\"connection\" value=\"{}\">\
+                    <button type=\"button\" class=\"delete-btn rename-saved-query-btn\" title=\"Rename\">✎</button>\
+                </form>\
                 <form method=\"POST\" action=\"/sql/delete\" class=\"delete-query-form\" onsubmit=\"return confirm('Delete saved query {}?');\">\
                     <input type=\"hidden\" name=\"query_name\" value=\"{}\">\
                     <input type=\"hidden\" name=\"connection\" value=\"{}\">\
                     <button type=\"submit\" class=\"delete-btn\" title=\"Delete\">x</button>\
                 </form>\
             </li>",
-            sql_attr, name_attr, folder_attr, name_safe, name_attr, name_attr, nickname_attr
+            sql_attr, name_attr, folder_attr, name_safe, name_attr, nickname_attr, name_attr, name_attr, nickname_attr
         )
     };
 
@@ -704,6 +1039,22 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
                         </svg>
                         </button>
                     </form>
+                    <a href="/sql/{nickname_path}/queries/export" class="delete-btn sql-sidebar-refresh sql-sidebar-link-button" title="Export saved queries" aria-label="Export saved queries">
+                        <svg class="sql-sidebar-button-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M12 3v11M8 10l4 4 4-4M5 17v3h14v-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </a>
+                    <form id="import-query-form" method="POST" action="/sql/queries/import" class="import-query-form">
+                        <input type="hidden" name="connection" value="{nickname}">
+                        <input type="hidden" id="import-query-payload" name="payload">
+                        <input type="hidden" name="duplicate_mode" value="rename">
+                        <button type="button" id="import-query-btn" class="delete-btn sql-sidebar-refresh" title="Import saved queries" aria-label="Import saved queries">
+                            <svg class="sql-sidebar-button-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M12 21V10M8 14l4-4 4 4M5 7V4h14v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </button>
+                        <input type="file" id="import-query-file" accept="application/json,.json" hidden>
+                    </form>
                 </div>
             </div>
             <div class="sidebar-search"><input type="text" id="query-search-input" placeholder="Search queries..."></div>
@@ -719,7 +1070,7 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
             <input type="hidden" id="query-sql" name="sql">
             <input type="hidden" name="connection" value="{nickname}">
         </form>
-    "###, saved_query_list = saved_query_list, nickname = nickname_attr, query_folder_options = query_folder_options);
+    "###, saved_query_list = saved_query_list, nickname = nickname_attr, nickname_path = nickname_safe, query_folder_options = query_folder_options);
     
     let sidebar_html = crate::elements::sidebar::render(&sidebar_content);
 
@@ -735,6 +1086,7 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
              <!-- Variables injected here -->
              <button type="button" class="add-var-btn" onclick="addVariable()">+ Var</button>
              <button type="button" id="variable-help-btn" class="sql-var-help-btn" title="SQL variables help" aria-label="SQL variables help">?</button>
+             <button type="button" id="sql-disconnect-btn" class="sql-disconnect-btn" title="Disconnect" aria-label="Disconnect from SQL manager">Disconnect</button>
           </div>
 
           <div class="editor-container">
@@ -759,6 +1111,9 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
             </select>
             <button type="button" id="delete-output-history-btn" class="add-var-btn" style="width:auto; background-color: var(--tertiary-bg);">Delete</button>
             <button type="button" id="clear-output-history-btn" class="add-var-btn" style="width:auto; background-color: var(--tertiary-bg);">Clear History</button>
+            <select id="sql-jobs-select" title="Running and recent SQL jobs">
+                <option value="">Running queries</option>
+            </select>
             <label><input type="checkbox" id="export-headers" checked> Headers</label>
             <button type="button" id="export-client-btn" class="add-var-btn" style="width:auto;">Export Select CSV</button>
             <button type="button" id="clear-selection-btn" class="add-var-btn" style="width:auto; background-color: var(--tertiary-bg); display: none;">Clear (0)</button>
@@ -792,6 +1147,7 @@ pub async fn sql_view(path: web::Path<String>, state: web::Data<Arc<AppState>>) 
         if conns_opt.is_none() {
             *conns_opt = Some(load_and_decrypt());
         }
+        include_app_db_connection(conns_opt.as_mut().unwrap());
         let conns = conns_opt.as_ref().unwrap();
         conns.iter().find(|c| c.nickname == nickname).cloned()
     };
@@ -818,7 +1174,13 @@ pub async fn sql_view(path: web::Path<String>, state: web::Data<Arc<AppState>>) 
         
     let current_theme = state.current_theme.lock().unwrap();
     let saved_themes = state.saved_themes.lock().unwrap();
+    let active_connection_cookie = Cookie::build(ACTIVE_SQL_CONNECTION_COOKIE, nickname.clone())
+        .path("/sql")
+        .http_only(true)
+        .finish();
+
     HttpResponse::Ok()
+        .cookie(active_connection_cookie)
         .content_type("text/html; charset=utf-8")
         .body(render_query_view(&nickname, &schema_json, &current_theme, &saved_themes))
 }
@@ -832,6 +1194,7 @@ pub async fn sql_schema_json(path: web::Path<String>, state: web::Data<Arc<AppSt
         if conns_opt.is_none() {
             *conns_opt = Some(load_and_decrypt());
         }
+        include_app_db_connection(conns_opt.as_mut().unwrap());
         let conns = conns_opt.as_ref().unwrap();
         conns.iter().find(|c| c.nickname == nickname).cloned()
     };

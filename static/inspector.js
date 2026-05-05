@@ -9,6 +9,7 @@ const resultSection = document.getElementById('result-section');
 const indicator = document.getElementById('type-indicator');
 const prettifyButton = document.getElementById('prettify-btn');
 const sourceMeta = document.getElementById('inspector-source-meta');
+const inputResizer = document.getElementById('inspector-input-resizer');
 
 const jsonTools = document.getElementById('json-tools');
 const jsonSummaryLine = document.getElementById('json-summary-line');
@@ -20,6 +21,8 @@ const jsonTableStatus = document.getElementById('json-table-status');
 const jsonCopyCsvBtn = document.getElementById('json-copy-csv-btn');
 const jsonSearchInput = document.getElementById('json-search-input');
 const jsonSearchCount = document.getElementById('json-search-count');
+const jsonTreeLayout = document.querySelector('.json-tree-layout');
+const jsonDetailResizer = document.getElementById('json-detail-resizer');
 
 const detailPath = document.getElementById('json-detail-path');
 const detailType = document.getElementById('json-detail-type');
@@ -61,6 +64,83 @@ document.getElementById('json-search-prev-btn').addEventListener('click', () => 
 document.getElementById('json-search-next-btn').addEventListener('click', () => stepJsonSearch(1));
 jsonSearchInput.addEventListener('input', runJsonSearch);
 jsonCopyCsvBtn.addEventListener('click', () => copyText(jsonState.csv));
+
+function initInspectorResizers() {
+    let activeResize = null;
+
+    if (inputResizer) {
+        inputResizer.addEventListener('mousedown', (event) => {
+            const inputTop = contentInput.getBoundingClientRect().top;
+            activeResize = {
+                type: 'input',
+                inputTop,
+            };
+            inputResizer.classList.add('resizing');
+            document.body.style.cursor = 'row-resize';
+            document.body.style.userSelect = 'none';
+            event.preventDefault();
+        });
+    }
+
+    if (jsonDetailResizer && jsonTreeLayout) {
+        jsonDetailResizer.addEventListener('mousedown', (event) => {
+            const details = document.querySelector('.json-node-details');
+            if (!details) return;
+
+            const isStacked = window.matchMedia('(max-width: 640px)').matches;
+            activeResize = {
+                type: isStacked ? 'details-height' : 'details-width',
+                startX: event.clientX,
+                startY: event.clientY,
+                startBasis: isStacked ? details.offsetHeight : details.offsetWidth,
+                details,
+                layout: jsonTreeLayout,
+            };
+            jsonDetailResizer.classList.add('resizing');
+            document.body.style.cursor = isStacked ? 'row-resize' : 'col-resize';
+            document.body.style.userSelect = 'none';
+            event.preventDefault();
+        });
+    }
+
+    document.addEventListener('mousemove', (event) => {
+        if (!activeResize) return;
+
+        if (activeResize.type === 'input') {
+            const containerHeight = document.querySelector('.input-section')?.clientHeight || window.innerHeight;
+            const nextHeight = event.clientY - activeResize.inputTop;
+            const maxHeight = Math.max(120, containerHeight - 120);
+            contentInput.style.height = `${Math.min(Math.max(nextHeight, 56), maxHeight)}px`;
+            return;
+        }
+
+        if (activeResize.type === 'details-width') {
+            const layoutWidth = activeResize.layout.clientWidth;
+            const nextWidth = activeResize.startBasis - (event.clientX - activeResize.startX);
+            const maxWidth = Math.max(260, layoutWidth - 220);
+            activeResize.details.style.flexBasis = `${Math.min(Math.max(nextWidth, 220), maxWidth)}px`;
+            return;
+        }
+
+        if (activeResize.type === 'details-height') {
+            const layoutHeight = activeResize.layout.clientHeight;
+            const nextHeight = activeResize.startBasis - (event.clientY - activeResize.startY);
+            const maxHeight = Math.max(160, layoutHeight - 160);
+            activeResize.details.style.flexBasis = `${Math.min(Math.max(nextHeight, 120), maxHeight)}px`;
+        }
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (!activeResize) return;
+        inputResizer?.classList.remove('resizing');
+        jsonDetailResizer?.classList.remove('resizing');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        activeResize = null;
+    });
+}
+
+initInspectorResizers();
 
 function loadPendingInspectorPayload() {
     const raw = sessionStorage.getItem(INSPECTOR_PENDING_PAYLOAD_KEY);

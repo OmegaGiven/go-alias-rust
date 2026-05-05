@@ -367,7 +367,7 @@ ul li a:hover {
     width: 100%;
     max-width: none;
     min-height: 0;
-    height: calc(100vh - 30px);
+    height: calc(100vh - var(--nav-height, 30px));
     padding: 0.25rem;
     box-sizing: border-box;
 }
@@ -572,7 +572,7 @@ ul li a:hover {
 
 @media (max-width: 900px) {
     .inspector-container {
-        height: calc(100vh - 30px);
+        height: calc(100vh - var(--nav-height, 30px));
         padding: 0.25rem;
     }
 
@@ -792,9 +792,9 @@ ul li a:hover {
     background-color: var(--secondary-bg);
     border-bottom: 1px solid var(--border-color);
     padding: 0 20px;
-    height: 30px;
-    min-height: 30px;
-    max-height: 30px;
+    height: var(--nav-height, 30px);
+    min-height: var(--nav-height, 30px);
+    max-height: var(--nav-height, 30px);
     user-select: none;
     box-sizing: border-box;
     overflow: visible;

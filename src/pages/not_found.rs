@@ -125,7 +125,6 @@ pub fn not_found_page(
         current_theme,
         saved_themes,
         true,
-        true,
     )
 }
 

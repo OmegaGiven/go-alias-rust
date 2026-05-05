@@ -5,7 +5,7 @@
     .sql-view-container {
         --element-margin: 0px;
         display: flex;
-        height: calc(100vh - 30px);
+        height: calc(100vh - var(--nav-height, 30px));
         position: relative;
         overflow: hidden;
     }
@@ -57,7 +57,7 @@
         padding: 3px 5px;
     }
     
-    .saved-query-item { display: flex; align-items: center; padding-left: 2px; }
+    .saved-query-item { display: flex; align-items: center; width: 100%; padding-left: 2px; box-sizing: border-box; }
     .saved-query-folder {
         background: var(--primary-bg);
         border-bottom: 1px solid var(--border-color);
@@ -71,9 +71,14 @@
         padding: 1px 5px !important;
         text-transform: uppercase;
     }
-    .create-query-folder-form {
+    .create-query-folder-form,
+    .import-query-form {
         display: inline-flex;
         margin: 0;
+    }
+    .sql-sidebar-link-button {
+        box-sizing: border-box;
+        text-decoration: none;
     }
     .sql-sidebar-actions {
         display: inline-flex;
@@ -81,7 +86,9 @@
         gap: 2px;
         margin: 0;
     }
-    .delete-query-form { display: inline-flex; flex: 0 0 auto; margin: 0 2px 0 4px; }
+    .delete-query-form,
+    .rename-query-form { display: inline-flex; flex: 0 0 auto; margin: 0 2px 0 0; }
+    .rename-query-form { margin-left: auto; }
     .query-link { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0; padding: 1px 5px; text-align: left; text-decoration: none; color: var(--text-color); font-size: var(--sql-workspace-font-size); opacity: 0.9; }
     .query-link:hover { opacity: 1; text-decoration: underline; color: var(--link-hover); }
     
@@ -141,6 +148,26 @@
         line-height: 1;
     }
     .sql-var-help-btn:hover {
+        background: var(--link-hover);
+        border-color: var(--link-hover);
+        color: #fff;
+    }
+    .sql-disconnect-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        height: 22px;
+        margin: 0;
+        padding: 0 8px;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        background: var(--tertiary-bg);
+        color: var(--text-color);
+        cursor: pointer;
+        font-size: var(--sql-workspace-font-size);
+        line-height: 1;
+    }
+    .sql-disconnect-btn:hover {
         background: var(--link-hover);
         border-color: var(--link-hover);
         color: #fff;
@@ -315,7 +342,11 @@
     .output th,
     .output td,
     .output table.grid th,
-    .output table.grid td { border: 1px solid var(--border-color); padding: 4px 8px; text-align: left; white-space: nowrap; user-select: none; font-size: var(--sql-workspace-font-size); line-height: 1.5; overflow: hidden; text-overflow: ellipsis; }
+    .output table.grid td { border: 1px solid var(--border-color); padding: 4px 8px; text-align: left; white-space: nowrap; font-size: var(--sql-workspace-font-size); line-height: 1.5; overflow: hidden; text-overflow: ellipsis; }
+    .output td,
+    .output table.grid td { user-select: text; }
+    .output th,
+    .output table.grid th { user-select: none; }
     .output th { background: var(--tertiary-bg); position: sticky; top: 0; z-index: 1; cursor: pointer; }
     .output th .column-resize-handle {
         position: absolute;

@@ -1,6 +1,7 @@
 use actix_web::{get, post, web::{self, Data, Form, Json}, HttpResponse, Responder};
 use std::{fs, io, process::Command, collections::HashMap, time::{Instant, SystemTime, UNIX_EPOCH}, sync::{Mutex, OnceLock}};
 use serde::{Deserialize, Serialize};
+use crate::app_db;
 use crate::app_state::{AppState, Theme};
 use crate::base_page::render_base_page;
 use htmlescape::encode_minimal;
@@ -49,6 +50,13 @@ struct SaveRequestForm {
 struct DeleteRequestForm {
     name: String,
     folder: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct RenameRequestForm {
+    name: String,
+    folder: Option<String>,
+    new_name: String,
 }
 
 #[derive(Deserialize)]
@@ -131,6 +139,9 @@ fn load_requests() -> Vec<SavedRequest> {
 }
 
 fn save_requests_to_file(requests: &[SavedRequest]) -> io::Result<()> {
+    if let Err(err) = app_db::put_json_blocking("requests", "saved", &requests) {
+        eprintln!("Failed to save requests to app database: {err}");
+    }
     let data = serde_json::to_string_pretty(requests)?;
     fs::write(REQUESTS_FILE, data)
 }
@@ -143,6 +154,9 @@ fn load_request_folders() -> Vec<String> {
 }
 
 fn save_request_folders(folders: &[String]) -> io::Result<()> {
+    if let Err(err) = app_db::put_json_blocking("requests", "folders", &folders) {
+        eprintln!("Failed to save request folders to app database: {err}");
+    }
     let data = serde_json::to_string_pretty(folders)?;
     fs::write(REQUEST_FOLDERS_FILE, data)
 }
@@ -165,6 +179,9 @@ fn load_request_variables() -> RequestVariables {
 
 fn save_request_variables(variables: &RequestVariables) -> io::Result<()> {
     let normalized = normalize_request_variables(variables.clone());
+    if let Err(err) = app_db::put_json_blocking("requests", "variables", &normalized) {
+        eprintln!("Failed to save request variables to app database: {err}");
+    }
     let data = serde_json::to_string_pretty(&normalized)?;
     fs::write(REQUEST_VARIABLES_FILE, data)
 }
@@ -329,6 +346,32 @@ pub async fn request_delete(form: Form<DeleteRequestForm>) -> impl Responder {
         .finish()
 }
 
+#[post("/requests/rename")]
+pub async fn request_rename(form: Form<RenameRequestForm>) -> impl Responder {
+    let new_name = form.new_name.trim();
+    if !new_name.is_empty() {
+        let mut requests = load_requests();
+        let folder = form.folder.as_deref();
+        let duplicate_exists = requests
+            .iter()
+            .any(|request| request_identity_matches(request, new_name, folder));
+
+        if !duplicate_exists {
+            if let Some(request) = requests
+                .iter_mut()
+                .find(|request| request_identity_matches(request, &form.name, folder))
+            {
+                request.name = new_name.to_string();
+                let _ = save_requests_to_file(&requests);
+            }
+        }
+    }
+
+    HttpResponse::Found()
+        .append_header(("Location", "/requests"))
+        .finish()
+}
+
 #[post("/requests/run")]
 pub async fn request_run(payload: Json<ProxyRequest>) -> impl Responder {
     let res = web::block(move || {
@@ -440,6 +483,38 @@ pub async fn request_save_variables(payload: Json<RequestVariables>) -> impl Res
     match save_request_variables(&variables) {
         Ok(_) => HttpResponse::Ok().json(normalize_request_variables(variables)),
         Err(err) => HttpResponse::InternalServerError().body(format!("Failed to save variables: {err}")),
+    }
+}
+
+#[get("/requests/history")]
+pub async fn request_history_get() -> impl Responder {
+    let history = app_db::get_json::<serde_json::Value>("requests", "history")
+        .await
+        .unwrap_or_else(|| serde_json::json!([]));
+    HttpResponse::Ok().json(history)
+}
+
+#[post("/requests/history")]
+pub async fn request_history_save(payload: Json<serde_json::Value>) -> impl Responder {
+    match app_db::put_json("requests", "history", &payload.into_inner()).await {
+        Ok(_) => HttpResponse::NoContent().finish(),
+        Err(err) => HttpResponse::InternalServerError().body(format!("Failed to save request history: {err}")),
+    }
+}
+
+#[get("/scratchpads")]
+pub async fn scratchpads_get() -> impl Responder {
+    let pads = app_db::get_json::<serde_json::Value>("scratchpads", "pads")
+        .await
+        .unwrap_or_else(|| serde_json::json!([]));
+    HttpResponse::Ok().json(pads)
+}
+
+#[post("/scratchpads")]
+pub async fn scratchpads_save(payload: Json<serde_json::Value>) -> impl Responder {
+    match app_db::put_json("scratchpads", "pads", &payload.into_inner()).await {
+        Ok(_) => HttpResponse::NoContent().finish(),
+        Err(err) => HttpResponse::InternalServerError().body(format!("Failed to save scratch pads: {err}")),
     }
 }
 
@@ -911,6 +986,12 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
                         data-oauth-scope="{}"
                         data-folder="{}">{}</a>
                     </div>
+                    <form method="POST" action="/requests/rename" class="rename-form">
+                        <input type="hidden" name="name" value="{}">
+                        <input type="hidden" name="folder" value="{}">
+                        <input type="hidden" name="new_name" value="">
+                        <button type="button" class="btn-danger-text rename-saved-request-btn" title="Rename">✎</button>
+                    </form>
                     <form method="POST" action="/requests/delete" class="delete-form" onsubmit="return confirm('Delete saved request {}?');">
                         <input type="hidden" name="name" value="{}">
                         <input type="hidden" name="folder" value="{}">
@@ -931,6 +1012,8 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
             folder_attr,
             safe_name,
             name_attr,
+            folder_attr,
+            htmlescape::encode_attribute(&r.name),
             htmlescape::encode_attribute(&r.name),
             folder_attr
         )
@@ -1139,6 +1222,11 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
                         <span id="res-size">Size: -</span>
                     </div>
                     <div class="response-actions">
+                        <select id="request-history-select" class="request-history-select" title="Request history">
+                            <option value="">Request history</option>
+                        </select>
+                        <button id="delete-request-history-btn" class="save-btn btn-small" type="button">Delete</button>
+                        <button id="clear-request-history-btn" class="save-btn btn-small" type="button">Clear History</button>
                         <button id="open-inspector-btn" class="save-btn btn-small" type="button" disabled>Open in Inspector</button>
                         <button id="view-curl-btn" class="save-btn btn-small" type="button" disabled>View Curl</button>
                         <button id="download-res-btn" class="save-btn btn-small" type="button">JSON</button>

@@ -35,6 +35,7 @@ pub fn default_dark_theme() -> Theme {
         font_size_medium: 16,
         font_size_large: 18,
         element_margin: 10,
+        nav_height: 30,
         font_family: "sans-serif".to_string(),
     }
 }
@@ -88,6 +89,7 @@ pub struct ThemeForm {
     pub font_size_medium: u32,
     pub font_size_large: u32,
     pub element_margin: u32,
+    pub nav_height: u32,
     pub font_family: String,
     
     pub load_theme_name: Option<String>,
@@ -129,6 +131,7 @@ fn theme_from_form(form: &ThemeForm) -> Theme {
             font_size_medium: form.font_size_medium,
             font_size_large: form.font_size_large,
             element_margin: form.element_margin,
+            nav_height: form.nav_height,
             font_family: form.font_family.clone(),
         },
         "dark" => Theme {
@@ -147,6 +150,7 @@ fn theme_from_form(form: &ThemeForm) -> Theme {
             font_size_medium: form.font_size_medium,
             font_size_large: form.font_size_large,
             element_margin: form.element_margin,
+            nav_height: form.nav_height,
             font_family: form.font_family.clone(),
         },
         _ => Theme {
@@ -165,6 +169,7 @@ fn theme_from_form(form: &ThemeForm) -> Theme {
             font_size_medium: form.font_size_medium,
             font_size_large: form.font_size_large,
             element_margin: form.element_margin,
+            nav_height: form.nav_height,
             font_family: form.font_family.clone(),
         },
     };

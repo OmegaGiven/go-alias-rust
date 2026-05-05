@@ -12,6 +12,9 @@
         const downloadResBtn = document.getElementById('download-res-btn');
         const openInspectorBtn = document.getElementById('open-inspector-btn');
         const viewCurlBtn = document.getElementById('view-curl-btn');
+        const requestHistorySelect = document.getElementById('request-history-select');
+        const deleteRequestHistoryBtn = document.getElementById('delete-request-history-btn');
+        const clearRequestHistoryBtn = document.getElementById('clear-request-history-btn');
         const curlViewModal = document.getElementById('curl-view-modal');
         const curlViewOutput = document.getElementById('curl-view-output');
         const closeCurlViewBtn = document.getElementById('close-curl-view-btn');
@@ -49,8 +52,13 @@
         const requestVariablesStatus = document.getElementById('request-variables-status');
         const RESPONSE_HEIGHT_KEY = 'request-response-height';
         const RESPONSE_HEADERS_HEIGHT_KEY = 'request-response-headers-height';
+        const REQUEST_HISTORY_KEY = 'request_run_history';
         const SAVED_REQUEST_FOLDERS_COLLAPSED_KEY = 'saved-request-folders-collapsed';
         const INSPECTOR_PENDING_PAYLOAD_KEY = 'inspector_pending_payload';
+        const MAX_REQUEST_HISTORY_ENTRIES = 12;
+        const MAX_REQUEST_HISTORY_ENTRY_CHARS = 850000;
+        const MAX_REQUEST_HISTORY_RESPONSE_CHARS = 350000;
+        const MAX_REQUEST_HISTORY_TOTAL_CHARS = 1800000;
         let pendingPostmanCollection = null;
         let collapsedRequestFolders = readCollapsedRequestFolders();
         let latestCurlCommand = '';
@@ -58,6 +66,7 @@
         let latestResponseHeaders = '';
         let latestResponseMeta = null;
         let variableSetDialogMode = 'create';
+        let requestHistoryCache = [];
         
         // Save Logic Elements
         const toggleSaveBtn = document.getElementById('toggle-save-btn');
@@ -615,6 +624,68 @@
             return headerPairs.map(([key, value]) => ({ key, value }));
         }
 
+        function getAuthSnapshot() {
+            const type = authTypeSelect.value;
+            return {
+                type,
+                bearer_token: document.getElementById('auth-bearer-token')?.value || fetchedOAuthToken || '',
+                basic_user: document.getElementById('auth-basic-user')?.value || '',
+                basic_pass: document.getElementById('auth-basic-pass')?.value || '',
+                api_key: document.getElementById('auth-api-key')?.value || '',
+                api_value: document.getElementById('auth-api-val')?.value || '',
+                api_location: document.getElementById('auth-api-loc')?.value || 'header',
+                oauth_token_url: document.getElementById('oauth-token-url')?.value || '',
+                oauth_client_id: document.getElementById('oauth-client-id')?.value || '',
+                oauth_client_secret: document.getElementById('oauth-client-secret')?.value || '',
+                oauth_scope: document.getElementById('oauth-scope')?.value || '',
+                fetched_oauth_token: fetchedOAuthToken || '',
+            };
+        }
+
+        function applyAuthSnapshot(snapshot = {}) {
+            const type = snapshot.type || 'none';
+            authTypeSelect.value = type;
+            fetchedOAuthToken = snapshot.fetched_oauth_token || snapshot.bearer_token || '';
+            renderAuthInputs({
+                oauth_token_url: snapshot.oauth_token_url,
+                oauth_client_id: snapshot.oauth_client_id,
+                oauth_client_secret: snapshot.oauth_client_secret,
+                oauth_scope: snapshot.oauth_scope,
+            });
+
+            if (type === 'bearer') {
+                const tokenInput = document.getElementById('auth-bearer-token');
+                if (tokenInput) tokenInput.value = snapshot.bearer_token || '';
+            } else if (type === 'basic') {
+                const userInput = document.getElementById('auth-basic-user');
+                const passInput = document.getElementById('auth-basic-pass');
+                if (userInput) userInput.value = snapshot.basic_user || '';
+                if (passInput) passInput.value = snapshot.basic_pass || '';
+            } else if (type === 'apikey') {
+                const keyInput = document.getElementById('auth-api-key');
+                const valueInput = document.getElementById('auth-api-val');
+                const locationInput = document.getElementById('auth-api-loc');
+                if (keyInput) keyInput.value = snapshot.api_key || '';
+                if (valueInput) valueInput.value = snapshot.api_value || '';
+                if (locationInput) locationInput.value = snapshot.api_location || 'header';
+            }
+        }
+
+        function getPathValuesSnapshot() {
+            return getKvMap('path-container');
+        }
+
+        function applyPathValuesSnapshot(values = {}) {
+            detectPathVariables();
+            document.querySelectorAll('#path-container .kv-row').forEach((row) => {
+                const key = row.querySelector('.key')?.value || '';
+                const valueInput = row.querySelector('.val');
+                if (valueInput && Object.prototype.hasOwnProperty.call(values, key)) {
+                    valueInput.value = values[key];
+                }
+            });
+        }
+
         function headersToString() {
             const h = constructHeaders();
             return h.map(([k, v]) => `${k}: ${v}`).join('\\n');
@@ -789,6 +860,227 @@
             if (viewCurlBtn) viewCurlBtn.disabled = true;
             if (openInspectorBtn) openInspectorBtn.disabled = true;
             urlInput.focus();
+        }
+
+        function loadRequestHistory() {
+            return requestHistoryCache;
+        }
+
+        async function loadRequestHistoryFromServer() {
+            try {
+                const resp = await fetch('/requests/history');
+                if (!resp.ok) throw new Error(await resp.text());
+                const history = await resp.json();
+                requestHistoryCache = normalizeRequestHistoryList(history);
+                if (requestHistoryCache.length === 0) {
+                    const localHistory = normalizeRequestHistoryList(JSON.parse(localStorage.getItem(REQUEST_HISTORY_KEY) || '[]'));
+                    if (localHistory.length > 0) {
+                        saveRequestHistory(localHistory);
+                    }
+                }
+            } catch (err) {
+                try {
+                    requestHistoryCache = normalizeRequestHistoryList(JSON.parse(localStorage.getItem(REQUEST_HISTORY_KEY) || '[]'));
+                } catch (_) {
+                    requestHistoryCache = [];
+                }
+                console.error('Failed to load request history from app database', err);
+            }
+            renderRequestHistoryOptions();
+        }
+
+        function normalizeRequestHistoryList(history) {
+            if (!Array.isArray(history)) return [];
+            return history.map((entry, index) => ({
+                    ...entry,
+                    id: entry.id || `${entry.createdAt || 'history'}-${index}`,
+            }));
+        }
+
+        function saveRequestHistory(history) {
+            requestHistoryCache = normalizeRequestHistoryList(history);
+            try {
+                localStorage.setItem(REQUEST_HISTORY_KEY, JSON.stringify(requestHistoryCache));
+            } catch (err) {
+                console.error('Failed to save request history fallback', err);
+            }
+
+            fetch('/requests/history', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(requestHistoryCache),
+            }).catch((err) => {
+                console.error('Failed to save request history to app database', err);
+                try {
+                    localStorage.setItem(REQUEST_HISTORY_KEY, JSON.stringify(requestHistoryCache.slice(0, 3)));
+                } catch (retryErr) {
+                    console.error('Failed to save reduced request history fallback', retryErr);
+                }
+            });
+        }
+
+        function requestHistoryLabel(entry) {
+            const date = new Date(entry.createdAt);
+            const time = Number.isNaN(date.getTime()) ? '' : date.toLocaleString();
+            const status = entry.response?.status ? ` - ${entry.response.status}` : '';
+            const method = entry.request?.method || 'GET';
+            const url = entry.request?.url || entry.request?.finalUrl || 'Request';
+            return `${time} - ${method} ${url}${status}`;
+        }
+
+        function renderRequestHistoryOptions(selectedId = '') {
+            if (!requestHistorySelect) return;
+
+            const nextSelectedId = selectedId || requestHistorySelect.value;
+            const history = loadRequestHistory();
+            requestHistorySelect.innerHTML = '<option value="">Request history</option>';
+            history.forEach((entry) => {
+                const option = document.createElement('option');
+                option.value = entry.id;
+                option.textContent = requestHistoryLabel(entry);
+                requestHistorySelect.appendChild(option);
+            });
+            if (nextSelectedId && history.some((entry) => entry.id === nextSelectedId)) {
+                requestHistorySelect.value = nextSelectedId;
+            }
+        }
+
+        function pruneRequestHistory(history) {
+            let totalChars = 0;
+            return history.slice(0, MAX_REQUEST_HISTORY_ENTRIES).filter((entry) => {
+                const entryChars = JSON.stringify(entry).length;
+                if (entryChars > MAX_REQUEST_HISTORY_ENTRY_CHARS) return false;
+                totalChars += entryChars;
+                return totalChars <= MAX_REQUEST_HISTORY_TOTAL_CHARS;
+            });
+        }
+
+        function getExplicitHeadersString() {
+            return getKvPairs('headers-container').map(([k, v]) => `${k}: ${v}`).join('\n');
+        }
+
+        function buildRequestHistoryEntry(requestDetails, responseDetails) {
+            const response = normalizeRequestHistoryResponse(responseDetails);
+            return {
+                id: String(Date.now()) + '-' + Math.random().toString(16).slice(2),
+                createdAt: new Date().toISOString(),
+                request: {
+                    name: reqNameInput.value.trim(),
+                    folder: reqFolderSelect ? reqFolderSelect.value : '',
+                    method: methodSelect.value,
+                    url: urlInput.value,
+                    finalUrl: requestDetails.finalUrl,
+                    headers: getExplicitHeadersString(),
+                    body: bodyInput.value,
+                    pathValues: getPathValuesSnapshot(),
+                    auth: getAuthSnapshot(),
+                    activeVariableSet: requestVariables.active_set || '',
+                },
+                response,
+            };
+        }
+
+        function truncateHistoryText(value, label) {
+            const text = String(value || '');
+            if (text.length <= MAX_REQUEST_HISTORY_RESPONSE_CHARS) return text;
+
+            return `${text.slice(0, MAX_REQUEST_HISTORY_RESPONSE_CHARS)}\n\n[${label} truncated for request history. Open Inspector immediately after running the request to inspect the full response.]`;
+        }
+
+        function normalizeRequestHistoryResponse(responseDetails) {
+            const response = { ...responseDetails };
+            response.body = truncateHistoryText(response.body, 'Raw response');
+            response.displayBody = truncateHistoryText(response.displayBody || response.body, 'Displayed response');
+            response.truncated = String(responseDetails.body || '').length > MAX_REQUEST_HISTORY_RESPONSE_CHARS
+                || String(responseDetails.displayBody || '').length > MAX_REQUEST_HISTORY_RESPONSE_CHARS;
+
+            if (response.displayBody === response.body) {
+                delete response.displayBody;
+            }
+
+            return response;
+        }
+
+        function cacheRequestHistory(requestDetails, responseDetails) {
+            const entry = buildRequestHistoryEntry(requestDetails, responseDetails);
+            if (JSON.stringify(entry).length > MAX_REQUEST_HISTORY_ENTRY_CHARS) {
+                entry.response.body = '[Response omitted because it is too large for request history.]';
+                delete entry.response.displayBody;
+                entry.response.truncated = true;
+            }
+
+            const history = loadRequestHistory().filter((existing) => {
+                return existing.request?.method !== entry.request.method
+                    || existing.request?.url !== entry.request.url
+                    || existing.request?.body !== entry.request.body
+                    || existing.response?.body !== entry.response.body;
+            });
+            history.unshift(entry);
+            saveRequestHistory(pruneRequestHistory(history));
+            renderRequestHistoryOptions(entry.id);
+        }
+
+        function restoreRequestHistoryEntry() {
+            if (!requestHistorySelect || requestHistorySelect.value === '') return;
+            const entry = loadRequestHistory().find((item) => item.id === requestHistorySelect.value);
+            if (!entry) return;
+
+            const request = entry.request || {};
+            const response = entry.response || {};
+
+            methodSelect.value = request.method || 'GET';
+            urlInput.value = request.url || request.finalUrl || '';
+            bodyInput.value = request.body || '';
+            reqNameInput.value = request.name || '';
+            if (reqFolderSelect) reqFolderSelect.value = request.folder || '';
+            stringToHeadersTable(request.headers || '');
+            applyAuthSnapshot(request.auth || {});
+            if (request.activeVariableSet && requestVariables.sets.some((set) => set.name === request.activeVariableSet)) {
+                requestVariables.active_set = request.activeVariableSet;
+                updateRequestVariablesButtonLabel();
+            }
+            parseUrlToParams();
+            applyPathValuesSnapshot(request.pathValues || {});
+
+            responseHeaders.innerText = response.headers || '(no headers)';
+            responseBody.innerText = response.displayBody || response.body || '';
+            resStatus.innerText = response.status ? `Status: ${response.status}` : 'Status: -';
+            resStatus.className = response.statusClass || 'status-badge';
+            resTime.innerText = response.duration_ms ? `Time: ${response.duration_ms} ms` : 'Time: - ms';
+            resSize.innerText = response.size_kb ? `Size: ${response.size_kb} KB` : 'Size: -';
+            latestCurlCommand = response.curl || '';
+            latestResponseBody = response.body || response.displayBody || '';
+            latestResponseHeaders = response.headers || '';
+            latestResponseMeta = response.meta || null;
+            if (viewCurlBtn) viewCurlBtn.disabled = !latestCurlCommand;
+            if (openInspectorBtn) openInspectorBtn.disabled = !latestResponseBody;
+        }
+
+        loadRequestHistoryFromServer();
+
+        if (requestHistorySelect) {
+            requestHistorySelect.addEventListener('input', restoreRequestHistoryEntry);
+            requestHistorySelect.addEventListener('change', restoreRequestHistoryEntry);
+        }
+
+        if (deleteRequestHistoryBtn) {
+            deleteRequestHistoryBtn.addEventListener('click', () => {
+                if (!requestHistorySelect || requestHistorySelect.value === '') return;
+                if (!window.confirm('Delete the selected request history entry?')) return;
+
+                const nextHistory = loadRequestHistory().filter((entry) => entry.id !== requestHistorySelect.value);
+                saveRequestHistory(nextHistory);
+                renderRequestHistoryOptions();
+            });
+        }
+
+        if (clearRequestHistoryBtn) {
+            clearRequestHistoryBtn.addEventListener('click', () => {
+                if (!window.confirm('Clear all cached request history?')) return;
+
+                saveRequestHistory([]);
+                renderRequestHistoryOptions();
+            });
         }
 
         if (savedRequestSearch) {
@@ -1051,6 +1343,19 @@
         });
 
         savedList.addEventListener('click', (e) => {
+            const renameButton = e.target.closest('.rename-saved-request-btn');
+            if (renameButton) {
+                e.preventDefault();
+                const form = renameButton.closest('form');
+                const currentName = form?.querySelector('input[name="name"]')?.value || '';
+                const nextName = window.prompt('Rename saved request', currentName);
+                if (!nextName || nextName.trim() === '' || nextName.trim() === currentName) return;
+
+                form.querySelector('input[name="new_name"]').value = nextName.trim();
+                form.submit();
+                return;
+            }
+
             const folder = e.target.closest('.saved-req-folder');
             if (folder) {
                 const folderKey = folder.dataset.folder || '';
@@ -1104,7 +1409,8 @@
             try { bodyInput.value = JSON.stringify(JSON.parse(bodyInput.value), null, 4); } catch(e) { alert('Invalid JSON'); }
         });
 
-        sendBtn.addEventListener('click', async () => {
+        async function sendRequest() {
+            if (sendBtn.disabled) return;
             responseBody.innerText = 'Loading...';
             responseHeaders.innerText = 'Loading headers...';
             resStatus.innerText = 'Status: -';
@@ -1162,6 +1468,7 @@
             
             latestCurlCommand = curlCmd;
             if (viewCurlBtn) viewCurlBtn.disabled = false;
+            const requestHistoryDetails = { finalUrl };
 
             try {
                 const resp = await fetch('/requests/run', {
@@ -1205,6 +1512,17 @@
 
                 if (run.curl_exit !== 0) {
                     responseBody.innerText = (run.stderr || 'Request failed').trim();
+                    cacheRequestHistory(requestHistoryDetails, {
+                        status: statusCode || 0,
+                        statusClass: resStatus.className,
+                        duration_ms: duration,
+                        size_kb: (responseBody.innerText.length / 1024).toFixed(2),
+                        headers: latestResponseHeaders,
+                        body: bodyText,
+                        displayBody: responseBody.innerText,
+                        curl: latestCurlCommand,
+                        meta: latestResponseMeta,
+                    });
                     return;
                 }
 
@@ -1214,6 +1532,18 @@
                 } catch(e) {
                     responseBody.innerText = bodyText;
                 }
+
+                cacheRequestHistory(requestHistoryDetails, {
+                    status: statusCode || 0,
+                    statusClass: resStatus.className,
+                    duration_ms: duration,
+                    size_kb: (bodyText.length / 1024).toFixed(2),
+                    headers: latestResponseHeaders,
+                    body: bodyText,
+                    displayBody: responseBody.innerText,
+                    curl: latestCurlCommand,
+                    meta: latestResponseMeta,
+                });
                 
             } catch (err) {
                 responseHeaders.innerText = '';
@@ -1225,11 +1555,38 @@
                     resStatus.innerText = 'Error';
                 }
                 resStatus.className = 'status-badge error';
+                cacheRequestHistory(requestHistoryDetails, {
+                    status: 0,
+                    statusClass: resStatus.className,
+                    duration_ms: Math.round(performance.now() - startTime),
+                    size_kb: (responseBody.innerText.length / 1024).toFixed(2),
+                    headers: '',
+                    body: responseBody.innerText,
+                    displayBody: responseBody.innerText,
+                    curl: latestCurlCommand,
+                    meta: {
+                        method: methodSelect.value,
+                        url: finalUrl,
+                        status: 0,
+                        duration_ms: Math.round(performance.now() - startTime),
+                        size_kb: (responseBody.innerText.length / 1024).toFixed(2),
+                    },
+                });
             } finally {
                 cancelBtn.disabled = true;
                 currentRequestId = null;
                 currentAbortController = null;
             }
+        }
+
+        sendBtn.addEventListener('click', sendRequest);
+
+        document.addEventListener('keydown', (event) => {
+            if (!(event.metaKey || event.ctrlKey) || event.key !== 'Enter') return;
+            if (event.target.closest('dialog[open]')) return;
+
+            event.preventDefault();
+            sendRequest();
         });
 
         cancelBtn.addEventListener('click', async () => {

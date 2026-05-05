@@ -16,8 +16,13 @@ const mainContent = document.getElementById('main');
       const createQueryFolderBtn = document.getElementById('create-query-folder-btn');
       const createQueryFolderForm = document.getElementById('create-query-folder-form');
       const newQueryFolderName = document.getElementById('new-query-folder-name');
+      const importQueryBtn = document.getElementById('import-query-btn');
+      const importQueryFile = document.getElementById('import-query-file');
+      const importQueryForm = document.getElementById('import-query-form');
+      const importQueryPayload = document.getElementById('import-query-payload');
       const variablesSection = document.getElementById('variables-section');
       const variableHelpBtn = document.getElementById('variable-help-btn');
+      const sqlDisconnectBtn = document.getElementById('sql-disconnect-btn');
       const autocompleteList = document.getElementById('autocomplete-list');
       const saveSqlFileBtn = document.getElementById('save-sql-file-btn');
       let currentFocus = -1;
@@ -27,14 +32,23 @@ const mainContent = document.getElementById('main');
       const connectionNickname = document.querySelector("input[name=connection]")?.value || "";
       const varsStorageKey = "sql_vars_" + connectionNickname;
 
+      function openUntitledSqlFile() {
+          editor.value = '';
+          queryNameInput.value = '';
+          if (queryFolderInput) {
+              queryFolderInput.value = '';
+          }
+          scanForVariables();
+          handleInput();
+          editor.focus();
+      }
+
       // --- Clear Button Logic ---
       const clearBtn = document.getElementById('clear-editor-btn');
       if (clearBtn) {
           clearBtn.addEventListener('click', () => {
-              if(editor.value.trim() === '') return;
-              editor.value = '';
-              handleInput();
-              editor.focus();
+              if (editor.value.trim() === '' && queryNameInput.value.trim() === '') return;
+              openUntitledSqlFile();
           });
       }
 
@@ -254,6 +268,18 @@ WHERE customer_id = {{customer_id}}
       if (variableHelpBtn) {
           variableHelpBtn.addEventListener('click', openVariableHelpDialog);
       }
+
+      if (sqlDisconnectBtn) {
+          sqlDisconnectBtn.addEventListener('click', async () => {
+              try {
+                  await fetch('/sql/disconnect', { method: 'POST' });
+              } catch (error) {
+                  console.error('Failed to disconnect SQL connection', error);
+              }
+
+              window.location.href = '/sql';
+          });
+      }
       
       const outputResizer = document.getElementById('output-resizer');
       const outputPane = document.getElementById('output');
@@ -438,14 +464,31 @@ WHERE customer_id = {{customer_id}}
 
       if (newSqlFileBtn) {
           newSqlFileBtn.addEventListener('click', () => {
-              editor.value = '';
-              queryNameInput.value = '';
-              if (queryFolderInput) {
-                  queryFolderInput.value = '';
+              openUntitledSqlFile();
+          });
+      }
+
+      if (importQueryBtn && importQueryFile && importQueryForm && importQueryPayload) {
+          importQueryBtn.addEventListener('click', () => {
+              importQueryFile.value = '';
+              importQueryFile.click();
+          });
+
+          importQueryFile.addEventListener('change', async () => {
+              const file = importQueryFile.files && importQueryFile.files[0];
+              if (!file) return;
+
+              try {
+                  const payload = await file.text();
+                  JSON.parse(payload);
+                  if (!window.confirm('Import saved queries into this connection? Duplicate names will be renamed.')) {
+                      return;
+                  }
+                  importQueryPayload.value = payload;
+                  importQueryForm.submit();
+              } catch (error) {
+                  window.alert('That file does not look like valid JSON.');
               }
-              scanForVariables();
-              handleInput();
-              editor.focus();
           });
       }
 
@@ -455,10 +498,13 @@ WHERE customer_id = {{customer_id}}
       const outputHistorySelect = document.getElementById('output-history-select');
       const deleteOutputHistoryBtn = document.getElementById('delete-output-history-btn');
       const clearOutputHistoryBtn = document.getElementById('clear-output-history-btn');
+      const sqlJobsSelect = document.getElementById('sql-jobs-select');
       const outputHistoryStorageKey = "sql_output_history_" + connectionNickname;
       const maxOutputHistoryEntries = 8;
       const maxOutputHistoryEntryChars = 500000;
       const maxOutputHistoryTotalChars = 1500000;
+      let activeSqlJobId = '';
+      let sqlJobPollTimer = null;
 
       function loadOutputHistory() {
           try {
@@ -563,6 +609,94 @@ WHERE customer_id = {{customer_id}}
           renderOutputHistoryOptions(entry.id);
       }
 
+      function sqlJobLabel(job) {
+          const status = job.status === 'running' ? 'Running' : 'Done';
+          const date = job.completed_at || job.created_at || '';
+          const name = (job.query_name || job.sql || 'SQL job').replace(/\s+/g, ' ').trim().slice(0, 58);
+          const rows = job.row_count_text ? ` - ${job.row_count_text}` : '';
+          return `${status} - ${date} - ${name}${rows}`;
+      }
+
+      function renderSqlJobs(jobs = [], selectedId = '') {
+          if (!sqlJobsSelect) return;
+          const nextSelectedId = selectedId || sqlJobsSelect.value;
+          sqlJobsSelect.innerHTML = '<option value="">Running queries</option>';
+          jobs.forEach((job) => {
+              const option = document.createElement('option');
+              option.value = job.id;
+              option.dataset.status = job.status;
+              option.textContent = sqlJobLabel(job);
+              sqlJobsSelect.appendChild(option);
+          });
+          if (nextSelectedId && jobs.some((job) => job.id === nextSelectedId)) {
+              sqlJobsSelect.value = nextSelectedId;
+          }
+      }
+
+      async function refreshSqlJobs(selectedId = '') {
+          if (!sqlJobsSelect || !connectionNickname) return [];
+          try {
+              const resp = await fetch(`/sql/jobs/${encodeURIComponent(connectionNickname)}`);
+              if (!resp.ok) throw new Error(await resp.text());
+              const jobs = await resp.json();
+              renderSqlJobs(jobs, selectedId);
+              return jobs;
+          } catch (err) {
+              console.error('Failed to load SQL jobs', err);
+              return [];
+          }
+      }
+
+      async function applyCompletedSqlJob(job) {
+          if (!job || job.status !== 'completed' || !job.html) return;
+          applyOutputHtml(job.html, job.row_count_text || '');
+          editor.value = job.sql || editor.value;
+          queryNameInput.value = job.query_name || '';
+          if (queryFolderInput) queryFolderInput.value = job.query_folder || '';
+          scanForVariables();
+          handleInput();
+          cacheOutputHistory(job.html, job.sql || editor.value);
+          await fetch(`/sql/job/${encodeURIComponent(job.id)}/activate`, { method: 'POST' }).catch(() => {});
+      }
+
+      async function fetchSqlJob(jobId) {
+          const resp = await fetch(`/sql/job/${encodeURIComponent(jobId)}`);
+          if (!resp.ok) throw new Error(await resp.text());
+          return resp.json();
+      }
+
+      function stopSqlJobPolling() {
+          if (sqlJobPollTimer) {
+              window.clearTimeout(sqlJobPollTimer);
+              sqlJobPollTimer = null;
+          }
+      }
+
+      function pollSqlJob(jobId) {
+          stopSqlJobPolling();
+          activeSqlJobId = jobId;
+          const tick = async () => {
+              try {
+                  const job = await fetchSqlJob(jobId);
+                  await refreshSqlJobs(jobId);
+                  if (job.status === 'completed') {
+                      output.innerHTML = '<pre style="padding:10px;">Query completed. Loading output...</pre>';
+                      await applyCompletedSqlJob(job);
+                      activeSqlJobId = '';
+                      stopSqlJobPolling();
+                      return;
+                  }
+                  output.innerHTML = `<pre style="padding:10px;">Query is still running in the background...\nStarted: ${job.created_at || ''}</pre>`;
+                  sqlJobPollTimer = window.setTimeout(tick, 1500);
+              } catch (err) {
+                  output.innerHTML = '<pre style="padding:10px; color:#ff6b6b;">Job status error: ' + err.message + '</pre>';
+                  activeSqlJobId = '';
+                  stopSqlJobPolling();
+              }
+          };
+          tick();
+      }
+
       function getSelectedOutputHistoryEntry(id = '') {
           const selectedId = id || outputHistorySelect?.value || '';
           if (selectedId === '') return null;
@@ -610,10 +744,27 @@ WHERE customer_id = {{customer_id}}
               renderOutputHistoryOptions();
           });
       }
+
+      refreshSqlJobs();
+      if (sqlJobsSelect) {
+          sqlJobsSelect.addEventListener('change', async () => {
+              if (!sqlJobsSelect.value) return;
+              try {
+                  const job = await fetchSqlJob(sqlJobsSelect.value);
+                  if (job.status === 'completed') {
+                      await applyCompletedSqlJob(job);
+                  } else {
+                      pollSqlJob(job.id);
+                  }
+              } catch (err) {
+                  output.innerHTML = '<pre style="padding:10px; color:#ff6b6b;">Job load error: ' + err.message + '</pre>';
+              }
+          });
+      }
       
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
-        output.innerHTML = '<pre style="padding:10px;">Loading...</pre>';
+        output.innerHTML = '<pre style="padding:10px;">Starting background query...</pre>';
         
         const variables = {};
         const varInputs = variablesSection.querySelectorAll('input');
@@ -630,14 +781,15 @@ WHERE customer_id = {{customer_id}}
         };
 
         try {
-            const resp = await fetch('/sql/run', { 
+            const resp = await fetch('/sql/run-background', {
                 method: 'POST', 
                 headers: { 'Content-Type': 'application/json' }, 
                 body: JSON.stringify(payload) 
             });
-            const html = await resp.text();
-            applyOutputHtml(html);
-            cacheOutputHistory(html, payload.sql);
+            if (!resp.ok) throw new Error(await resp.text());
+            const result = await resp.json();
+            await refreshSqlJobs(result.job_id);
+            pollSqlJob(result.job_id);
 
             // AUTO-REFRESH SCHEMA on DDL
             const upperSql = payload.sql.toUpperCase();
@@ -650,6 +802,17 @@ WHERE customer_id = {{customer_id}}
         } catch(e) {
             output.innerHTML = '<pre style="padding:10px; color:#ff6b6b;">Error: ' + e.message + '</pre>';
         }
+      });
+
+      document.addEventListener('keydown', (event) => {
+          if (!(event.metaKey || event.ctrlKey) || event.key !== 'Enter') return;
+          event.preventDefault();
+
+          if (typeof form.requestSubmit === 'function') {
+              form.requestSubmit();
+          } else {
+              form.dispatchEvent(new Event('submit', { cancelable: true }));
+          }
       });
       
       // Client-Side Export Logic
@@ -723,9 +886,6 @@ WHERE customer_id = {{customer_id}}
           if(countSpan) countSpan.innerText = visibleCount + " rows";
       });
 
-      let isSelecting = false;
-      let selectionMode = true;
-
       function updateSelectionCount() {
           const selected = document.querySelectorAll('.output tr.selected-row').length;
           const btn = document.getElementById('clear-selection-btn');
@@ -770,34 +930,15 @@ WHERE customer_id = {{customer_id}}
             row.dataset.originalIndex = i;
         });
 
-        tbody.addEventListener('mousedown', (e) => {
+        tbody.addEventListener('click', (e) => {
             const tr = e.target.closest('tr');
-            if (tr) {
-                isSelecting = true;
-                selectionMode = !tr.classList.contains('selected-row');
-                tr.classList.toggle('selected-row', selectionMode);
-                updateSelectionCount();
-                e.preventDefault(); // Prevent text selection while dragging
-            }
-        });
+            if (!tr) return;
+            if (e.target.closest('button, input, textarea, select, a')) return;
+            if (window.getSelection && window.getSelection().toString().trim() !== '') return;
 
-        tbody.addEventListener('mouseover', (e) => {
-            if (isSelecting) {
-                const tr = e.target.closest('tr');
-                if (tr) {
-                    tr.classList.toggle('selected-row', selectionMode);
-                    updateSelectionCount();
-                }
-            }
+            tr.classList.toggle('selected-row');
+            updateSelectionCount();
         });
-
-        // Global mouseup to stop selection even if released outside table
-        if (!window._selectionHandlerBound) {
-            window.addEventListener('mouseup', () => {
-                isSelecting = false;
-            });
-            window._selectionHandlerBound = true;
-        }
 
         let currentSortCol = -1;
         let currentSortDir = 'none'; 
@@ -891,6 +1032,19 @@ WHERE customer_id = {{customer_id}}
       }
 
       savedQueriesList.addEventListener('click', (e) => {
+          const renameButton = e.target.closest('.rename-saved-query-btn');
+          if (renameButton) {
+              e.preventDefault();
+              const form = renameButton.closest('form');
+              const currentName = form?.querySelector('input[name="query_name"]')?.value || '';
+              const nextName = window.prompt('Rename saved query', currentName);
+              if (!nextName || nextName.trim() === '' || nextName.trim() === currentName) return;
+
+              form.querySelector('input[name="new_query_name"]').value = nextName.trim();
+              form.submit();
+              return;
+          }
+
           const target = e.target.closest('a');
           if (target) { 
               e.preventDefault(); 

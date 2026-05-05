@@ -24,7 +24,6 @@ struct BasePageTemplate<'a> {
     current_theme: &'a Theme,
     saved_theme_options: Vec<ThemeNameOption>,
     font_options: Vec<FontOption>,
-    show_add_shortcut_button: bool,
     include_add_shortcut_modal: bool,
 }
 
@@ -46,6 +45,7 @@ fn render_theme_variables(theme: &Theme) -> String {
     --font-size-medium: {}px;
     --font-size-large: {}px;
     --element-margin: {}px;
+    --nav-height: {}px;
     --base-font-size: {}px;
     --base-font-family: {};
 }}
@@ -64,6 +64,7 @@ fn render_theme_variables(theme: &Theme) -> String {
         theme.font_size_medium,
         theme.font_size_large,
         theme.element_margin,
+        theme.nav_height,
         theme.font_size_medium,
         theme.font_family
     )
@@ -103,7 +104,6 @@ pub fn render_base_page(
         current_theme,
         saved_themes,
         false,
-        false,
     )
 }
 
@@ -112,7 +112,6 @@ pub fn render_base_page_with_options(
     body_content: &str,
     current_theme: &Theme,
     saved_themes: &HashMap<String, Theme>,
-    show_add_shortcut_button: bool,
     include_add_shortcut_modal: bool,
 ) -> String {
     let mut saved_theme_options = saved_themes
@@ -131,7 +130,6 @@ pub fn render_base_page_with_options(
         current_theme,
         saved_theme_options,
         font_options: font_options(&current_theme.font_family),
-        show_add_shortcut_button,
         include_add_shortcut_modal,
     }
     .render()

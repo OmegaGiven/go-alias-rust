@@ -95,11 +95,13 @@
             const mediumVal = document.getElementById('font_size_medium').value;
             const largeVal = document.getElementById('font_size_large').value;
             const marginVal = document.getElementById('element_margin').value;
+            const navHeightVal = document.getElementById('nav_height').value;
 
             cssVars += `--font-size-small: ${smallVal}px;`;
             cssVars += `--font-size-medium: ${mediumVal}px;`;
             cssVars += `--font-size-large: ${largeVal}px;`;
             cssVars += `--element-margin: ${marginVal}px;`;
+            cssVars += `--nav-height: ${navHeightVal}px;`;
             cssVars += `--base-font-size: ${mediumVal}px;`;
             cssVars += `--base-font-family: ${fontFamilyInput.value};`;
             cssVars += '}';

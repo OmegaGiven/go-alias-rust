@@ -132,9 +132,11 @@
         white-space: nowrap;
     }
 
-    .saved-req-item { display: flex; align-items: center; justify-content: space-between; padding: 0; min-height: 22px; background-color: transparent; cursor: pointer; transition: background 0.2s; width: 100%; box-sizing: border-box; }
-    .saved-req-link-wrap { display: flex; align-items: center; min-width: 0; flex: 1 1 auto; }
-    .saved-req-item .delete-form { margin: 0; display: flex; align-items: center; flex: 0 0 auto; align-self: center; }
+    .saved-req-item { display: flex; align-items: center; padding: 0; min-height: 22px; background-color: transparent; cursor: pointer; transition: background 0.2s; width: 100%; box-sizing: border-box; }
+    .saved-req-link-wrap { display: flex; align-items: center; min-width: 0; flex: 1 1 auto; overflow: hidden; }
+    .saved-req-item .delete-form,
+    .saved-req-item .rename-form { margin: 0; display: flex; align-items: center; flex: 0 0 auto; align-self: center; }
+    .saved-req-item .rename-form { margin-left: auto; }
     .saved-req-item .btn-danger-text { width: 18px; height: 18px; min-height: 18px; min-width: 18px; font-size: var(--font-size-small); line-height: 1; padding: 0; margin: 0; display: inline-flex; align-items: center; justify-content: center; transform: translateY(-1px); }
     .saved-req-item:hover { background-color: var(--tertiary-bg); }
     .saved-req-item.selected { background-color: var(--tertiary-bg); border-left: 3px solid var(--link-color); }
@@ -584,6 +586,18 @@
     .response-header h3 { margin: 0 !important; }
     .response-meta { display: flex; gap: 6px; font-size: var(--font-size-small); color: #aaa; flex-shrink: 0; margin: 0; }
     .response-actions { display: flex; align-items: center; justify-content: flex-start; gap: 2px; flex-wrap: wrap; }
+    .request-history-select {
+        height: 30px;
+        max-width: min(340px, 42vw);
+        min-width: 150px;
+        margin: 0 !important;
+        padding: 0 6px;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        background: var(--primary-bg);
+        color: var(--text-color);
+        font-size: var(--font-size-small);
+    }
     .response-actions .btn-small,
     .response-actions button {
         margin: 0 !important;

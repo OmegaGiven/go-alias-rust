@@ -26,7 +26,7 @@ pub struct AddConnForm {
     pub nickname: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct SqlForm {
     pub sql: String,
     pub connection: String,

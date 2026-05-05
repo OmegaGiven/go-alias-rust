@@ -19,31 +19,27 @@ fn render_inspector_page(current_theme: &Theme, saved_themes: &HashMap<String, T
     <div class="inspector-page">
         <div class="inspector-container">
             <div class="input-section">
-            <div class="toolbar">
-                <div class="form-group file-picker-group">
-                    <label class="control-spacer-label" aria-hidden="true">&nbsp;</label>
-                    <input type="file" id="file-input">
-                </div>
-                
-                <div class="toolbar-spacer"></div>
-
-                <div class="form-group action-group toolbar-secondary-wrap">
-                    <label class="control-spacer-label" aria-hidden="true">&nbsp;</label>
-                    <div class="toolbar-secondary-controls">
-                        <div id="type-indicator" class="indicator">Text</div>
-
-                        <div class="checkbox-group">
-                            <input type="checkbox" id="wrap-toggle" onchange="toggleWrap()">
-                            <label for="wrap-toggle" style="font-weight: normal; cursor: pointer;">Word Wrap</label>
-                        </div>
-
-                        <button id="prettify-btn" class="toolbar-action-btn" onclick="prettifyContent()" disabled>Prettify</button>
-                    </div>
+            <div class="inspector-toolbar">
+                <label class="inspector-file-btn" for="file-input">Open File</label>
+                <input type="file" id="file-input">
+                <div id="type-indicator" class="indicator">Text</div>
+                <label class="inspector-wrap-toggle" for="wrap-toggle">
+                    <input type="checkbox" id="wrap-toggle" onchange="toggleWrap()">
+                    <span>Wrap</span>
+                </label>
+                <button id="prettify-btn" class="toolbar-action-btn" onclick="prettifyContent()" disabled>Prettify</button>
+                <div class="inspector-location-strip">
+                    <label for="line-num">Line</label>
+                    <input type="number" id="line-num" min="1" value="1" placeholder="50">
+                    <label for="col-num">Column</label>
+                    <input type="number" id="col-num" min="1" value="1" placeholder="12">
+                    <button class="control-action-btn" onclick="inspectLocation()">Inspect Location</button>
                 </div>
             </div>
             <div id="inspector-source-meta" class="inspector-source-meta" hidden></div>
             
             <textarea id="content-input" placeholder="Paste JSON, XML, or Text content here..." oninput="detectContent()"></textarea>
+            <div id="inspector-input-resizer" class="inspector-splitter inspector-horizontal-splitter" title="Drag to resize source input"></div>
 
             <section id="json-tools" class="json-tools" hidden>
                 <div class="json-tools-header">
@@ -73,6 +69,7 @@ fn render_inspector_page(current_theme: &Theme, saved_themes: &HashMap<String, T
                     </div>
                     <div class="json-tree-layout">
                         <div id="json-tree-view" class="json-tree-view"></div>
+                        <div id="json-detail-resizer" class="inspector-splitter inspector-vertical-splitter" title="Drag to resize selected node details"></div>
                         <aside class="json-node-details">
                             <h3>Selected Node</h3>
                             <dl>
@@ -100,21 +97,6 @@ fn render_inspector_page(current_theme: &Theme, saved_themes: &HashMap<String, T
                     <div id="json-table-view" class="json-table-view"></div>
                 </div>
             </section>
-            
-            <div class="control-row">
-                <div class="form-group">
-                    <label>Line Number</label>
-                    <input type="number" id="line-num" min="1" value="1" placeholder="e.g. 50">
-                </div>
-                <div class="form-group">
-                    <label>Column Number</label>
-                    <input type="number" id="col-num" min="1" value="1" placeholder="e.g. 12">
-                </div>
-                <div class="form-group action-group control-button-wrap">
-                    <label class="control-spacer-label" aria-hidden="true">&nbsp;</label>
-                    <button class="control-action-btn" onclick="inspectLocation()">Inspect Location</button>
-                </div>
-            </div>
         </div>
         
             <div id="result-section" class="result-section">

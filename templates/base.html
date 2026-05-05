@@ -16,11 +16,6 @@
         <a href="/inspector" class="nav-link-item">Inspector</a>
       </div>
       <div class="nav-right">
-        <div id="optional-button-placeholder">
-          {% if show_add_shortcut_button %}
-          <button class="nav-link-item" id="addShortcutBtn" data-add-shortcut-trigger>+ Add Shortcut</button>
-          {% endif %}
-        </div>
         <div class="tools-dropdown">
           <button class="nav-link-item tools-menu-button" title="Tools" aria-label="Tools">&#9776;</button>
           <div class="tools-dropdown-menu">
@@ -202,6 +197,10 @@
               <div class="appearance-control-row">
                 <label for="element_margin">Margin:</label>
                 <input type="number" id="element_margin" name="element_margin" min="0" max="80" value="{{ current_theme.element_margin }}" style="width: 70px;">
+              </div>
+              <div class="appearance-control-row">
+                <label for="nav_height">Nav Height:</label>
+                <input type="number" id="nav_height" name="nav_height" min="22" max="80" value="{{ current_theme.nav_height }}" style="width: 70px;">
               </div>
             </div>
             <div id="custom-color-controls" class="settings-section custom-color-controls" style="display: flex; flex-direction: column; gap: 15px;">

@@ -12,6 +12,7 @@ use std::{
 };
 
 use crate::app_state::AppState;
+use crate::app_db;
 
 // File constants
 static SHORTCUTS_FILE: &str = "shortcuts.json";
@@ -63,18 +64,30 @@ pub async fn add_shortcut(
 
     match scope {
         "hidden_global" => {
-            let mut hidden_shortcuts = state.hidden_shortcuts.lock().unwrap();
-            hidden_shortcuts.insert(shortcut.to_string(), url.to_string());
+            let hidden_shortcuts = {
+                let mut hidden_shortcuts = state.hidden_shortcuts.lock().unwrap();
+                hidden_shortcuts.insert(shortcut.to_string(), url.to_string());
+                hidden_shortcuts.clone()
+            };
 
+            if let Err(e) = app_db::put_json("shortcuts", "hidden", &hidden_shortcuts).await {
+                eprintln!("Failed to save hidden shortcuts to app database: {}", e);
+            }
             if let Err(e) = save_shortcuts(HIDDEN_SHORTCUTS_FILE, &hidden_shortcuts) {
                 eprintln!("Failed to save hidden shortcuts: {}", e);
                 return HttpResponse::InternalServerError().body("Failed to save hidden shortcut.");
             }
         }
         "global" => {
-            let mut shortcuts = state.shortcuts.lock().unwrap();
-            shortcuts.insert(shortcut.to_string(), url.to_string());
+            let shortcuts = {
+                let mut shortcuts = state.shortcuts.lock().unwrap();
+                shortcuts.insert(shortcut.to_string(), url.to_string());
+                shortcuts.clone()
+            };
 
+            if let Err(e) = app_db::put_json("shortcuts", "visible", &shortcuts).await {
+                eprintln!("Failed to save shortcuts to app database: {}", e);
+            }
             if let Err(e) = save_shortcuts(SHORTCUTS_FILE, &shortcuts) {
                 eprintln!("Failed to save shortcuts: {}", e);
                 return HttpResponse::InternalServerError().body("Failed to save shortcut.");
@@ -111,32 +124,53 @@ pub async fn delete_shortcut(
     // to ensure proper file persistence logic is isolated.
 
     // 1. Check and delete from work shortcuts
-    {
+    if let Some(work_shortcuts) = {
         let mut work_shortcuts = state.work_shortcuts.lock().unwrap();
         if work_shortcuts.remove(key).is_some() {
-            if let Err(e) = save_shortcuts(WORK_SHORTCUTS_FILE, &work_shortcuts) {
-                eprintln!("Failed to save work shortcuts after deletion: {}", e);
-            }
+            Some(work_shortcuts.clone())
+        } else {
+            None
+        }
+    } {
+        if let Err(e) = app_db::put_json("shortcuts", "work", &work_shortcuts).await {
+            eprintln!("Failed to save work shortcuts to app database: {}", e);
+        }
+        if let Err(e) = save_shortcuts(WORK_SHORTCUTS_FILE, &work_shortcuts) {
+            eprintln!("Failed to save work shortcuts after deletion: {}", e);
         }
     }
     
     // 2. Check and delete from hidden shortcuts
-    {
+    if let Some(hidden_shortcuts) = {
         let mut hidden_shortcuts = state.hidden_shortcuts.lock().unwrap();
         if hidden_shortcuts.remove(key).is_some() {
-            if let Err(e) = save_shortcuts(HIDDEN_SHORTCUTS_FILE, &hidden_shortcuts) {
-                eprintln!("Failed to save hidden shortcuts after deletion: {}", e);
-            }
+            Some(hidden_shortcuts.clone())
+        } else {
+            None
+        }
+    } {
+        if let Err(e) = app_db::put_json("shortcuts", "hidden", &hidden_shortcuts).await {
+            eprintln!("Failed to save hidden shortcuts to app database: {}", e);
+        }
+        if let Err(e) = save_shortcuts(HIDDEN_SHORTCUTS_FILE, &hidden_shortcuts) {
+            eprintln!("Failed to save hidden shortcuts after deletion: {}", e);
         }
     }
     
     // 3. Check and delete from visible shortcuts
-    {
+    if let Some(shortcuts) = {
         let mut shortcuts = state.shortcuts.lock().unwrap();
         if shortcuts.remove(key).is_some() {
-            if let Err(e) = save_shortcuts(SHORTCUTS_FILE, &shortcuts) {
-                eprintln!("Failed to save visible shortcuts after deletion: {}", e);
-            }
+            Some(shortcuts.clone())
+        } else {
+            None
+        }
+    } {
+        if let Err(e) = app_db::put_json("shortcuts", "visible", &shortcuts).await {
+            eprintln!("Failed to save visible shortcuts to app database: {}", e);
+        }
+        if let Err(e) = save_shortcuts(SHORTCUTS_FILE, &shortcuts) {
+            eprintln!("Failed to save visible shortcuts after deletion: {}", e);
         }
     }
 

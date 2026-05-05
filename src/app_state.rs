@@ -20,6 +20,10 @@ pub fn default_element_margin() -> u32 {
     10
 }
 
+pub fn default_nav_height() -> u32 {
+    30
+}
+
 // Define the structure for a theme, which consists of CSS color variables
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Theme {
@@ -41,6 +45,8 @@ pub struct Theme {
     pub font_size_large: u32,
     #[serde(default = "default_element_margin")]
     pub element_margin: u32,
+    #[serde(default = "default_nav_height")]
+    pub nav_height: u32,
     #[serde(default = "default_font_family")]
     pub font_family: String,
 }
@@ -57,8 +63,26 @@ pub struct AppState {
     // SQL service state
     pub connections: Mutex<Option<Vec<DbConnection>>>,
     pub last_results: Mutex<Vec<HashMap<String, String>>>,
+    pub sql_jobs: Mutex<HashMap<String, SqlJob>>,
 
     // SQL Connection Pooling
     pub sqlite_pools: Mutex<HashMap<String, sqlx::SqlitePool>>,
     pub pg_pools: Mutex<HashMap<String, sqlx::PgPool>>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct SqlJob {
+    pub id: String,
+    pub connection: String,
+    pub sql: String,
+    pub query_name: String,
+    pub query_folder: String,
+    pub status: String,
+    pub created_at: String,
+    pub completed_at: Option<String>,
+    pub html: Option<String>,
+    pub row_count_text: Option<String>,
+    pub error: Option<String>,
+    #[serde(skip)]
+    pub results: Vec<HashMap<String, String>>,
 }

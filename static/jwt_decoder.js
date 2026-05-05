@@ -25,6 +25,88 @@
                 return JSON.stringify(value, null, 2);
             }
 
+            function isDateLikeKey(key) {
+                const normalized = String(key || '').toLowerCase();
+                return normalized === 'exp' ||
+                    normalized === 'iat' ||
+                    normalized === 'nbf' ||
+                    normalized === 'expires' ||
+                    normalized === 'expiration' ||
+                    normalized === 'expires_at' ||
+                    normalized === 'expiresat' ||
+                    normalized === 'issued_at' ||
+                    normalized === 'issuedat' ||
+                    normalized === 'not_before' ||
+                    normalized === 'notbefore' ||
+                    normalized === 'created_at' ||
+                    normalized === 'createdat' ||
+                    normalized === 'updated_at' ||
+                    normalized === 'updatedat' ||
+                    normalized === 'deleted_at' ||
+                    normalized === 'deletedat' ||
+                    normalized === 'date' ||
+                    normalized.endsWith('_date') ||
+                    normalized.endsWith('date') ||
+                    normalized.endsWith('_at') ||
+                    normalized.endsWith('at') ||
+                    normalized.endsWith('_timestamp') ||
+                    normalized.endsWith('timestamp');
+            }
+
+            function parseDateLikeValue(value) {
+                if (typeof value === 'number' && Number.isFinite(value)) {
+                    const milliseconds = value > 100000000000 ? value : value * 1000;
+                    const date = new Date(milliseconds);
+                    return Number.isNaN(date.getTime()) ? null : date;
+                }
+
+                if (typeof value === 'string') {
+                    const trimmed = value.trim();
+                    if (!trimmed) return null;
+
+                    if (/^\d+(\.\d+)?$/.test(trimmed)) {
+                        const parsed = Number(trimmed);
+                        if (!Number.isFinite(parsed)) return null;
+                        const milliseconds = parsed > 100000000000 ? parsed : parsed * 1000;
+                        const date = new Date(milliseconds);
+                        return Number.isNaN(date.getTime()) ? null : date;
+                    }
+
+                    const date = new Date(trimmed);
+                    return Number.isNaN(date.getTime()) ? null : date;
+                }
+
+                return null;
+            }
+
+            function dateToReadable(date) {
+                return `${date.toLocaleString()} (${date.toISOString()})`;
+            }
+
+            function addReadableDates(value) {
+                if (Array.isArray(value)) {
+                    return value.map(addReadableDates);
+                }
+
+                if (!value || typeof value !== 'object') {
+                    return value;
+                }
+
+                const next = {};
+                Object.entries(value).forEach(([key, entryValue]) => {
+                    next[key] = addReadableDates(entryValue);
+
+                    if (isDateLikeKey(key)) {
+                        const date = parseDateLikeValue(entryValue);
+                        if (date) {
+                            next[`${key}_readable`] = dateToReadable(date);
+                        }
+                    }
+                });
+
+                return next;
+            }
+
             function decodeBase64Url(str) {
                 const normalized = str.replace(/-/g, '+').replace(/_/g, '/');
                 const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
@@ -61,16 +143,27 @@
             }
 
             function unixToDisplay(value) {
-                if (typeof value !== 'number') return 'N/A';
-                const d = new Date(value * 1000);
-                if (Number.isNaN(d.getTime())) return 'N/A';
-                return `${d.toLocaleString()} (${value})`;
+                const d = parseDateLikeValue(value);
+                if (!d) return 'N/A';
+                return dateToReadable(d);
             }
 
             function renderMeta(payload) {
                 const exp = unixToDisplay(payload.exp);
                 const iat = unixToDisplay(payload.iat);
-                metaEl.innerHTML = `<div class=\"jwt-meta-line\">Expiration: ${exp}</div><div class=\"jwt-meta-line\">Issued At: ${iat}</div>`;
+                const nbf = unixToDisplay(payload.nbf);
+                metaEl.textContent = '';
+
+                [
+                    ['Expiration', exp],
+                    ['Issued At', iat],
+                    ['Not Before', nbf],
+                ].forEach(([label, value]) => {
+                    const line = document.createElement('div');
+                    line.className = 'jwt-meta-line';
+                    line.textContent = `${label}: ${value}`;
+                    metaEl.appendChild(line);
+                });
             }
 
             function decodeAndRender() {
@@ -85,7 +178,7 @@
                 try {
                     const decoded = parseJwt(raw);
                     headerEl.textContent = formatJSON(decoded.header);
-                    payloadEl.textContent = formatJSON(decoded.payload);
+                    payloadEl.textContent = formatJSON(addReadableDates(decoded.payload));
                     signatureEl.textContent = decoded.signature || '(empty signature)';
                     renderMeta(decoded.payload);
                 } catch (err) {
@@ -99,7 +192,7 @@
                 headerEl.textContent = 'Awaiting token...';
                 payloadEl.textContent = 'Awaiting token...';
                 signatureEl.textContent = 'Awaiting token...';
-                metaEl.innerHTML = '<div class="jwt-meta-line">Expiration: N/A</div><div class="jwt-meta-line">Issued At: N/A</div>';
+                renderMeta({});
             }
 
             if (decodeBtn) decodeBtn.addEventListener('click', decodeAndRender);

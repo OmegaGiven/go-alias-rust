@@ -29,17 +29,22 @@
             };
         }
 
+        function normalizePads(value) {
+            if (Array.isArray(value) && value.length > 0) {
+                return value.map((pad, index) => ({
+                    id: pad.id || `${Date.now()}-${index}`,
+                    title: pad.title || `Scratch ${index + 1}`,
+                    text: pad.text || '',
+                    updatedAt: pad.updatedAt || new Date().toISOString(),
+                }));
+            }
+            return [defaultPad()];
+        }
+
         function loadPads() {
             try {
                 const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-                if (Array.isArray(parsed) && parsed.length > 0) {
-                    return parsed.map((pad, index) => ({
-                        id: pad.id || `${Date.now()}-${index}`,
-                        title: pad.title || `Scratch ${index + 1}`,
-                        text: pad.text || '',
-                        updatedAt: pad.updatedAt || new Date().toISOString(),
-                    }));
-                }
+                return normalizePads(parsed);
             } catch (_) {}
             return [defaultPad()];
         }
@@ -47,7 +52,33 @@
         function savePads() {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(pads));
             localStorage.setItem(ACTIVE_KEY, activeId);
+            fetch('/scratchpads', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(pads),
+            }).catch((err) => console.error('Failed to save scratch pads to app database', err));
             setStatus('Saved');
+        }
+
+        async function loadPadsFromServer() {
+            try {
+                const resp = await fetch('/scratchpads');
+                if (!resp.ok) throw new Error(await resp.text());
+                const serverPads = await resp.json();
+                if (!Array.isArray(serverPads) || serverPads.length === 0) {
+                    savePads();
+                    return;
+                }
+
+                pads = normalizePads(serverPads);
+                activeId = localStorage.getItem(ACTIVE_KEY) || pads[0].id;
+                if (!pads.some((pad) => pad.id === activeId)) activeId = pads[0].id;
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(pads));
+                renderActivePad();
+                setStatus('Saved');
+            } catch (err) {
+                console.error('Failed to load scratch pads from app database', err);
+            }
         }
 
         function setStatus(text) {
@@ -228,6 +259,7 @@
         if (!pads.some((pad) => pad.id === activeId)) activeId = pads[0].id;
 
         renderActivePad();
+        loadPadsFromServer();
         bindDrag();
         setStatus('Saved');
 

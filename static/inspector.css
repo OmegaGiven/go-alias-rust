@@ -19,6 +19,9 @@
             width: 100%;
             height: 100%;
             border: none;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
         }
 
         .inspector-page .toolbar {
@@ -51,6 +54,291 @@
             align-items: center;
         }
 
+        .inspector-source-meta {
+            margin: 0;
+            padding: 5px 10px;
+            background: var(--tertiary-bg);
+            border-bottom: 1px solid var(--border-color);
+            color: #aaa;
+            font-size: var(--font-size-small);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .inspector-page #content-input {
+            min-height: 160px;
+            height: 28%;
+            flex: 0 0 auto;
+            border-bottom: 1px solid var(--border-color);
+            font-size: var(--font-size-small);
+        }
+
+        .json-tools {
+            display: flex;
+            flex: 1 1 auto;
+            min-height: 0;
+            flex-direction: column;
+            background: var(--primary-bg);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .json-tools[hidden] {
+            display: none;
+        }
+
+        .json-tools-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            padding: 6px 10px;
+            background: var(--secondary-bg);
+            border-bottom: 1px solid var(--border-color);
+            flex-shrink: 0;
+        }
+
+        .json-tools-header h2 {
+            margin: 0;
+            font-size: var(--font-size-medium);
+        }
+
+        .json-summary-line {
+            color: #aaa;
+            font-size: var(--font-size-small);
+        }
+
+        .json-tools-actions,
+        .json-detail-actions,
+        .json-tree-toolbar,
+        .json-table-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            flex-wrap: wrap;
+        }
+
+        .json-tools button,
+        .json-tool-btn {
+            margin: 0;
+            min-height: 24px;
+            padding: 2px 8px;
+            font-size: var(--font-size-small);
+        }
+
+        .json-tool-btn.active {
+            background: var(--link-color);
+            color: var(--primary-bg);
+        }
+
+        .json-tool-panel {
+            display: none;
+            min-height: 0;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .json-tool-panel-active {
+            display: flex;
+            flex-direction: column;
+        }
+
+        #json-raw-preview,
+        #json-detail-preview {
+            margin: 0;
+            padding: 10px;
+            overflow: auto;
+            white-space: pre-wrap;
+            font-family: monospace;
+            font-size: var(--font-size-small);
+            color: var(--text-color);
+        }
+
+        .json-tree-toolbar,
+        .json-table-toolbar {
+            padding: 5px 8px;
+            background: var(--secondary-bg);
+            border-bottom: 1px solid var(--border-color);
+            flex-shrink: 0;
+        }
+
+        .json-tree-toolbar input {
+            min-width: 220px;
+            padding: 4px 6px;
+            background: var(--primary-bg);
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+            border-radius: 3px;
+            font-size: var(--font-size-small);
+        }
+
+        #json-search-count,
+        #json-table-status {
+            color: #aaa;
+            font-size: var(--font-size-small);
+        }
+
+        .json-tree-layout {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(260px, 32%);
+            min-height: 0;
+            flex: 1;
+        }
+
+        .json-tree-view,
+        .json-node-details,
+        .json-summary-view,
+        .json-table-view {
+            min-height: 0;
+            overflow: auto;
+        }
+
+        .json-tree-view {
+            font-family: monospace;
+            font-size: var(--font-size-small);
+            border-right: 1px solid var(--border-color);
+        }
+
+        .json-node-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            width: 100%;
+            margin: 0;
+            padding-top: 2px;
+            padding-bottom: 2px;
+            border-radius: 0;
+            background: transparent;
+            color: var(--text-color);
+            text-align: left;
+            font-family: monospace;
+        }
+
+        .json-node-row:hover,
+        .json-node-row.selected {
+            background: var(--tertiary-bg);
+        }
+
+        .json-node-search-match {
+            outline: 1px solid var(--accent-color);
+            outline-offset: -1px;
+        }
+
+        .json-node-search-current {
+            background: color-mix(in srgb, var(--link-color) 25%, transparent);
+        }
+
+        .json-node-marker {
+            color: #aaa;
+            width: 12px;
+            flex: 0 0 12px;
+        }
+
+        .json-node-key {
+            color: var(--link-color);
+            font-weight: 600;
+        }
+
+        .json-node-type {
+            color: #aaa;
+        }
+
+        .json-node-preview {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .json-tree-limit,
+        .json-tree-limited-node {
+            padding: 8px 10px;
+            color: #aaa;
+            font-size: var(--font-size-small);
+        }
+
+        .json-node-details {
+            padding: 10px;
+            background: var(--secondary-bg);
+            font-size: var(--font-size-small);
+        }
+
+        .json-node-details h3 {
+            margin: 0 0 8px;
+            font-size: var(--font-size-medium);
+        }
+
+        .json-node-details dl {
+            display: grid;
+            grid-template-columns: 64px minmax(0, 1fr);
+            gap: 4px 8px;
+            margin: 0 0 8px;
+        }
+
+        .json-node-details dt {
+            color: #aaa;
+        }
+
+        .json-node-details dd {
+            margin: 0;
+            overflow-wrap: anywhere;
+        }
+
+        #json-detail-preview {
+            max-height: 180px;
+            border: 1px solid var(--border-color);
+            background: var(--primary-bg);
+            margin-bottom: 8px;
+        }
+
+        .json-summary-view {
+            display: grid;
+            align-content: start;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 8px;
+            padding: 10px;
+        }
+
+        .json-summary-view div {
+            background: var(--secondary-bg);
+            border: 1px solid var(--border-color);
+            padding: 8px;
+            font-size: var(--font-size-small);
+        }
+
+        .json-summary-view span {
+            display: block;
+            color: #aaa;
+            margin-bottom: 3px;
+        }
+
+        .json-table-view {
+            font-size: var(--font-size-small);
+        }
+
+        .json-table-view table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: var(--font-size-small);
+        }
+
+        .json-table-view th,
+        .json-table-view td {
+            padding: 4px 6px;
+            border: 1px solid var(--border-color);
+            text-align: left;
+            max-width: 260px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .json-table-view th {
+            position: sticky;
+            top: 0;
+            background: var(--secondary-bg);
+        }
+
         @media (max-width: 900px) {
             .inspector-page .toolbar {
                 flex-wrap: wrap;
@@ -58,5 +346,13 @@
 
             .inspector-page .toolbar-secondary-controls {
                 flex-wrap: wrap;
+            }
+
+            .json-tree-layout {
+                grid-template-columns: 1fr;
+            }
+
+            .json-node-details {
+                border-top: 1px solid var(--border-color);
             }
         }

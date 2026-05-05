@@ -104,8 +104,10 @@
         }
 
         function deleteActivePad() {
+            const pad = activePad();
+            if (!window.confirm(`Delete scratch pad "${pad.title || 'Untitled'}"?`)) return;
+
             if (pads.length <= 1) {
-                const pad = activePad();
                 pad.title = 'Scratch 1';
                 pad.text = '';
                 pad.updatedAt = new Date().toISOString();

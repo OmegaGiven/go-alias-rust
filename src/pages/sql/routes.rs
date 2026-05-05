@@ -132,7 +132,7 @@ fn render_connection_list(conns: &[DbConnection], current_theme: &Theme, saved_t
                       <input name="password" type="password" placeholder="Password">
                   </div>
                   
-                  <button type="submit">Save Connection</button>
+                  <button type="submit" class="save-connection-submit">Save Connection</button>
                 </form>
             </section>
 
@@ -150,7 +150,7 @@ fn render_connection_list(conns: &[DbConnection], current_theme: &Theme, saved_t
                     <label style="display:block; margin: calc(var(--element-margin) / 2) var(--element-margin);">New Filename:</label>
                     <input id="new_filename" placeholder="e.g., my_new_project" required>
                     
-                    <button type="submit" style="background-color: var(--link-color); color: var(--primary-bg); font-weight: bold;">Create & Save</button>
+                    <button type="submit" class="create-sqlite-submit" style="background-color: var(--link-color); color: var(--primary-bg); font-weight: bold;">Create & Save</button>
                     <p style="font-size:0.85em; opacity:0.8; margin: calc(var(--element-margin) / 2) var(--element-margin); line-height: 1.4;">
                         This will register a new SQLite database file. 
                         The file will be created automatically when you first open it.
@@ -629,13 +629,13 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
         format!(
             "<li class=\"saved-query-item\">\
                 <a href=\"#\" data-sql=\"{}\" data-name=\"{}\" data-folder=\"{}\" class=\"query-link\">{}</a>\
-                <form method=\"POST\" action=\"/sql/delete\" class=\"delete-query-form\">\
+                <form method=\"POST\" action=\"/sql/delete\" class=\"delete-query-form\" onsubmit=\"return confirm('Delete saved query {}?');\">\
                     <input type=\"hidden\" name=\"query_name\" value=\"{}\">\
                     <input type=\"hidden\" name=\"connection\" value=\"{}\">\
                     <button type=\"submit\" class=\"delete-btn\" title=\"Delete\">x</button>\
                 </form>\
             </li>",
-            sql_attr, name_attr, folder_attr, name_safe, name_attr, nickname_attr
+            sql_attr, name_attr, folder_attr, name_safe, name_attr, name_attr, nickname_attr
         )
     };
 

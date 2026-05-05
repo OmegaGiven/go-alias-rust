@@ -41,6 +41,8 @@
                 }
 
                 function removeLocalShortcut(storageKey, shortcutKey) {
+                    if (!window.confirm(`Delete local shortcut ${shortcutKey}?`)) return;
+
                     const bucket = readShortcutBucket(storageKey);
                     delete bucket[shortcutKey];
                     writeShortcutBucket(storageKey, bucket);

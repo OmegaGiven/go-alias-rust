@@ -41,8 +41,65 @@ fn render_inspector_page(current_theme: &Theme, saved_themes: &HashMap<String, T
                     </div>
                 </div>
             </div>
+            <div id="inspector-source-meta" class="inspector-source-meta" hidden></div>
             
             <textarea id="content-input" placeholder="Paste JSON, XML, or Text content here..." oninput="detectContent()"></textarea>
+
+            <section id="json-tools" class="json-tools" hidden>
+                <div class="json-tools-header">
+                    <div>
+                        <h2>JSON Inspector</h2>
+                        <div id="json-summary-line" class="json-summary-line">Paste valid JSON to inspect structure.</div>
+                    </div>
+                    <div class="json-tools-actions">
+                        <button type="button" id="json-view-raw-btn" class="json-tool-btn active" data-json-view="raw">Raw</button>
+                        <button type="button" id="json-view-tree-btn" class="json-tool-btn" data-json-view="tree">Tree</button>
+                        <button type="button" id="json-view-summary-btn" class="json-tool-btn" data-json-view="summary">Summary</button>
+                        <button type="button" id="json-view-table-btn" class="json-tool-btn" data-json-view="table">Table</button>
+                    </div>
+                </div>
+                <div class="json-tool-panel json-tool-panel-active" id="json-panel-raw">
+                    <pre id="json-raw-preview"></pre>
+                </div>
+                <div class="json-tool-panel" id="json-panel-tree">
+                    <div class="json-tree-toolbar">
+                        <button type="button" id="json-expand-one-btn">Expand One Level</button>
+                        <button type="button" id="json-expand-all-btn">Expand All</button>
+                        <button type="button" id="json-collapse-all-btn">Collapse All</button>
+                        <input type="search" id="json-search-input" placeholder="Search keys or values">
+                        <button type="button" id="json-search-prev-btn">Prev</button>
+                        <button type="button" id="json-search-next-btn">Next</button>
+                        <span id="json-search-count">0 matches</span>
+                    </div>
+                    <div class="json-tree-layout">
+                        <div id="json-tree-view" class="json-tree-view"></div>
+                        <aside class="json-node-details">
+                            <h3>Selected Node</h3>
+                            <dl>
+                                <dt>Path</dt><dd id="json-detail-path">-</dd>
+                                <dt>Type</dt><dd id="json-detail-type">-</dd>
+                                <dt>Size</dt><dd id="json-detail-size">-</dd>
+                            </dl>
+                            <pre id="json-detail-preview"></pre>
+                            <div class="json-detail-actions">
+                                <button type="button" id="json-copy-path-btn">Copy Path</button>
+                                <button type="button" id="json-copy-value-btn">Copy Value</button>
+                                <button type="button" id="json-copy-pretty-btn">Copy Pretty</button>
+                            </div>
+                        </aside>
+                    </div>
+                </div>
+                <div class="json-tool-panel" id="json-panel-summary">
+                    <div id="json-summary-view" class="json-summary-view"></div>
+                </div>
+                <div class="json-tool-panel" id="json-panel-table">
+                    <div class="json-table-toolbar">
+                        <button type="button" id="json-copy-csv-btn" disabled>Copy CSV</button>
+                        <span id="json-table-status">Select an array of objects in the tree.</span>
+                    </div>
+                    <div id="json-table-view" class="json-table-view"></div>
+                </div>
+            </section>
             
             <div class="control-row">
                 <div class="form-group">

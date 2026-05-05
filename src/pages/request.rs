@@ -911,7 +911,7 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
                         data-oauth-scope="{}"
                         data-folder="{}">{}</a>
                     </div>
-                    <form method="POST" action="/requests/delete" class="delete-form">
+                    <form method="POST" action="/requests/delete" class="delete-form" onsubmit="return confirm('Delete saved request {}?');">
                         <input type="hidden" name="name" value="{}">
                         <input type="hidden" name="folder" value="{}">
                         <button type="submit" class="btn-danger-text" title="Delete">×</button>
@@ -931,6 +931,7 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
             folder_attr,
             safe_name,
             name_attr,
+            htmlescape::encode_attribute(&r.name),
             folder_attr
         )
     };
@@ -1025,10 +1026,12 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
                     <option value="PATCH">PATCH</option>
                 </select>
                 <input type="text" id="url" class="url-input" placeholder="Enter request URL" value="">
-                <button id="send-btn" class="send-btn btn-small">Send</button>
-                <button id="cancel-btn" class="save-btn btn-small" disabled>Cancel</button>
-                <button id="toggle-save-btn" class="save-btn btn-small">Save</button>
-                <button id="request-variables-btn" class="save-btn btn-small">Variables</button>
+                <div class="request-actions">
+                    <button id="send-btn" class="send-btn btn-small">Send</button>
+                    <button id="cancel-btn" class="save-btn btn-small" disabled>Cancel</button>
+                    <button id="toggle-save-btn" class="save-btn btn-small">Save</button>
+                    <button id="request-variables-btn" class="save-btn btn-small">Variables</button>
+                </div>
             </div>
 
             <!-- Save Form (Hidden by default) -->
@@ -1136,6 +1139,7 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
                         <span id="res-size">Size: -</span>
                     </div>
                     <div class="response-actions">
+                        <button id="open-inspector-btn" class="save-btn btn-small" type="button" disabled>Open in Inspector</button>
                         <button id="view-curl-btn" class="save-btn btn-small" type="button" disabled>View Curl</button>
                         <button id="download-res-btn" class="save-btn btn-small" type="button">JSON</button>
                     </div>

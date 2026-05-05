@@ -594,6 +594,7 @@ WHERE customer_id = {{customer_id}}
       if (deleteOutputHistoryBtn) {
           deleteOutputHistoryBtn.addEventListener('click', () => {
               if (!outputHistorySelect || outputHistorySelect.value === '') return;
+              if (!window.confirm('Delete the selected SQL output history entry?')) return;
 
               const nextHistory = loadOutputHistory().filter((entry) => entry.id !== outputHistorySelect.value);
               saveOutputHistory(nextHistory);

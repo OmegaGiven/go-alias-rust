@@ -155,15 +155,57 @@
     /* Sidebar & Response Resizer styles removed - now using shared .resizer-v/.resizer-h classes */
 
     /* Main Area */
-    .main-area { flex-grow: 1; padding: 0; display: flex; flex-direction: column; overflow: hidden; height: 100%; box-sizing: border-box; background-color: var(--primary-bg); }
+    .main-area { flex-grow: 1; min-width: 0; padding: 0; display: flex; flex-direction: column; overflow: hidden; height: 100%; box-sizing: border-box; background-color: var(--primary-bg); }
     
     /* Request Bar */
-    .request-bar { display: flex; gap: 5px; padding: 10px; background: var(--secondary-bg); border-bottom: 1px solid var(--border-color); flex-shrink: 0; align-items: center; }
-    .method-select { padding: 4px 8px; background: var(--tertiary-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px; font-weight: bold; height: 30px; }
-    .url-input { flex-grow: 1; padding: 4px 8px; background: var(--primary-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px; height: 30px; box-sizing: border-box; }
-    .send-btn { padding: 0 15px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; height: 30px; }
+    .request-bar { display: grid; grid-template-columns: auto minmax(180px, 520px) auto; justify-content: start; column-gap: 3px; row-gap: 3px; padding: 4px; background: var(--secondary-bg); border-bottom: 1px solid var(--border-color); flex-shrink: 0; align-items: center; }
+    .request-bar button,
+    .request-bar .btn-small {
+        margin: 0 !important;
+        flex: 0 0 auto;
+        white-space: nowrap;
+    }
+    .method-select { padding: 4px 8px; background: var(--tertiary-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px; font-weight: bold; height: 30px; flex: 0 0 auto; }
+    .url-input { width: 100%; min-width: 0; padding: 4px 8px; background: var(--primary-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px; height: 30px; box-sizing: border-box; }
+    .request-actions { display: flex; align-items: center; justify-content: flex-start; gap: 3px; min-width: 0; flex-wrap: nowrap; }
+    .send-btn { padding: 0 8px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; height: 30px; }
     .send-btn:hover { background-color: #0056b3; }
-    .save-btn { padding: 0 10px; background-color: var(--tertiary-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer; height: 30px; }
+    .save-btn { padding: 0 8px; background-color: var(--tertiary-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer; height: 30px; }
+    .request-bar .save-btn,
+    .request-bar .send-btn {
+        padding-left: 6px;
+        padding-right: 6px;
+    }
+
+    @media (max-width: 1100px) {
+        .request-bar {
+            grid-template-columns: auto minmax(0, 1fr);
+        }
+
+        .request-actions {
+            grid-column: 1 / -1;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .request-bar {
+            grid-template-columns: 1fr;
+        }
+
+        .method-select,
+        .url-input,
+        .request-actions {
+            grid-column: 1;
+        }
+
+        .method-select {
+            width: 100%;
+        }
+
+        .request-actions {
+            flex-wrap: wrap;
+        }
+    }
     
     /* Tabs */
     /* Tabs System styles removed - now using shared .tabs class in static/style.css */
@@ -538,9 +580,29 @@
         overflow: hidden; 
         background: var(--secondary-bg);
     }
-    .response-header { padding: 5px 10px; background: var(--tertiary-bg); border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
-    .response-meta { display: flex; gap: 15px; font-size: var(--font-size-small); color: #aaa; flex-shrink: 0; margin: calc(var(--element-margin) / 2) var(--element-margin); }
-    .response-actions { display: flex; align-items: center; gap: 5px; }
+    .response-header { padding: 4px 6px; background: var(--tertiary-bg); border-bottom: 1px solid var(--border-color); display: flex; justify-content: flex-start; align-items: center; gap: 6px; flex-shrink: 0; flex-wrap: wrap; }
+    .response-header h3 { margin: 0 !important; }
+    .response-meta { display: flex; gap: 6px; font-size: var(--font-size-small); color: #aaa; flex-shrink: 0; margin: 0; }
+    .response-actions { display: flex; align-items: center; justify-content: flex-start; gap: 2px; flex-wrap: wrap; }
+    .response-actions .btn-small,
+    .response-actions button {
+        margin: 0 !important;
+        padding-left: 6px;
+        padding-right: 6px;
+        white-space: nowrap;
+    }
+
+    @media (max-width: 640px) {
+        .response-header {
+            align-items: flex-start;
+            flex-direction: column;
+        }
+
+        .response-meta,
+        .response-actions {
+            width: 100%;
+        }
+    }
     
     /* Debug Info */
     #request-debug-info { margin: calc(var(--element-margin) / 2) var(--element-margin); color: #888; font-family: monospace; font-size: var(--font-size-small); white-space: pre-wrap; overflow-x: auto; display: none; background: var(--primary-bg); padding: 5px; border-bottom: 1px solid var(--border-color); flex-shrink: 0;}

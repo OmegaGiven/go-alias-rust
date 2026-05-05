@@ -10,6 +10,7 @@
         const resTime = document.getElementById('res-time');
         const resSize = document.getElementById('res-size');
         const downloadResBtn = document.getElementById('download-res-btn');
+        const openInspectorBtn = document.getElementById('open-inspector-btn');
         const viewCurlBtn = document.getElementById('view-curl-btn');
         const curlViewModal = document.getElementById('curl-view-modal');
         const curlViewOutput = document.getElementById('curl-view-output');
@@ -49,9 +50,13 @@
         const RESPONSE_HEIGHT_KEY = 'request-response-height';
         const RESPONSE_HEADERS_HEIGHT_KEY = 'request-response-headers-height';
         const SAVED_REQUEST_FOLDERS_COLLAPSED_KEY = 'saved-request-folders-collapsed';
+        const INSPECTOR_PENDING_PAYLOAD_KEY = 'inspector_pending_payload';
         let pendingPostmanCollection = null;
         let collapsedRequestFolders = readCollapsedRequestFolders();
         let latestCurlCommand = '';
+        let latestResponseBody = '';
+        let latestResponseHeaders = '';
+        let latestResponseMeta = null;
         let variableSetDialogMode = 'create';
         
         // Save Logic Elements
@@ -332,6 +337,7 @@
             if (!active.name) return;
 
             if (requestVariables.sets.length <= 1) {
+                if (!window.confirm(`Clear the only variable set "${active.name}"?`)) return;
                 active.values = {};
                 requestVariablesStatus.textContent = 'Cleared the only variable set.';
                 renderRequestVariables();
@@ -777,7 +783,11 @@
             requestDebugInfo.innerHTML = '';
             requestDebugInfo.style.display = 'none';
             latestCurlCommand = '';
+            latestResponseBody = '';
+            latestResponseHeaders = '';
+            latestResponseMeta = null;
             if (viewCurlBtn) viewCurlBtn.disabled = true;
+            if (openInspectorBtn) openInspectorBtn.disabled = true;
             urlInput.focus();
         }
 
@@ -1002,6 +1012,20 @@
             closeCurlViewBtn.addEventListener('click', () => curlViewModal.close());
         }
 
+        if (openInspectorBtn) {
+            openInspectorBtn.addEventListener('click', () => {
+                const payload = {
+                    source: 'requests',
+                    body: latestResponseBody || responseBody.innerText || '',
+                    headers: latestResponseHeaders || responseHeaders.innerText || '',
+                    meta: latestResponseMeta || {},
+                    captured_at: new Date().toISOString(),
+                };
+                sessionStorage.setItem(INSPECTOR_PENDING_PAYLOAD_KEY, JSON.stringify(payload));
+                window.location.href = '/inspector';
+            });
+        }
+
         toggleSaveBtn.addEventListener('click', () => {
             saveControls.style.display = saveControls.style.display === 'flex' ? 'none' : 'flex';
             if (saveControls.style.display === 'flex') {
@@ -1089,7 +1113,11 @@
             requestDebugInfo.innerHTML = ''; // Keep old hidden debug area clear.
             requestDebugInfo.style.display = 'none';
             latestCurlCommand = '';
+            latestResponseBody = '';
+            latestResponseHeaders = '';
+            latestResponseMeta = null;
             if (viewCurlBtn) viewCurlBtn.disabled = true;
+            if (openInspectorBtn) openInspectorBtn.disabled = true;
             currentAbortController = new AbortController();
             currentRequestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
             cancelBtn.disabled = false;
@@ -1161,8 +1189,18 @@
                 resStatus.className = 'status-badge ' + (ok ? 'success' : 'error');
                 resTime.innerText = `Time: ${duration} ms`;
                 responseHeaders.innerText = run.headers || '(no headers)';
+                latestResponseHeaders = run.headers || '';
 
                 const bodyText = run.body || '';
+                latestResponseBody = bodyText;
+                latestResponseMeta = {
+                    method: methodSelect.value,
+                    url: finalUrl,
+                    status: statusCode || 0,
+                    duration_ms: duration,
+                    size_kb: (bodyText.length / 1024).toFixed(2),
+                };
+                if (openInspectorBtn) openInspectorBtn.disabled = !bodyText;
                 resSize.innerText = 'Size: ' + (bodyText.length / 1024).toFixed(2) + ' KB';
 
                 if (run.curl_exit !== 0) {

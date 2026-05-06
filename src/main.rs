@@ -150,7 +150,7 @@ async fn main() -> std::io::Result<()> {
 
         // SQL service state
         connections: Mutex::new(None),
-        last_results: Mutex::new(Vec::new()),
+        last_results: Mutex::new(HashMap::new()),
         sql_jobs: Mutex::new(HashMap::new()),
 
         // SQL Connection Pools
@@ -195,6 +195,7 @@ async fn main() -> std::io::Result<()> {
             .service(sql::sql_rename)
             .service(sql::sql_create_folder)
             .service(sql::sql_disconnect)
+            .service(sql::sql_disconnect_connection)
             .service(sql::sql_delete_connection)
             .service(sql::sql_schema_json) 
             .service(Files::new("/static", "./static").prefer_utf8(true))

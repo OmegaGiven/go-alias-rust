@@ -62,7 +62,7 @@ pub struct AppState {
 
     // SQL service state
     pub connections: Mutex<Option<Vec<DbConnection>>>,
-    pub last_results: Mutex<Vec<HashMap<String, String>>>,
+    pub last_results: Mutex<HashMap<String, Vec<HashMap<String, String>>>>,
     pub sql_jobs: Mutex<HashMap<String, SqlJob>>,
 
     // SQL Connection Pooling

@@ -271,12 +271,16 @@ WHERE customer_id = {{customer_id}}
 
       if (sqlDisconnectBtn) {
           sqlDisconnectBtn.addEventListener('click', async () => {
+              if (typeof window.closeSqlConnectionTab === 'function') {
+                  await window.closeSqlConnectionTab(connectionNickname);
+                  return;
+              }
+
               try {
-                  await fetch('/sql/disconnect', { method: 'POST' });
+                  await fetch(`/sql/disconnect/${encodeURIComponent(connectionNickname)}`, { method: 'POST' });
               } catch (error) {
                   console.error('Failed to disconnect SQL connection', error);
               }
-
               window.location.href = '/sql';
           });
       }
@@ -499,6 +503,10 @@ WHERE customer_id = {{customer_id}}
       const deleteOutputHistoryBtn = document.getElementById('delete-output-history-btn');
       const clearOutputHistoryBtn = document.getElementById('clear-output-history-btn');
       const sqlJobsSelect = document.getElementById('sql-jobs-select');
+      const columnMenuBtn = document.getElementById('column-menu-btn');
+      const columnMenuPanel = document.getElementById('column-menu-panel');
+      const exportMenuBtn = document.getElementById('export-menu-btn');
+      const exportMenuPanel = document.getElementById('export-menu-panel');
       const outputHistoryStorageKey = "sql_output_history_" + connectionNickname;
       const maxOutputHistoryEntries = 8;
       const maxOutputHistoryEntryChars = 500000;
@@ -815,54 +823,113 @@ WHERE customer_id = {{customer_id}}
           }
       });
       
-      // Client-Side Export Logic
-      document.getElementById('export-client-btn').addEventListener('click', () => {
-          const table = output.querySelector('table');
-          if(!table) return alert('No results to export');
-          
-          const includeHeaders = document.getElementById('export-headers').checked;
-          const rows = Array.from(table.querySelectorAll('tr'));
-          const selectedRows = Array.from(table.querySelectorAll('tr.selected-row'));
-          
-          // Use selected rows if any, otherwise all visible rows (respecting filter)
-          let targetRows = selectedRows.length > 0 ? selectedRows : rows.filter(r => r.style.display !== 'none');
-          
-          // Ensure we don't duplicate headers if they happen to be selected or in the list
-          // Actually, 'rows' includes the header row usually in thead. 
-          // Let's grab headers separately.
-          const theadRow = table.querySelector('thead tr');
-          const tbodyRows = Array.from(table.querySelectorAll('tbody tr'));
-          
-          let csvContent = "";
-          
-          if(includeHeaders && theadRow) {
-              const headers = Array.from(theadRow.children).map(th => `"${th.innerText.replace(/"/g, '""')}"`);
-              csvContent += headers.join(",") + "\n";
-          }
-          
-          // Filter body rows based on selection or visibility
-          let rowsToExport = [];
-          if(selectedRows.length > 0) {
-               rowsToExport = selectedRows;
-          } else {
-               rowsToExport = tbodyRows.filter(r => r.style.display !== 'none');
-          }
-          
-          rowsToExport.forEach(row => {
-              const cols = Array.from(row.children).map(td => `"${td.innerText.replace(/"/g, '""')}"`);
-              csvContent += cols.join(",") + "\n";
+      function setMenuOpen(button, panel, isOpen) {
+          if (!button || !panel) return;
+          panel.hidden = !isOpen;
+          button.setAttribute('aria-expanded', String(isOpen));
+      }
+
+      function toggleMenu(button, panel) {
+          const wasOpen = panel && !panel.hidden;
+          setMenuOpen(columnMenuBtn, columnMenuPanel, false);
+          setMenuOpen(exportMenuBtn, exportMenuPanel, false);
+          setMenuOpen(button, panel, !wasOpen);
+      }
+
+      if (columnMenuBtn && columnMenuPanel) {
+          columnMenuBtn.addEventListener('click', (event) => {
+              event.stopPropagation();
+              toggleMenu(columnMenuBtn, columnMenuPanel);
           });
-          
+      }
+
+      if (exportMenuBtn && exportMenuPanel) {
+          exportMenuBtn.addEventListener('click', (event) => {
+              event.stopPropagation();
+              toggleMenu(exportMenuBtn, exportMenuPanel);
+          });
+      }
+
+      document.addEventListener('click', (event) => {
+          if (!event.target.closest('.sql-result-menu')) {
+              setMenuOpen(columnMenuBtn, columnMenuPanel, false);
+              setMenuOpen(exportMenuBtn, exportMenuPanel, false);
+          }
+      });
+
+      function csvEscape(value) {
+          return `"${String(value || '').replace(/"/g, '""')}"`;
+      }
+
+      function getCleanHeaderText(th, fallback = '') {
+          return th?.childNodes[0]?.textContent?.trim() || fallback;
+      }
+
+      function getVisibleColumnIndexes(table) {
+          return Array.from(table.querySelectorAll('thead th'))
+              .map((th, index) => th.classList.contains('sql-column-hidden') ? -1 : index)
+              .filter((index) => index >= 0);
+      }
+
+      function getExportRows(table, rowsMode) {
+          const visibleBodyRows = Array.from(table.querySelectorAll('tbody tr'))
+              .filter((row) => row.style.display !== 'none');
+          if (rowsMode === 'selected') {
+              return visibleBodyRows.filter((row) => row.classList.contains('selected-row'));
+          }
+          return visibleBodyRows;
+      }
+
+      function exportCurrentResults(mode) {
+          const table = output.querySelector('table');
+          if (!table) return alert('No results to export');
+
+          const includeHeaders = mode.endsWith('-headers');
+          const rowsMode = mode.startsWith('selected') ? 'selected' : 'all';
+          const visibleColumnIndexes = getVisibleColumnIndexes(table);
+          if (visibleColumnIndexes.length === 0) return alert('No visible columns to export');
+
+          const rowsToExport = getExportRows(table, rowsMode);
+          if (rowsMode === 'selected' && rowsToExport.length === 0) {
+              return alert('No selected rows to export');
+          }
+
+          const theadCells = Array.from(table.querySelectorAll('thead th'));
+          let csvContent = "";
+
+          if (includeHeaders && theadCells.length > 0) {
+              csvContent += visibleColumnIndexes
+                  .map((index) => csvEscape(getCleanHeaderText(theadCells[index], `Column ${index + 1}`)))
+                  .join(",") + "\n";
+          }
+
+          rowsToExport.forEach(row => {
+              const cells = Array.from(row.children);
+              csvContent += visibleColumnIndexes
+                  .map((index) => csvEscape(cells[index]?.innerText || ''))
+                  .join(",") + "\n";
+          });
+
           const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
           const link = document.createElement("a");
           const url = URL.createObjectURL(blob);
           link.setAttribute("href", url);
-          link.setAttribute("download", "export.csv");
+          link.setAttribute("download", `${connectionNickname || 'sql'}-${rowsMode}-results.csv`);
           link.style.visibility = 'hidden';
           document.body.appendChild(link);
           link.click();
           document.body.removeChild(link);
-      });
+          URL.revokeObjectURL(url);
+      }
+
+      if (exportMenuPanel) {
+          exportMenuPanel.addEventListener('click', (event) => {
+              const button = event.target.closest('[data-export-mode]');
+              if (!button) return;
+              exportCurrentResults(button.dataset.exportMode || 'all-headers');
+              setMenuOpen(exportMenuBtn, exportMenuPanel, false);
+          });
+      }
       
       // Filtering Logic
       outputFilterInput.addEventListener('input', (e) => {
@@ -910,6 +977,7 @@ WHERE customer_id = {{customer_id}}
       function makeTableInteractable(table) {
         const ths = table.querySelectorAll('th');
         const tbody = table.querySelector('tbody');
+        if (!tbody) return;
         const rows = Array.from(tbody.querySelectorAll('tr'));
         const minColumnWidth = 36;
 
@@ -944,6 +1012,7 @@ WHERE customer_id = {{customer_id}}
         let currentSortDir = 'none'; 
 
         ths.forEach((th, colIndex) => {
+            th.dataset.columnIndex = String(colIndex);
             const sortIndicator = document.createElement('span');
             sortIndicator.className = 'column-sort-indicator';
             th.appendChild(sortIndicator);
@@ -1029,6 +1098,49 @@ WHERE customer_id = {{customer_id}}
                 document.getElementById('output-filter').dispatchEvent(new Event('input'));
             });
         });
+
+        renderColumnMenu(table);
+      }
+
+      function setColumnVisibility(table, colIndex, isVisible) {
+          const cells = table.querySelectorAll(`thead th:nth-child(${colIndex + 1}), tbody td:nth-child(${colIndex + 1})`);
+          cells.forEach((cell) => {
+              cell.classList.toggle('sql-column-hidden', !isVisible);
+          });
+      }
+
+      function renderColumnMenu(table) {
+          if (!columnMenuPanel) return;
+
+          const headers = Array.from(table.querySelectorAll('thead th'));
+          columnMenuPanel.innerHTML = '';
+
+          if (headers.length === 0) {
+              const empty = document.createElement('div');
+              empty.className = 'sql-result-menu-empty';
+              empty.textContent = 'No columns available.';
+              columnMenuPanel.appendChild(empty);
+              return;
+          }
+
+          headers.forEach((th, colIndex) => {
+              const label = document.createElement('label');
+              label.className = 'sql-column-menu-item';
+
+              const checkbox = document.createElement('input');
+              checkbox.type = 'checkbox';
+              checkbox.checked = !th.classList.contains('sql-column-hidden');
+              checkbox.addEventListener('change', () => {
+                  setColumnVisibility(table, colIndex, checkbox.checked);
+              });
+
+              const labelText = document.createElement('span');
+              labelText.textContent = getCleanHeaderText(th, `Column ${colIndex + 1}`);
+
+              label.appendChild(checkbox);
+              label.appendChild(labelText);
+              columnMenuPanel.appendChild(label);
+          });
       }
 
       savedQueriesList.addEventListener('click', (e) => {

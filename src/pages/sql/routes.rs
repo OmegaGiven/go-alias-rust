@@ -1,4 +1,4 @@
-use actix_web::{cookie::{time::Duration, Cookie}, get, post, web, HttpRequest, HttpResponse, Responder};
+use actix_web::{cookie::{time::Duration, Cookie}, get, post, web, HttpResponse, Responder};
 use std::{collections::HashMap, sync::Arc, fs, io, time::{SystemTime, UNIX_EPOCH}};
 use serde::{Deserialize, Serialize};
 use crate::app_db;
@@ -110,18 +110,18 @@ fn save_query_folders(folders: &[String]) -> io::Result<()> {
 }
 
 fn query_matches_connection(query: &SavedQuery, connection: &str) -> bool {
-    query.connection.as_deref().map(|value| value == connection).unwrap_or(true)
+    query.connection.as_deref() == Some(connection)
 }
 
 fn query_identity_matches(query: &SavedQuery, name: &str, connection: &str) -> bool {
-    query.name == name && query.connection.as_deref().map(|value| value == connection).unwrap_or(true)
+    query.name == name && query_matches_connection(query, connection)
 }
 
 fn folder_matches_connection(folder: &str, connection: &str) -> bool {
     folder
         .split_once("::")
         .map(|(prefix, _)| prefix == connection)
-        .unwrap_or(true)
+        .unwrap_or(false)
 }
 
 fn stored_folder_name(folder: &str, connection: &str) -> String {
@@ -272,7 +272,7 @@ fn render_connection_list(conns: &[DbConnection], current_theme: &Theme, saved_t
 
 
 #[get("/sql")]
-pub async fn sql_get(req: HttpRequest, state: web::Data<Arc<AppState>>) -> impl Responder {
+pub async fn sql_get(state: web::Data<Arc<AppState>>) -> impl Responder {
     let conns = {
         let mut conns_opt = state.connections.lock().unwrap();
         if conns_opt.is_none() {
@@ -281,15 +281,6 @@ pub async fn sql_get(req: HttpRequest, state: web::Data<Arc<AppState>>) -> impl 
         include_app_db_connection(conns_opt.as_mut().unwrap());
         conns_opt.clone().unwrap()
     };
-
-    if let Some(active_connection) = req.cookie(ACTIVE_SQL_CONNECTION_COOKIE).map(|cookie| cookie.value().to_string()) {
-        if conns.iter().any(|conn| conn.nickname == active_connection) {
-            let location = format!("/sql/{active_connection}");
-            return HttpResponse::Found()
-                .append_header(("Location", location))
-                .finish();
-        }
-    }
 
     let current_theme = state.current_theme.lock().unwrap();
     let saved_themes = state.saved_themes.lock().unwrap();
@@ -301,6 +292,56 @@ pub async fn sql_get(req: HttpRequest, state: web::Data<Arc<AppState>>) -> impl 
 
 #[post("/sql/disconnect")]
 pub async fn sql_disconnect() -> impl Responder {
+    let expired_cookie = Cookie::build(ACTIVE_SQL_CONNECTION_COOKIE, "")
+        .path("/sql")
+        .max_age(Duration::seconds(0))
+        .finish();
+
+    HttpResponse::NoContent().cookie(expired_cookie).finish()
+}
+
+#[post("/sql/disconnect/{nickname}")]
+pub async fn sql_disconnect_connection(
+    path: web::Path<String>,
+    state: web::Data<Arc<AppState>>,
+) -> impl Responder {
+    let nickname = path.into_inner();
+    let conn_opt = {
+        let mut conns_opt = state.connections.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        if conns_opt.is_none() {
+            *conns_opt = Some(load_and_decrypt());
+        }
+        include_app_db_connection(conns_opt.as_mut().unwrap());
+        conns_opt
+            .as_ref()
+            .and_then(|conns| conns.iter().find(|conn| conn.nickname == nickname).cloned())
+    };
+
+    if let Some(conn) = conn_opt {
+        if conn.db_type == "sqlite" {
+            let dsn = format!("sqlite:{}?mode=rwc", conn.host);
+            let pool = {
+                let mut pools = state.sqlite_pools.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                pools.remove(&dsn)
+            };
+            if let Some(pool) = pool {
+                pool.close().await;
+            }
+        } else {
+            let dsn = format!(
+                "postgres://{}:{}@{}/{}",
+                conn.user, conn.password, conn.host, conn.db_name
+            );
+            let pool = {
+                let mut pools = state.pg_pools.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                pools.remove(&dsn)
+            };
+            if let Some(pool) = pool {
+                pool.close().await;
+            }
+        }
+    }
+
     let expired_cookie = Cookie::build(ACTIVE_SQL_CONNECTION_COOKIE, "")
         .path("/sql")
         .max_age(Duration::seconds(0))
@@ -792,10 +833,12 @@ async fn execute_sql(form: SqlForm, state: Arc<AppState>) -> SqlExecution {
 
 #[post("/sql/run")]
 pub async fn sql_run(form: web::Json<SqlForm>, state: web::Data<Arc<AppState>>) -> impl Responder {
-    let execution = execute_sql(form.into_inner(), state.get_ref().clone()).await;
+    let form = form.into_inner();
+    let connection = form.connection.clone();
+    let execution = execute_sql(form, state.get_ref().clone()).await;
     {
         let mut last = state.last_results.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        *last = execution.results;
+        last.insert(connection, execution.results);
     }
     HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")
@@ -831,6 +874,7 @@ pub async fn sql_run_background(form: web::Json<SqlForm>, state: web::Data<Arc<A
     tokio::spawn(async move {
         let execution = execute_sql(form, state_for_task.clone()).await;
         let row_count_text = row_count_text_from_html(&execution.html);
+        let results = execution.results.clone();
         let mut jobs = state_for_task.sql_jobs.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         if let Some(job) = jobs.get_mut(&job_id_for_task) {
             job.status = "completed".to_string();
@@ -838,6 +882,8 @@ pub async fn sql_run_background(form: web::Json<SqlForm>, state: web::Data<Arc<A
             job.row_count_text = Some(row_count_text);
             job.html = Some(execution.html);
             job.results = execution.results;
+            let mut last = state_for_task.last_results.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            last.insert(job.connection.clone(), results);
         }
     });
 
@@ -878,29 +924,33 @@ pub async fn sql_job_activate(path: web::Path<String>, state: web::Data<Arc<AppS
     let job_id = path.into_inner();
     let results = {
         let jobs = state.sql_jobs.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        jobs.get(&job_id).map(|job| job.results.clone())
+        jobs.get(&job_id).map(|job| (job.connection.clone(), job.results.clone()))
     };
 
     match results {
-        Some(results) => {
+        Some((connection, results)) => {
             let mut last = state.last_results.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-            *last = results;
+            last.insert(connection, results);
             HttpResponse::NoContent().finish()
         }
         None => HttpResponse::NotFound().body("SQL job not found"),
     }
 }
 
-#[get("/sql/export")]
-pub async fn sql_export(state: web::Data<Arc<AppState>>) -> impl Responder {
-    let results = state.last_results.lock().unwrap();
+#[get("/sql/{connection}/export")]
+pub async fn sql_export(path: web::Path<String>, state: web::Data<Arc<AppState>>) -> impl Responder {
+    let connection = path.into_inner();
+    let results = {
+        let last_results = state.last_results.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        last_results.get(&connection).cloned().unwrap_or_default()
+    };
     let mut wtr = csv::Writer::from_writer(vec![]);
 
     if results.is_empty() {
         let data = String::from_utf8(wtr.into_inner().unwrap()).unwrap_or_default();
         return HttpResponse::Ok()
             .content_type("text/csv")
-            .append_header(("Content-Disposition", "attachment; filename=\"results.csv\""))
+            .append_header(("Content-Disposition", format!("attachment; filename=\"{connection}-results.csv\"")))
             .body(data);
     }
 
@@ -922,7 +972,7 @@ pub async fn sql_export(state: web::Data<Arc<AppState>>) -> impl Responder {
 
     HttpResponse::Ok()
         .content_type("text/csv")
-        .append_header(("Content-Disposition", "attachment; filename=\"results.csv\""))
+        .append_header(("Content-Disposition", format!("attachment; filename=\"{connection}-results.csv\"")))
         .body(data)
 }
 
@@ -1075,6 +1125,7 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
     let sidebar_html = crate::elements::sidebar::render(&sidebar_content);
 
     let body_content = format!(r###"
+    <div id="sql-active-connection" data-connection="{nickname}"></div>
     <div class="sql-view-container">
       {sidebar_html}
       
@@ -1114,10 +1165,22 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
             <select id="sql-jobs-select" title="Running and recent SQL jobs">
                 <option value="">Running queries</option>
             </select>
-            <label><input type="checkbox" id="export-headers" checked> Headers</label>
-            <button type="button" id="export-client-btn" class="add-var-btn" style="width:auto;">Export Select CSV</button>
+            <div class="sql-result-menu" id="column-menu">
+                <button type="button" id="column-menu-btn" class="add-var-btn" style="width:auto;" aria-expanded="false">Columns</button>
+                <div id="column-menu-panel" class="sql-result-menu-panel" hidden>
+                    <div class="sql-result-menu-empty">Run a query to choose columns.</div>
+                </div>
+            </div>
+            <div class="sql-result-menu" id="export-menu">
+                <button type="button" id="export-menu-btn" class="add-var-btn" style="width:auto;" aria-expanded="false">Export CSV</button>
+                <div id="export-menu-panel" class="sql-result-menu-panel" hidden>
+                    <button type="button" class="sql-result-menu-item" data-export-mode="all-headers">Export all with headers</button>
+                    <button type="button" class="sql-result-menu-item" data-export-mode="all">Export all</button>
+                    <button type="button" class="sql-result-menu-item" data-export-mode="selected-headers">Export selected with headers</button>
+                    <button type="button" class="sql-result-menu-item" data-export-mode="selected">Export selected</button>
+                </div>
+            </div>
             <button type="button" id="clear-selection-btn" class="add-var-btn" style="width:auto; background-color: var(--tertiary-bg); display: none;">Clear (0)</button>
-            <a href="/sql/export" target="_blank" title="Download all latest results from server" style="text-decoration:none;"><button type="button" class="add-var-btn" style="width:auto;">Export All</button></a>
         </div>
         <div class="output" id="output"><pre>Click a table name or enter a query and press 'Run Query'.</pre></div>
       </div>
@@ -1127,7 +1190,7 @@ fn render_query_view(nickname: &str, table_schema_json: &str, current_theme: &cr
     <div id="autocomplete-list"></div>
     <script type="application/json" id="sql-schema-data">{table_schema_json}</script>
     <script src="/static/sql.js" defer></script>
-    "###, nickname = nickname_safe, table_schema_json = table_schema_json_safe, sidebar_html = sidebar_html);
+    "###, nickname = nickname_attr, table_schema_json = table_schema_json_safe, sidebar_html = sidebar_html);
 
     render_base_page(
         &format!("SQL View: {}", htmlescape::encode_minimal(&nickname)),

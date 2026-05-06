@@ -1,5 +1,4 @@
-<img width="1794" height="1092" alt="image" src="https://github.com/user-attachments/assets/d5548357-ee9f-457b-ad93-79b2ff5f5760" />
-
+<img width="1920" height="1010" alt="image" src="https://github.com/user-attachments/assets/785541c4-0656-474f-82ac-949dc5ee5eb1" />
 
 # Build Instructions
 
@@ -243,11 +242,16 @@ The app must use port 80 for `http://go/` with no port in the URL. If port 80 is
 
 ## USAGE: In browser type localhost:PORT or whatever alias you use for localhost
 # /
+
+<img width="1920" height="1010" alt="image" src="https://github.com/user-attachments/assets/377fa6fe-f09d-466c-8171-99569d7287f6" />
+
 Mistype any shortcuts to see all your shortcuts
 - has a table of all the shortcuts from the shortcuts.json
 - has a nav bar at top of all other tools with this tool
 
 # /sql
+
+<img width="1920" height="1010" alt="image" src="https://github.com/user-attachments/assets/e2eb4f7c-c7f3-42ad-8850-2216e76550df" />
 
 have form with submit button to input a new connection that contains
 - Nickname
@@ -259,12 +263,15 @@ then
 - securely save on encrypted file 
 - offer as selection of all the connections and default to last used
 
-# /calc or /calculator
-
-- top bar asking for basic, scientific
-- calculator buttons are below the input output line of what is being input.
-- below is a history of what has been inputted.
-
 # /request
 
+<img width="1920" height="1013" alt="image" src="https://github.com/user-attachments/assets/50280ef3-d00a-418b-9ebd-374b41bc37e8" />
+
+
 - basically a simple postman where you can save post requests if you need to
+
+# /Inspector
+
+<img width="1920" height="1013" alt="image" src="https://github.com/user-attachments/assets/077c59d6-f585-4b8f-b419-d53d1c908388" />
+
+- able to parse / prettify Json for easy searching and viewing

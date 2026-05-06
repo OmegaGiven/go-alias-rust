@@ -61,9 +61,6 @@
         const SAVED_REQUEST_FOLDERS_COLLAPSED_KEY = 'saved-request-folders-collapsed';
         const INSPECTOR_PENDING_PAYLOAD_KEY = 'inspector_pending_payload';
         const MAX_REQUEST_HISTORY_ENTRIES = 12;
-        const MAX_REQUEST_HISTORY_ENTRY_CHARS = 850000;
-        const MAX_REQUEST_HISTORY_RESPONSE_CHARS = 350000;
-        const MAX_REQUEST_HISTORY_TOTAL_CHARS = 1800000;
         let pendingPostmanCollection = null;
         let collapsedRequestFolders = readCollapsedRequestFolders();
         let latestCurlCommand = '';
@@ -72,6 +69,7 @@
         let latestResponseMeta = null;
         let variableSetDialogMode = 'create';
         let requestHistoryCache = [];
+        let requestHistorySavePromise = Promise.resolve();
 
         function normalizeFolderPath(folder) {
             return String(folder || '')
@@ -961,13 +959,17 @@
             try {
                 const resp = await fetch('/requests/history');
                 if (!resp.ok) throw new Error(await resp.text());
-                const history = await resp.json();
-                requestHistoryCache = normalizeRequestHistoryList(history);
-                if (requestHistoryCache.length === 0) {
-                    const localHistory = normalizeRequestHistoryList(JSON.parse(localStorage.getItem(REQUEST_HISTORY_KEY) || '[]'));
-                    if (localHistory.length > 0) {
-                        saveRequestHistory(localHistory);
-                    }
+                const serverHistory = normalizeRequestHistoryList(await resp.json());
+                const localHistory = normalizeRequestHistoryList(JSON.parse(localStorage.getItem(REQUEST_HISTORY_KEY) || '[]'));
+                const merged = new Map();
+                [...localHistory, ...serverHistory]
+                    .sort((left, right) => new Date(right.createdAt || 0) - new Date(left.createdAt || 0))
+                    .forEach((entry) => {
+                        if (entry.id && !merged.has(entry.id)) merged.set(entry.id, entry);
+                    });
+                requestHistoryCache = pruneRequestHistory(Array.from(merged.values()));
+                if (localHistory.length > serverHistory.length || requestHistoryCache.some((entry) => !serverHistory.some((serverEntry) => serverEntry.id === entry.id))) {
+                    saveRequestHistory(requestHistoryCache);
                 }
             } catch (err) {
                 try {
@@ -996,7 +998,7 @@
                 console.error('Failed to save request history fallback', err);
             }
 
-            fetch('/requests/history', {
+            requestHistorySavePromise = fetch('/requests/history', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(requestHistoryCache),
@@ -1008,6 +1010,7 @@
                     console.error('Failed to save reduced request history fallback', retryErr);
                 }
             });
+            return requestHistorySavePromise;
         }
 
         function requestHistoryLabel(entry) {
@@ -1037,13 +1040,7 @@
         }
 
         function pruneRequestHistory(history) {
-            let totalChars = 0;
-            return history.slice(0, MAX_REQUEST_HISTORY_ENTRIES).filter((entry) => {
-                const entryChars = JSON.stringify(entry).length;
-                if (entryChars > MAX_REQUEST_HISTORY_ENTRY_CHARS) return false;
-                totalChars += entryChars;
-                return totalChars <= MAX_REQUEST_HISTORY_TOTAL_CHARS;
-            });
+            return history.slice(0, MAX_REQUEST_HISTORY_ENTRIES);
         }
 
         function getExplicitHeadersString() {
@@ -1071,19 +1068,11 @@
             };
         }
 
-        function truncateHistoryText(value, label) {
-            const text = String(value || '');
-            if (text.length <= MAX_REQUEST_HISTORY_RESPONSE_CHARS) return text;
-
-            return `${text.slice(0, MAX_REQUEST_HISTORY_RESPONSE_CHARS)}\n\n[${label} truncated for request history. Open Inspector immediately after running the request to inspect the full response.]`;
-        }
-
         function normalizeRequestHistoryResponse(responseDetails) {
             const response = { ...responseDetails };
-            response.body = truncateHistoryText(response.body, 'Raw response');
-            response.displayBody = truncateHistoryText(response.displayBody || response.body, 'Displayed response');
-            response.truncated = String(responseDetails.body || '').length > MAX_REQUEST_HISTORY_RESPONSE_CHARS
-                || String(responseDetails.displayBody || '').length > MAX_REQUEST_HISTORY_RESPONSE_CHARS;
+            response.body = String(response.body || '');
+            response.displayBody = String(response.displayBody || response.body || '');
+            response.truncated = false;
 
             if (response.displayBody === response.body) {
                 delete response.displayBody;
@@ -1092,14 +1081,8 @@
             return response;
         }
 
-        function cacheRequestHistory(requestDetails, responseDetails) {
+        async function cacheRequestHistory(requestDetails, responseDetails) {
             const entry = buildRequestHistoryEntry(requestDetails, responseDetails);
-            if (JSON.stringify(entry).length > MAX_REQUEST_HISTORY_ENTRY_CHARS) {
-                entry.response.body = '[Response omitted because it is too large for request history.]';
-                delete entry.response.displayBody;
-                entry.response.truncated = true;
-            }
-
             const history = loadRequestHistory().filter((existing) => {
                 return existing.request?.method !== entry.request.method
                     || existing.request?.url !== entry.request.url
@@ -1107,7 +1090,7 @@
                     || existing.response?.body !== entry.response.body;
             });
             history.unshift(entry);
-            saveRequestHistory(pruneRequestHistory(history));
+            await saveRequestHistory(pruneRequestHistory(history));
             renderRequestHistoryOptions(entry.id);
         }
 
@@ -1495,7 +1478,7 @@
         }
 
         if (openInspectorBtn) {
-            openInspectorBtn.addEventListener('click', () => {
+            openInspectorBtn.addEventListener('click', async () => {
                 const payload = {
                     source: 'requests',
                     body: latestResponseBody || responseBody.innerText || '',
@@ -1504,6 +1487,9 @@
                     captured_at: new Date().toISOString(),
                 };
                 sessionStorage.setItem(INSPECTOR_PENDING_PAYLOAD_KEY, JSON.stringify(payload));
+                try {
+                    await requestHistorySavePromise;
+                } catch (_) {}
                 window.location.href = '/inspector';
             });
         }
@@ -1871,7 +1857,7 @@
 
                 if (run.curl_exit !== 0) {
                     responseBody.innerText = (run.stderr || 'Request failed').trim();
-                    cacheRequestHistory(requestHistoryDetails, {
+                    await cacheRequestHistory(requestHistoryDetails, {
                         status: statusCode || 0,
                         statusClass: resStatus.className,
                         duration_ms: duration,
@@ -1892,7 +1878,7 @@
                     responseBody.innerText = bodyText;
                 }
 
-                cacheRequestHistory(requestHistoryDetails, {
+                await cacheRequestHistory(requestHistoryDetails, {
                     status: statusCode || 0,
                     statusClass: resStatus.className,
                     duration_ms: duration,
@@ -1914,7 +1900,7 @@
                     resStatus.innerText = 'Error';
                 }
                 resStatus.className = 'status-badge error';
-                cacheRequestHistory(requestHistoryDetails, {
+                await cacheRequestHistory(requestHistoryDetails, {
                     status: 0,
                     statusClass: resStatus.className,
                     duration_ms: Math.round(performance.now() - startTime),

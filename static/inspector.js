@@ -1,5 +1,5 @@
 const INSPECTOR_PENDING_PAYLOAD_KEY = 'inspector_pending_payload';
-const JSON_NODE_LIMIT = 6000;
+const JSON_NODE_LIMIT = 25000;
 
 const contentInput = document.getElementById('content-input');
 const fileInput = document.getElementById('file-input');

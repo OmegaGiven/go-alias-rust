@@ -8,7 +8,9 @@ mod elements;
 mod pages;
 
 use actix_files::Files;
-use actix_web::{App, HttpResponse, HttpServer, Responder, get, web::Data};
+use actix_web::{
+    App, HttpResponse, HttpServer, Responder, get, middleware::DefaultHeaders, web::Data,
+};
 use std::{
     collections::HashMap,
     fs,
@@ -179,6 +181,7 @@ async fn main() -> std::io::Result<()> {
     // Build server
     HttpServer::new(move || {
         App::new()
+            .wrap(DefaultHeaders::new().add(("Cache-Control", "no-store")))
             .app_data(Data::new(state.clone()))
             .service(index)
             // Register Request Builder handlers

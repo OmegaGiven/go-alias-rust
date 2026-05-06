@@ -8,7 +8,9 @@ use std::sync::Arc;
 
 use crate::app_state::AppState;
 use crate::app_state::Theme;
-use crate::base_page::{render_base_page_with_options, render_inline_add_shortcut_button};
+use crate::base_page::{
+    render_base_page_with_options, render_inline_add_shortcut_button, static_asset,
+};
 
 fn grouped_shortcuts_table(shortcuts: &HashMap<String, String>, empty_message: &str) -> String {
     if shortcuts.is_empty() {
@@ -88,16 +90,18 @@ pub fn render_shortcuts_table(global_shortcuts: &HashMap<String, String>) -> Str
 pub fn render_home_shortcuts_content(global_shortcuts: &HashMap<String, String>) -> String {
     format!(
         r#"
-        <link rel="stylesheet" href="/static/shortcuts.css">
+        <link rel="stylesheet" href="{}">
         <section class="shortcut-home-intro">
             <p>Type a shortcut key into the URL bar (e.g., <code>/gh</code>) to go directly to the destination.</p>
             {}
         </section>
         {}
-        <script src="/static/shortcuts.js" defer></script>
+        <script src="{}" defer></script>
         "#,
+        static_asset("shortcuts.css"),
         render_inline_add_shortcut_button(),
-        render_shortcuts_table(global_shortcuts)
+        render_shortcuts_table(global_shortcuts),
+        static_asset("shortcuts.js")
     )
 }
 

@@ -55,7 +55,7 @@
         const saveRequestFolderSelect = document.getElementById('save-request-folder-select');
         const confirmSaveRequestBtn = document.getElementById('confirm-save-request-btn');
         const cancelSaveRequestBtn = document.getElementById('cancel-save-request-btn');
-        const RESPONSE_HEIGHT_KEY = 'request-response-height';
+        const REQUEST_DETAILS_HEIGHT_KEY = 'request-details-height';
         const RESPONSE_HEADERS_HEIGHT_KEY = 'request-response-headers-height';
         const REQUEST_HISTORY_KEY = 'request_run_history';
         const SAVED_REQUEST_FOLDERS_COLLAPSED_KEY = 'saved-request-folders-collapsed';
@@ -189,15 +189,37 @@
             const container = document.getElementById(containerId);
             const row = document.createElement('div');
             row.className = 'kv-row';
-            const removeBtn = isReadOnlyKey ? '' : `<button class="kv-remove" onclick="this.parentElement.remove(); onKvChange('${containerId}')">x</button>`;
-            const readOnlyAttr = isReadOnlyKey ? 'readonly' : '';
-            const keyClass = isReadOnlyKey ? 'kv-input key readonly' : 'kv-input key';
-            
-            row.innerHTML = `
-                <input type="text" class="${keyClass}" placeholder="Key" value="${key}" ${readOnlyAttr} oninput="onKvChange('${containerId}')">
-                <input type="text" class="kv-input val" placeholder="Value" value="${val}" oninput="onKvChange('${containerId}')">
-                ${removeBtn}
-            `;
+
+            const keyInput = document.createElement('input');
+            keyInput.type = 'text';
+            keyInput.className = isReadOnlyKey ? 'kv-input key readonly' : 'kv-input key';
+            keyInput.placeholder = 'Key';
+            keyInput.value = key;
+            keyInput.readOnly = isReadOnlyKey;
+            keyInput.addEventListener('input', () => onKvChange(containerId));
+
+            const valInput = document.createElement('input');
+            valInput.type = 'text';
+            valInput.className = 'kv-input val';
+            valInput.placeholder = 'Value';
+            valInput.value = val;
+            valInput.addEventListener('input', () => onKvChange(containerId));
+
+            row.appendChild(keyInput);
+            row.appendChild(valInput);
+
+            if (!isReadOnlyKey) {
+                const removeBtn = document.createElement('button');
+                removeBtn.type = 'button';
+                removeBtn.className = 'kv-remove';
+                removeBtn.textContent = 'x';
+                removeBtn.addEventListener('click', () => {
+                    row.remove();
+                    onKvChange(containerId);
+                });
+                row.appendChild(removeBtn);
+            }
+
             container.appendChild(row);
         }
 
@@ -229,6 +251,16 @@
                 const key = rawKey.trim();
                 return Object.prototype.hasOwnProperty.call(variables, key) ? variables[key] : fullMatch;
             });
+        }
+
+        function getUnresolvedRequestVariables(value) {
+            const names = new Set();
+            String(value || '').replace(/\{\{([^}]+)\}\}/g, (_match, rawKey) => {
+                const key = rawKey.trim();
+                if (key) names.add(key);
+                return _match;
+            });
+            return Array.from(names);
         }
 
         function normalizeRequestVariables(value) {
@@ -654,19 +686,29 @@
             const headers = getKvPairs('headers-container');
             const authType = authTypeSelect.value;
 
+            const setHeader = (name, value) => {
+                const target = name.toLowerCase();
+                for (let i = headers.length - 1; i >= 0; i -= 1) {
+                    if ((headers[i][0] || '').toLowerCase() === target) {
+                        headers.splice(i, 1);
+                    }
+                }
+                headers.push([name, value]);
+            };
+
             if (authType === 'bearer' || authType === 'oauth2') {
                 const token = authType === 'oauth2' ? fetchedOAuthToken : document.getElementById('auth-bearer-token')?.value;
-                if(token) headers.push(['Authorization', `Bearer ${token}`]);
+                if(token) setHeader('Authorization', `Bearer ${token}`);
             }
             if (authType === 'basic') {
                 const user = document.getElementById('auth-basic-user')?.value || '';
                 const pass = document.getElementById('auth-basic-pass')?.value || '';
-                headers.push(['Authorization', `Basic ${btoa(`${user}:${pass}`)}`]);
+                setHeader('Authorization', `Basic ${btoa(`${user}:${pass}`)}`);
             }
             if (authType === 'apikey') {
                 const key = document.getElementById('auth-api-key')?.value?.trim() || '';
                 const val = document.getElementById('auth-api-val')?.value || '';
-                if (key) headers.push([key, val]);
+                if (key) setHeader(key, val);
             }
             return headers;
         }
@@ -1469,17 +1511,82 @@
         function populateSaveFormFields() {
             saveMethod.value = methodSelect.value;
             saveUrl.value = urlInput.value;
-            const headers = constructHeaders();
-            const reqPayload = getRequestBodyAndHeaders(methodSelect.value, headers);
-            saveHeaders.value = reqPayload.headerPairs.map(([k, v]) => `${k}: ${v}`).join('\\n');
+            const explicitHeaders = getKvPairs('headers-container');
+            const reqPayload = getRequestBodyAndHeaders(
+                methodSelect.value,
+                explicitHeaders.map(([k, v]) => [k, v])
+            );
+            saveHeaders.value = explicitHeaders.map(([k, v]) => `${k}: ${v}`).join('\n');
             saveBody.value = reqPayload.body;
             saveAuthType.value = authTypeSelect.value;
+
+            saveOAuthTokenUrl.value = '';
+            saveOAuthClientId.value = '';
+            saveOAuthClientSecret.value = '';
+            saveOAuthScope.value = '';
             
             if (authTypeSelect.value === 'oauth2') {
                 saveOAuthTokenUrl.value = document.getElementById('oauth-token-url')?.value || '';
                 saveOAuthClientId.value = document.getElementById('oauth-client-id')?.value || '';
                 saveOAuthClientSecret.value = document.getElementById('oauth-client-secret')?.value || '';
                 saveOAuthScope.value = document.getElementById('oauth-scope')?.value || '';
+            }
+        }
+
+        function syncSavedRequestDomFromSaveForm() {
+            const name = reqNameInput.value || '';
+            const folder = reqFolderInput ? reqFolderInput.value || '' : '';
+            const link = findSavedRequestLink(name, folder);
+
+            if (!link) return;
+
+            link.dataset.method = saveMethod.value;
+            link.dataset.url = saveUrl.value;
+            link.dataset.headers = saveHeaders.value;
+            link.dataset.body = saveBody.value;
+            link.dataset.authType = saveAuthType.value || 'none';
+            link.dataset.oauthTokenUrl = saveOAuthTokenUrl.value;
+            link.dataset.oauthClientId = saveOAuthClientId.value;
+            link.dataset.oauthClientSecret = saveOAuthClientSecret.value;
+            link.dataset.oauthScope = saveOAuthScope.value;
+            link.dataset.name = name;
+            link.dataset.folder = folder;
+            link.textContent = name;
+
+            const item = link.closest('.saved-req-item');
+            if (item) {
+                item.dataset.name = name;
+                item.dataset.folder = folder;
+                const methodBadge = item.querySelector('.req-method');
+                if (methodBadge) {
+                    methodBadge.textContent = saveMethod.value;
+                    methodBadge.className = `req-method ${saveMethod.value.toLowerCase()}`;
+                }
+                item.classList.add('selected');
+            }
+        }
+
+        function findSavedRequestLink(name, folder) {
+            return Array.from(document.querySelectorAll('.req-link')).find((candidate) => (
+                candidate.dataset.name === name && (candidate.dataset.folder || '') === (folder || '')
+            ));
+        }
+
+        async function refreshSavedRequestsList(selectedName = '', selectedFolder = '') {
+            const response = await fetch('/requests', { cache: 'no-store' });
+            if (!response.ok) throw new Error(await response.text());
+
+            const html = await response.text();
+            const doc = new DOMParser().parseFromString(html, 'text/html');
+            const freshList = doc.getElementById('saved-list');
+            if (!freshList) throw new Error('Saved request list was missing from the refreshed page.');
+
+            savedList.innerHTML = freshList.innerHTML;
+            filterSavedRequests();
+
+            const selectedLink = findSavedRequestLink(selectedName, selectedFolder);
+            if (selectedLink) {
+                selectedLink.closest('.saved-req-item')?.classList.add('selected');
             }
         }
 
@@ -1512,7 +1619,7 @@
         }
 
         if (confirmSaveRequestBtn) {
-            confirmSaveRequestBtn.addEventListener('click', () => {
+            confirmSaveRequestBtn.addEventListener('click', async () => {
                 const name = saveRequestNameInput.value.trim();
                 if (!name) {
                     saveRequestNameInput.focus();
@@ -1524,7 +1631,35 @@
                     reqFolderInput.value = saveRequestFolderSelect.value || '';
                 }
                 populateSaveFormFields();
-                saveControls.submit();
+
+                const originalText = confirmSaveRequestBtn.textContent;
+                confirmSaveRequestBtn.disabled = true;
+                confirmSaveRequestBtn.textContent = 'Saving...';
+                try {
+                    const payload = new URLSearchParams(new FormData(saveControls));
+                    const response = await fetch(saveControls.action, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+                        body: payload,
+                    });
+                    if (!response.ok) throw new Error(await response.text());
+
+                    try {
+                        await refreshSavedRequestsList(reqNameInput.value || '', reqFolderInput ? reqFolderInput.value || '' : '');
+                    } catch (refreshError) {
+                        syncSavedRequestDomFromSaveForm();
+                    }
+                    confirmSaveRequestBtn.textContent = 'Saved';
+                    window.setTimeout(() => {
+                        confirmSaveRequestBtn.textContent = originalText;
+                        confirmSaveRequestBtn.disabled = false;
+                    }, 700);
+                    closeSaveRequestModal();
+                } catch (error) {
+                    confirmSaveRequestBtn.disabled = false;
+                    confirmSaveRequestBtn.textContent = originalText;
+                    window.alert(`Save failed: ${error.message}`);
+                }
             });
         }
 
@@ -1623,6 +1758,20 @@
             // 1. Substitute Path Variables
             let finalUrl = urlInput.value;
             const pathMap = getKvMap('path-container');
+            const missingPathVariables = Object.entries(pathMap)
+                .filter(([_key, value]) => !String(value || '').trim())
+                .map(([key]) => key);
+            if (missingPathVariables.length > 0) {
+                responseHeaders.innerText = '(not sent)';
+                responseBody.innerText = `Request was not sent. Missing path variable value${missingPathVariables.length === 1 ? '' : 's'}: ${missingPathVariables.join(', ')}`;
+                resStatus.innerText = 'Status: not sent';
+                resTime.innerText = 'Time: - ms';
+                resSize.innerText = 'Size: -';
+                cancelBtn.disabled = true;
+                currentAbortController = null;
+                currentRequestId = null;
+                return;
+            }
             for (const [key, val] of Object.entries(pathMap)) {
                 finalUrl = finalUrl.split(`{${key}}`).join(val);
             }
@@ -1634,6 +1783,26 @@
                 substituteRequestVariables(value),
             ]);
             const body = substituteRequestVariables(requestParts.body);
+            const unresolvedVariables = new Set([
+                ...getUnresolvedRequestVariables(finalUrl),
+                ...headers.flatMap(([key, value]) => [
+                    ...getUnresolvedRequestVariables(key),
+                    ...getUnresolvedRequestVariables(value),
+                ]),
+                ...getUnresolvedRequestVariables(body),
+            ]);
+            if (unresolvedVariables.size > 0) {
+                const names = Array.from(unresolvedVariables);
+                responseHeaders.innerText = '(not sent)';
+                responseBody.innerText = `Request was not sent. Unresolved variable${names.length === 1 ? '' : 's'}: ${names.join(', ')}\n\nAdd the value in the active Variables set or replace the {{name}} token before sending.`;
+                resStatus.innerText = 'Status: not sent';
+                resTime.innerText = 'Time: - ms';
+                resSize.innerText = 'Size: -';
+                cancelBtn.disabled = true;
+                currentAbortController = null;
+                currentRequestId = null;
+                return;
+            }
 
             const options = {
                 method: methodSelect.value,
@@ -1806,15 +1975,16 @@
         });
 
         // Response Resizing Only
+        const requestDetailsPanel = document.querySelector('.request-details-panel');
         const respSection = document.getElementById('response-section');
         const respResizer = document.getElementById('response-resizer');
         let isRespResizing = false;
         let isHeadersResizing = false;
 
         // Restore persisted heights
-        const savedRespHeight = localStorage.getItem(RESPONSE_HEIGHT_KEY);
-        if (savedRespHeight) {
-            respSection.style.height = savedRespHeight;
+        const savedDetailsHeight = localStorage.getItem(REQUEST_DETAILS_HEIGHT_KEY);
+        if (savedDetailsHeight && requestDetailsPanel) {
+            requestDetailsPanel.style.flexBasis = savedDetailsHeight;
         }
         const savedHeadersHeight = localStorage.getItem(RESPONSE_HEADERS_HEIGHT_KEY);
         if (savedHeadersHeight) {
@@ -1836,13 +2006,13 @@
         });
 
         document.addEventListener('mousemove', (e) => {
-            if (isRespResizing) {
-                const containerHeight = document.querySelector('.main-area').offsetHeight;
-                
-                const distFromBottom = window.innerHeight - e.clientY - 20; // 20 padding
-                if (distFromBottom > 50 && distFromBottom < containerHeight - 100) {
-                    respSection.style.height = distFromBottom + 'px';
-                }
+            if (isRespResizing && requestDetailsPanel) {
+                const detailsTop = requestDetailsPanel.getBoundingClientRect().top;
+                const mainAreaHeight = document.querySelector('.main-area').offsetHeight;
+                const minDetails = 32;
+                const maxDetails = Math.max(minDetails, mainAreaHeight - 180);
+                const nextDetails = Math.max(minDetails, Math.min(e.clientY - detailsTop, maxDetails));
+                requestDetailsPanel.style.flexBasis = `${Math.floor(nextDetails)}px`;
             }
 
             if (isHeadersResizing) {
@@ -1864,7 +2034,9 @@
                 respResizer.classList.remove('resizing');
                 document.body.style.cursor = '';
                 document.body.style.userSelect = '';
-                localStorage.setItem(RESPONSE_HEIGHT_KEY, respSection.style.height);
+                if (requestDetailsPanel) {
+                    localStorage.setItem(REQUEST_DETAILS_HEIGHT_KEY, requestDetailsPanel.style.flexBasis);
+                }
             }
 
             if (isHeadersResizing) {

@@ -3,9 +3,9 @@
   <head>
     <meta charset="utf-8">
     <title>{{ title }}</title>
-    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico?v={{ asset_version }}">
     {{ theme_vars|safe }}
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
   </head>
   <body>
     <div class="modern-nav">
@@ -289,11 +289,11 @@
     </dialog>
     {% endif %}
 
-    <script src="/static/app.js" defer></script>
-    <script src="/static/settings.js" defer></script>
-    <script src="/static/calculator.js" defer></script>
-    <script src="/static/jwt_decoder.js" defer></script>
-    <script src="/static/scratchpad.js" defer></script>
-    <script src="/static/sidebar.js" defer></script>
+    <script src="/static/app.js?v={{ asset_version }}" defer></script>
+    <script src="/static/settings.js?v={{ asset_version }}" defer></script>
+    <script src="/static/calculator.js?v={{ asset_version }}" defer></script>
+    <script src="/static/jwt_decoder.js?v={{ asset_version }}" defer></script>
+    <script src="/static/scratchpad.js?v={{ asset_version }}" defer></script>
+    <script src="/static/sidebar.js?v={{ asset_version }}" defer></script>
   </body>
 </html>

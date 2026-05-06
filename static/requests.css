@@ -1,9 +1,9 @@
-    .req-container { 
-        display: flex; 
+    .req-container {
+        display: flex;
         flex: 1 1 auto;
         min-height: 0;
         height: auto;
-        overflow: hidden; 
+        overflow: hidden;
         position: relative;
     }
 
@@ -39,6 +39,12 @@
         margin: 0;
     }
 
+    .save-controls[hidden] {
+        display: none !important;
+        flex: 0 0 auto;
+        margin: 0;
+    }
+
     .requests-sidebar-icon-btn {
         display: inline-flex;
         align-items: center;
@@ -70,14 +76,14 @@
         margin: 0;
         padding: 3px 5px;
     }
-    
-    .saved-list { 
-        list-style: none; 
-        padding: 0 !important; 
-        margin: 0 !important; 
-        overflow-y: auto; 
-        flex: 1; 
-        min-height: 0; 
+
+    .saved-list {
+        list-style: none;
+        padding: 0 !important;
+        margin: 0 !important;
+        overflow-y: auto;
+        flex: 1;
+        min-height: 0;
     }
 
     .saved-list > li {
@@ -87,7 +93,7 @@
         border-radius: 0;
         box-sizing: border-box;
     }
-    
+
     .saved-req-folder {
         position: relative;
         display: flex;
@@ -209,10 +215,10 @@
     .req-method.put { background-color: #fca130; }
     .req-method.delete { background-color: #f93e3e; }
     .req-method.patch { background-color: #50e3c2; }
-    
+
     .req-link { text-decoration: none; color: var(--text-color); flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: var(--font-size-small); min-width: 0; transition: color 0.2s; text-align: left; }
     .req-link:hover { color: var(--link-hover); }
-    
+
     /* Shared styles for delete-btn removed - now using .btn-danger-text in static/style.css */
 
     /* Resizers */
@@ -220,7 +226,7 @@
 
     /* Main Area */
     .main-area { flex-grow: 1; min-width: 0; padding: 0; display: flex; flex-direction: column; overflow: hidden; height: 100%; box-sizing: border-box; background-color: var(--primary-bg); }
-    
+
     /* Request Bar */
     .request-bar { display: grid; grid-template-columns: auto minmax(180px, 1fr) max-content; column-gap: 3px; row-gap: 0; padding: 4px; background: var(--secondary-bg); border-bottom: 1px solid var(--border-color); flex-shrink: 0; align-items: center; }
     .request-bar button,
@@ -271,11 +277,25 @@
             flex-wrap: wrap;
         }
     }
-    
+
     /* Tabs */
     /* Tabs System styles removed - now using shared .tabs class in static/style.css */
 
-    .req-container .tabs {
+    .request-details-panel {
+        flex: 0 0 auto;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        max-height: calc(100% - 180px);
+        margin: 0;
+        padding: 0;
+        background: var(--primary-bg);
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .req-container .request-details-tabs,
+    .input-container > .tabs {
+        flex: 0 0 auto;
         gap: 0;
         margin: 0;
         padding: 0 10px;
@@ -285,7 +305,8 @@
         border-bottom: 1px solid var(--border-color);
     }
 
-    .req-container .tab {
+    .req-container .request-details-tabs .tab,
+    .input-container > .tabs .tab {
         display: inline-flex;
         align-items: center;
         height: 28px;
@@ -298,12 +319,14 @@
         font-size: var(--font-size-small);
     }
 
-    .req-container .tab:hover {
+    .req-container .request-details-tabs .tab:hover,
+    .input-container > .tabs .tab:hover {
         background: var(--tertiary-bg);
         text-decoration: none;
     }
 
-    .req-container .tab.active {
+    .req-container .request-details-tabs .tab.active,
+    .input-container > .tabs .tab.active {
         margin: 0;
         background: transparent;
         border: none;
@@ -311,29 +334,33 @@
         color: var(--text-color);
         font-weight: 600;
     }
-    
+
     .input-container {
-        flex: 1; /* Default flex grow */
+        flex: 0 0 auto;
         display: flex;
         flex-direction: column;
         overflow: hidden;
-        min-height: 100px;
+        min-height: 0;
+        flex: 1 1 auto;
         background: var(--primary-bg);
+        border-bottom: none;
     }
-    
-    .tab-content { display: none; flex-direction: column; gap: 10px; flex: 1; overflow-y: auto; padding: 10px; min-height: 0; }
-    .tab-content.active { display: flex; }
+
+    .req-container .tab-content { display: none; flex-direction: column; gap: 8px; flex: 1 1 auto; overflow-y: auto; padding: 8px 10px; min-height: 0; }
+    .req-container .tab-content.active { display: flex; }
+    .req-container #tab-body.tab-content.active { min-height: min(32vh, 300px); }
+    #body-raw-container { min-height: 180px; }
     .body-type-row { display:flex; gap:15px; margin: calc(var(--element-margin) / 2) var(--element-margin); align-items:center; }
     .body-type-row .title { font-size: var(--font-size-small); color:#888; }
     .body-type-row label { font-size: var(--font-size-small); color: var(--text-color); display: inline-flex; align-items: center; gap: 4px; }
-    
+
     textarea.code-editor {
         width: 100%; height: 100%; background: var(--secondary-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; padding: 10px; font-family: monospace; font-size: var(--font-size-medium); box-sizing: border-box; resize: none;
     }
 
     /* Key-Value Tables (Params & Headers) removed - now using shared .kv-row class */
     .kv-remove { background: none; border: none; color: #f93e3e; font-weight: bold; cursor: pointer; padding: 0 8px; }
-    
+
     /* Read-only key for Path Params */
     .kv-input.key.readonly { background-color: var(--tertiary-bg); color: #aaa; }
 
@@ -636,13 +663,14 @@
     }
 
     /* Response Area */
-    .response-section { 
-        height: 40%; /* Initial height */
-        padding: 0; 
-        display: flex; 
-        flex-direction: column; 
-        min-height: 50px; 
-        overflow: hidden; 
+    .response-section {
+        flex: 1 1 auto;
+        height: auto;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        overflow: hidden;
         background: var(--secondary-bg);
     }
     .response-header { padding: 4px 6px; background: var(--tertiary-bg); border-bottom: 1px solid var(--border-color); display: flex; justify-content: flex-start; align-items: center; gap: 6px; flex-shrink: 0; flex-wrap: wrap; }
@@ -680,15 +708,15 @@
             width: 100%;
         }
     }
-    
+
     /* Debug Info */
     #request-debug-info { margin: calc(var(--element-margin) / 2) var(--element-margin); color: #888; font-family: monospace; font-size: var(--font-size-small); white-space: pre-wrap; overflow-x: auto; display: none; background: var(--primary-bg); padding: 5px; border-bottom: 1px solid var(--border-color); flex-shrink: 0;}
 
-    #response-body { flex: 1; white-space: pre-wrap; overflow: auto; font-family: monospace; font-size: var(--font-size-small); background: var(--primary-bg); padding: 10px; border: none; min-height: 60px; color: var(--text-color); }
+    #response-body { flex: 1 1 auto; white-space: pre-wrap; overflow: auto; font-family: monospace; font-size: var(--font-size-small); background: var(--primary-bg); padding: 10px; border: none; min-height: 0; color: var(--text-color); }
     #response-headers { height: 160px; overflow: auto; white-space: pre-wrap; font-family: monospace; font-size: var(--font-size-small); background: var(--primary-bg); padding: 10px; border-bottom: 1px solid var(--border-color); margin: calc(var(--element-margin) / 2) var(--element-margin); color: var(--text-color); min-height: 50px; }
     #headers-body-resizer { height: 6px; background: var(--tertiary-bg); border-top: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color); cursor: row-resize; flex-shrink: 0; }
     #headers-body-resizer.resizing { background: var(--link-color); }
-    
+
     .save-request-modal {
         width: min(420px, calc(100vw - 32px));
         padding: 0;

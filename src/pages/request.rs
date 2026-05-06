@@ -1,6 +1,6 @@
 use crate::app_db;
 use crate::app_state::{AppState, Theme};
-use crate::base_page::render_base_page;
+use crate::base_page::{render_base_page, static_asset};
 use actix_web::{
     HttpResponse, Responder, get, post,
     web::{self, Data, Form, Json},
@@ -1514,10 +1514,9 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
                 </form>
             </dialog>
             
-            <!-- Wrapper for Input Section to control height -->
-            <div class="input-container">
+            <section class="request-details-panel">
                 <!-- Input Tabs -->
-                <div class="tabs">
+                <div class="tabs request-details-tabs">
                     <div class="tab active" onclick="openTab('tab-params')">Params</div>
                     <div class="tab" onclick="openTab('tab-path')">Path Variables</div>
                     <div class="tab" onclick="openTab('tab-auth')">Auth</div>
@@ -1525,6 +1524,8 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
                     <div class="tab" onclick="openTab('tab-body')">Body</div>
                 </div>
 
+                <!-- Wrapper for Input Section to control height -->
+                <div class="input-container">
                 <!-- Params Tab -->
                 <div id="tab-params" class="tab-content active">
                     <p style="font-size:var(--font-size-small); color:#888; margin: calc(var(--element-margin) / 2) var(--element-margin);">Query Parameters</p>
@@ -1586,7 +1587,8 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
                     </div>
                 </div>
 
-            </div>
+                </div>
+            </section>
             
             <!-- Response -->
             <!-- Response -->
@@ -1696,17 +1698,19 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
         </form>
     </dialog>
     <script type="application/json" id="request-variables-data">{request_variables_json}</script>
-    <script src="/static/requests.js" defer></script>
+    <script src="{requests_js}" defer></script>
     "#,
         sidebar_html = sidebar_html,
         request_folder_options = request_folder_options,
-        request_variables_json = request_variables_json
+        request_variables_json = request_variables_json,
+        requests_js = static_asset("requests.js")
     );
 
     render_base_page(
         "Request Builder",
         &format!(
-            r#"<link rel="stylesheet" href="/static/requests.css">{}"#,
+            r#"<link rel="stylesheet" href="{}">{}"#,
+            static_asset("requests.css"),
             content
         ),
         current_theme,

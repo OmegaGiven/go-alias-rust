@@ -1,6 +1,7 @@
 use crate::app_state::Theme;
 use askama::Template;
 use std::collections::HashMap;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Clone)]
 struct FontOption {
@@ -20,11 +21,27 @@ struct ThemeNameOption {
 struct BasePageTemplate<'a> {
     title: &'a str,
     theme_vars: String,
+    asset_version: String,
     body_content: &'a str,
     current_theme: &'a Theme,
     saved_theme_options: Vec<ThemeNameOption>,
     font_options: Vec<FontOption>,
     include_add_shortcut_modal: bool,
+}
+
+fn asset_version() -> String {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis().to_string())
+        .unwrap_or_else(|_| env!("CARGO_PKG_VERSION").to_string())
+}
+
+pub fn static_asset(path: &str) -> String {
+    format!(
+        "/static/{}?v={}",
+        path.trim_start_matches('/'),
+        asset_version()
+    )
 }
 
 fn render_theme_variables(theme: &Theme) -> String {
@@ -135,6 +152,7 @@ pub fn render_base_page_with_options(
     BasePageTemplate {
         title,
         theme_vars: render_theme_variables(current_theme),
+        asset_version: asset_version(),
         body_content,
         current_theme,
         saved_theme_options,

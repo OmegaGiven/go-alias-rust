@@ -2,7 +2,7 @@ use actix_web::{HttpResponse, Responder, get, web::Data};
 use std::{collections::HashMap, sync::Arc};
 
 use crate::app_state::{AppState, Theme};
-use crate::base_page::render_base_page;
+use crate::base_page::{render_base_page, static_asset};
 
 #[get("/inspector")]
 pub async fn inspector_get(state: Data<Arc<AppState>>) -> impl Responder {
@@ -119,13 +119,15 @@ fn render_inspector_page(current_theme: &Theme, saved_themes: &HashMap<String, T
             </div>
         </div>
     </div>
-    <script src="/static/inspector.js" defer></script>
+    <script src="{inspector_js}" defer></script>
     "#;
+    let content = content.replace("{inspector_js}", &static_asset("inspector.js"));
 
     render_base_page(
         "Inspector",
         &format!(
-            r#"<link rel="stylesheet" href="/static/inspector.css">{}"#,
+            r#"<link rel="stylesheet" href="{}">{}"#,
+            static_asset("inspector.css"),
             content
         ),
         current_theme,

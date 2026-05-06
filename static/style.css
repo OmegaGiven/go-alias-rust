@@ -44,6 +44,10 @@ textarea {
     font-family: var(--base-font-family, sans-serif);
 }
 
+[hidden] {
+    display: none !important;
+}
+
 h1 {
     font-weight: normal;
     margin: calc(var(--element-margin) / 2) var(--element-margin);

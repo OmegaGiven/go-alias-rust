@@ -1,6 +1,6 @@
 use crate::app_db;
 use crate::app_state::{AppState, SqlJob, Theme};
-use crate::base_page::render_base_page;
+use crate::base_page::{render_base_page, static_asset};
 use crate::pages::sql::{
     AddConnForm, DbConnection, SqlForm, encrypt_and_save, find_connection, load_and_decrypt,
     render_table,
@@ -362,10 +362,12 @@ fn render_connection_list(
             <ul>{conn_links}</ul>
         </section>
     </div>
-    <link rel="stylesheet" href="/static/sql_connections.css">
-    <script src="/static/sql_connections.js" defer></script>
+    <link rel="stylesheet" href="{sql_connections_css}">
+    <script src="{sql_connections_js}" defer></script>
     "#,
-        conn_links = conn_links
+        conn_links = conn_links,
+        sql_connections_css = static_asset("sql_connections.css"),
+        sql_connections_js = static_asset("sql_connections.js")
     );
 
     render_base_page("SQL Connections", &content, current_theme, saved_themes)
@@ -1660,6 +1662,12 @@ fn render_query_view(
         
         <div id="output-resizer" class="resizer-h" title="Drag to resize"></div>
         <div class="result-tools">
+            <div class="sql-result-menu" id="column-menu">
+                <button type="button" id="column-menu-btn" class="add-var-btn" style="width:auto;" aria-expanded="false">Columns</button>
+                <div id="column-menu-panel" class="sql-result-menu-panel" hidden>
+                    <div class="sql-result-menu-empty">Run a query to choose columns.</div>
+                </div>
+            </div>
             <input type="text" id="output-filter" placeholder="Filter results...">
             <span id="row-count" style="font-size: 0.9em; margin: calc(var(--element-margin) / 2) var(--element-margin); color: var(--text-color);"></span>
             <select id="output-history-select" title="Cached output history">
@@ -1670,12 +1678,6 @@ fn render_query_view(
             <select id="sql-jobs-select" title="Running and recent SQL jobs">
                 <option value="">Running queries</option>
             </select>
-            <div class="sql-result-menu" id="column-menu">
-                <button type="button" id="column-menu-btn" class="add-var-btn" style="width:auto;" aria-expanded="false">Columns</button>
-                <div id="column-menu-panel" class="sql-result-menu-panel" hidden>
-                    <div class="sql-result-menu-empty">Run a query to choose columns.</div>
-                </div>
-            </div>
             <div class="sql-result-menu" id="export-menu">
                 <button type="button" id="export-menu-btn" class="add-var-btn" style="width:auto;" aria-expanded="false">Export CSV</button>
                 <div id="export-menu-panel" class="sql-result-menu-panel" hidden>
@@ -1694,17 +1696,19 @@ fn render_query_view(
     <!-- Autocomplete container attached to body for proper floating behavior -->
     <div id="autocomplete-list"></div>
     <script type="application/json" id="sql-schema-data">{table_schema_json}</script>
-    <script src="/static/sql.js" defer></script>
+    <script src="{sql_js}" defer></script>
     "###,
         nickname = nickname_attr,
         table_schema_json = table_schema_json_safe,
-        sidebar_html = sidebar_html
+        sidebar_html = sidebar_html,
+        sql_js = static_asset("sql.js")
     );
 
     render_base_page(
         &format!("SQL View: {}", htmlescape::encode_minimal(&nickname)),
         &format!(
-            r#"<link rel="stylesheet" href="/static/sql.css">{}"#,
+            r#"<link rel="stylesheet" href="{}">{}"#,
+            static_asset("sql.css"),
             body_content
         ),
         current_theme,

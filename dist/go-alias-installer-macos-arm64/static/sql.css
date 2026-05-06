@@ -1,0 +1,451 @@
+    :root {
+        --sql-workspace-font-size: var(--font-size-small);
+    }
+
+    .sql-view-container {
+        --element-margin: 0px;
+        display: flex;
+        height: calc(100vh - var(--nav-height, 30px));
+        position: relative;
+        overflow: hidden;
+    }
+    
+    #output-resizer {
+        flex-shrink: 0;
+    }
+
+    .sql-view-container #sidebar ul { list-style: none; padding: 0; margin: 0; }
+    .sql-view-container #sidebar li { padding: 0; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sql-sidebar-heading {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid var(--border-color);
+        margin: 0;
+        min-height: 24px;
+        padding: 2px 4px;
+        box-sizing: border-box;
+    }
+    #sidebar .sql-sidebar-title {
+        border: none;
+        flex-shrink: 1;
+        font-size: var(--sql-workspace-font-size);
+        line-height: 1.2;
+        margin: 0 !important;
+        overflow: hidden;
+        padding: 0;
+    }
+    .sql-sidebar-refresh {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: var(--sql-workspace-font-size);
+        height: 20px;
+        line-height: 1;
+        margin: 0 !important;
+        padding: 0;
+        width: 20px !important;
+    }
+    .sql-sidebar-button-icon {
+        display: block;
+        height: 14px;
+        width: 14px;
+    }
+    .sql-view-container .sidebar-search input {
+        border-radius: 0;
+        margin: 0;
+        padding: 3px 5px;
+    }
+    
+    .saved-query-item { display: flex; align-items: center; width: 100%; padding-left: 2px; box-sizing: border-box; }
+    .saved-query-folder {
+        background: var(--primary-bg);
+        border-bottom: 1px solid var(--border-color);
+        border-top: 1px solid var(--border-color);
+        color: var(--text-color);
+        cursor: default !important;
+        font-size: calc(var(--sql-workspace-font-size) * 0.9);
+        font-weight: bold;
+        line-height: 1.4;
+        opacity: 0.75;
+        padding: 1px 5px !important;
+        text-transform: uppercase;
+    }
+    .create-query-folder-form,
+    .import-query-form {
+        display: inline-flex;
+        margin: 0;
+    }
+    .sql-sidebar-link-button {
+        box-sizing: border-box;
+        text-decoration: none;
+    }
+    .sql-sidebar-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+        margin: 0;
+    }
+    .delete-query-form,
+    .rename-query-form { display: inline-flex; flex: 0 0 auto; margin: 0 2px 0 0; }
+    .rename-query-form { margin-left: auto; }
+    .query-link { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0; padding: 1px 5px; text-align: left; text-decoration: none; color: var(--text-color); font-size: var(--sql-workspace-font-size); opacity: 0.9; }
+    .query-link:hover { opacity: 1; text-decoration: underline; color: var(--link-hover); }
+    
+    .delete-btn { background: none; border: none; color: #666; font-weight: bold; padding: 0 5px; margin: calc(var(--element-margin) / 2) var(--element-margin); cursor: pointer; width: 20px; text-align: center; font-size: 1em;}
+    .delete-btn:hover { color: #ff3b3b; background: rgba(255,0,0,0.1); border-radius: 3px; }
+    
+    
+    #table-list .table-list-item {
+        display: block;
+        color: var(--text-color);
+        font-size: var(--sql-workspace-font-size);
+        line-height: 1.25;
+        padding: 0 5px;
+        text-decoration: none;
+    }
+    #table-list .table-list-item:hover {
+        background-color: var(--tertiary-bg);
+        color: var(--link-hover);
+    }
+    .sql-sidebar-section-resizer {
+        background: var(--tertiary-bg);
+        border-bottom: 1px solid var(--border-color);
+        border-top: 1px solid var(--border-color);
+        cursor: row-resize;
+        flex: 0 0 6px;
+        height: 6px;
+    }
+    .sql-sidebar-section-resizer:hover,
+    .sql-sidebar-section-resizer.resizing {
+        background: var(--link-color);
+        opacity: 0.85;
+    }
+    
+    #main { flex: 1; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+    #sql-form { display: flex; flex-direction: column; flex-grow: 1; height: 100%; }
+    
+    .variables-section { padding: 5px; background: var(--secondary-bg); border-bottom: 1px solid var(--border-color); display: flex; flex-wrap: wrap; gap: 5px; align-items: center; flex-shrink: 0; }
+    .var-input-group { display: flex; align-items: center; gap: 5px; background: var(--tertiary-bg); padding: 0 5px; height: 26px; border-radius: 4px; border: 1px solid var(--border-color); box-sizing: border-box; }
+    .var-input-group label { font-size: 0.8em; color: var(--text-color); font-weight: bold; white-space: nowrap; }
+    .var-input-group input { padding: 2px 4px; border: 1px solid var(--border-color); background: var(--primary-bg); color: var(--text-color); border-radius: 2px; font-size: var(--sql-workspace-font-size); width: 100px; height: 20px; box-sizing: border-box; }
+    .add-var-btn { padding: 0 8px; height: 26px; font-size: 0.8em; cursor: pointer; background: var(--tertiary-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px; line-height: 24px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; margin: calc(var(--element-margin) / 2) var(--element-margin); }
+    .add-var-btn:hover { background: var(--link-hover); color: white; border-color: var(--link-hover); }
+    .sql-var-help-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        margin: 0 0 0 auto;
+        border: 1px solid var(--border-color);
+        border-radius: 50%;
+        background: var(--tertiary-bg);
+        color: var(--text-color);
+        cursor: pointer;
+        font-size: var(--sql-workspace-font-size);
+        font-weight: bold;
+        line-height: 1;
+    }
+    .sql-var-help-btn:hover {
+        background: var(--link-hover);
+        border-color: var(--link-hover);
+        color: #fff;
+    }
+    .sql-disconnect-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        height: 22px;
+        margin: 0;
+        padding: 0 8px;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        background: var(--tertiary-bg);
+        color: var(--text-color);
+        cursor: pointer;
+        font-size: var(--sql-workspace-font-size);
+        line-height: 1;
+    }
+    .sql-disconnect-btn:hover {
+        background: var(--link-hover);
+        border-color: var(--link-hover);
+        color: #fff;
+    }
+    
+    .var-del-btn { cursor: pointer; color: #888; font-weight: bold; margin: calc(var(--element-margin) / 2) var(--element-margin); font-size: 1.1em; line-height: 1; }
+    .var-del-btn:hover { color: #ff6b6b; }
+
+    .editor-container { 
+        flex: 1; 
+        min-height: 100px; 
+        margin: calc(var(--element-margin) / 2) var(--element-margin); 
+        position: relative; 
+        display: flex; 
+        flex-direction: column; 
+        border-bottom: none; 
+        background-color: var(--primary-bg);
+    }
+    
+    .editor-layer {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 5px; /* Minimal padding */
+        border: none;
+        font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+        font-size: var(--sql-workspace-font-size);
+        line-height: 1.5;
+        box-sizing: border-box;
+        overflow: auto;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+    }
+
+    #sql-backdrop {
+        z-index: 1;
+        pointer-events: none;
+        background-color: transparent;
+        color: var(--text-color);
+    }
+
+    #sql-editor {
+        z-index: 2;
+        background: transparent;
+        color: transparent; /* Hide text, show caret */
+        caret-color: var(--text-color);
+        resize: none;
+        outline: none;
+    }
+    
+    .hl-keyword { color: #ff79c6; font-weight: bold; }
+    .hl-string { color: #f1fa8c; }
+    .hl-number { color: #bd93f9; }
+    .hl-comment { color: #6272a4; }
+    
+    .action-bar { padding: 2px 5px; background: var(--secondary-bg); border-top: 1px solid var(--border-color); display: flex; gap: 10px; flex-shrink: 0; align-items: center; }
+    .action-bar button { margin: calc(var(--element-margin) / 2) var(--element-margin); font-weight: bold; }
+
+    .sql-dialog-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 3000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.45);
+    }
+    .sql-dialog {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        width: min(360px, calc(100vw - 32px));
+        padding: 12px;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        background: var(--secondary-bg);
+        color: var(--text-color);
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+    }
+    .sql-dialog h3 {
+        margin: 0;
+        font-size: var(--font-size-medium);
+    }
+    .sql-dialog label {
+        font-size: var(--sql-workspace-font-size);
+        font-weight: bold;
+    }
+    .sql-dialog input,
+    .sql-dialog select {
+        box-sizing: border-box;
+        width: 100%;
+        padding: 6px 8px;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        background: var(--primary-bg);
+        color: var(--text-color);
+        font-size: var(--sql-workspace-font-size);
+    }
+    .sql-dialog-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-top: 4px;
+    }
+    .sql-dialog-actions button {
+        margin: 0;
+        padding: 5px 10px;
+        cursor: pointer;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        background: var(--tertiary-bg);
+        color: var(--text-color);
+    }
+    .sql-dialog-actions button:hover {
+        background: var(--link-hover);
+        border-color: var(--link-hover);
+        color: #fff;
+    }
+    .sql-help-dialog {
+        width: min(480px, calc(100vw - 32px));
+    }
+    .sql-help-dialog-body {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        font-size: var(--sql-workspace-font-size);
+        line-height: 1.4;
+    }
+    .sql-help-dialog-body p {
+        margin: 0;
+    }
+    .sql-help-dialog-body code,
+    .sql-help-dialog-body pre {
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        background: var(--primary-bg);
+        color: var(--text-color);
+    }
+    .sql-help-dialog-body code {
+        padding: 1px 4px;
+    }
+    .sql-help-dialog-body pre {
+        margin: 0;
+        padding: 8px;
+        overflow: auto;
+        white-space: pre-wrap;
+    }
+    
+    /* Result Tools (Filter/Export) */
+    .result-tools { padding: 4px 5px; background: var(--secondary-bg); border-bottom: none; display: flex; gap: 4px; align-items: center; flex-shrink: 0; }
+    .result-tools > input { padding: 3px 6px; border: 1px solid var(--border-color); background: var(--primary-bg); color: var(--text-color); border-radius: 3px; font-size: var(--sql-workspace-font-size); flex-grow: 1; max-width: 300px;}
+    .result-tools > select { padding: 3px 6px; border: 1px solid var(--border-color); background: var(--primary-bg); color: var(--text-color); border-radius: 3px; font-size: var(--sql-workspace-font-size); max-width: 220px; }
+    .result-tools label { font-size: 0.85em; color: var(--text-color); display: flex; align-items: center; gap: 3px; cursor: pointer; }
+    .sql-result-menu {
+        position: relative;
+        display: inline-flex;
+        margin: 0;
+    }
+    .sql-result-menu-panel {
+        position: absolute;
+        right: 0;
+        top: calc(100% + 3px);
+        z-index: 20;
+        display: flex;
+        flex-direction: column;
+        min-width: 180px;
+        max-height: 260px;
+        overflow: auto;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        background: var(--secondary-bg);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+        padding: 3px;
+    }
+    .sql-result-menu-panel[hidden] {
+        display: none;
+    }
+    .sql-result-menu-item,
+    .sql-column-menu-item {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        width: 100%;
+        margin: 0;
+        padding: 4px 6px;
+        border: none;
+        border-radius: 3px;
+        background: transparent;
+        color: var(--text-color);
+        cursor: pointer;
+        font-size: var(--sql-workspace-font-size);
+        text-align: left;
+        white-space: nowrap;
+    }
+    .sql-result-menu-item:hover,
+    .sql-column-menu-item:hover {
+        background: var(--tertiary-bg);
+        color: var(--link-hover);
+    }
+    .sql-column-menu-item input {
+        flex: 0 0 auto;
+        margin: 0;
+    }
+    .sql-result-menu-empty {
+        color: var(--muted-text-color, #888);
+        font-size: var(--sql-workspace-font-size);
+        padding: 5px 6px;
+        white-space: nowrap;
+    }
+    
+    .output { 
+        height: 300px;
+        flex-shrink: 0;
+        overflow: auto; 
+        background: var(--primary-bg); 
+        padding: 0; 
+        margin: calc(var(--element-margin) / 2) var(--element-margin); 
+        font-family: monospace; 
+        font-size: var(--sql-workspace-font-size); 
+        line-height: 1.25;
+    }
+    .output * { font-size: var(--sql-workspace-font-size); }
+    .output table,
+    .output table.grid { width: 100%; border-collapse: collapse; margin: calc(var(--element-margin) / 2) var(--element-margin); table-layout: fixed; }
+    .output th,
+    .output td,
+    .output table.grid th,
+    .output table.grid td { border: 1px solid var(--border-color); padding: 4px 8px; text-align: left; white-space: nowrap; font-size: var(--sql-workspace-font-size); line-height: 1.5; overflow: hidden; text-overflow: ellipsis; }
+    .output td,
+    .output table.grid td { user-select: text; }
+    .output th,
+    .output table.grid th { user-select: none; }
+    .output .sql-column-hidden { display: none; }
+    .output th { background: var(--tertiary-bg); position: sticky; top: 0; z-index: 1; cursor: pointer; }
+    .output th .column-resize-handle {
+        position: absolute;
+        top: 0;
+        right: -3px;
+        width: 6px;
+        height: 100%;
+        cursor: col-resize;
+        z-index: 2;
+        user-select: none;
+        touch-action: none;
+    }
+    .output th .column-resize-handle:hover,
+    .output th .column-resize-handle.resizing {
+        background: var(--link-color);
+        opacity: 0.5;
+    }
+    .output th .column-sort-indicator {
+        font-size: var(--sql-workspace-font-size);
+    }
+    .output tr:nth-child(even) { background-color: rgba(255,255,255,0.02); }
+    .output tr.selected-row td { background-color: rgba(73, 204, 144, 0.4) !important; color: #fff; }
+    .output pre { padding: 5px; margin: calc(var(--element-margin) / 2) var(--element-margin); font-size: var(--sql-workspace-font-size); }
+    
+    /* Autocomplete Suggestions */
+    #autocomplete-list { 
+        position: absolute; 
+        border: 1px solid var(--border-color); 
+        background: var(--tertiary-bg); 
+        z-index: 1000; 
+        max-height: 200px; 
+        overflow-y: auto; 
+        display: none; 
+        box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        border-radius: 4px;
+        min-width: 200px;
+    }
+    #autocomplete-list div { padding: 4px 8px; cursor: pointer; border-bottom: 1px solid var(--border-color); font-size: 0.9em; color: var(--text-color); }
+    #autocomplete-list div:last-child { border-bottom: none; }
+    #autocomplete-list div:hover, #autocomplete-list div.autocomplete-active { 
+        background-color: var(--link-hover); 
+        color: white; 
+    }
+    #autocomplete-list strong { color: #49cc90; }
+    #autocomplete-list div.autocomplete-active strong { color: #fff; }

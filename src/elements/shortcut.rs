@@ -1,18 +1,12 @@
 use actix_web::{
-    post,
-    web::{Data, Form}, 
-    HttpResponse, Responder,
+    HttpResponse, Responder, post,
+    web::{Data, Form},
 };
 use serde::Deserialize;
-use std::{
-    collections::HashMap,
-    fs,
-    io,
-    sync::Arc,
-};
+use std::{collections::HashMap, fs, io, sync::Arc};
 
-use crate::app_state::AppState;
 use crate::app_db;
+use crate::app_state::AppState;
 
 // File constants
 static SHORTCUTS_FILE: &str = "shortcuts.json";
@@ -107,7 +101,6 @@ pub async fn add_shortcut(
         .finish()
 }
 
-
 // NEW: Handler for deleting a shortcut
 #[post("/delete_shortcut")]
 pub async fn delete_shortcut(
@@ -120,7 +113,7 @@ pub async fn delete_shortcut(
     }
 
     // Attempt to delete from all three collections and save if successful.
-    // We check `work_shortcuts` and `hidden_shortcuts` before `shortcuts` 
+    // We check `work_shortcuts` and `hidden_shortcuts` before `shortcuts`
     // to ensure proper file persistence logic is isolated.
 
     // 1. Check and delete from work shortcuts
@@ -139,7 +132,7 @@ pub async fn delete_shortcut(
             eprintln!("Failed to save work shortcuts after deletion: {}", e);
         }
     }
-    
+
     // 2. Check and delete from hidden shortcuts
     if let Some(hidden_shortcuts) = {
         let mut hidden_shortcuts = state.hidden_shortcuts.lock().unwrap();
@@ -156,7 +149,7 @@ pub async fn delete_shortcut(
             eprintln!("Failed to save hidden shortcuts after deletion: {}", e);
         }
     }
-    
+
     // 3. Check and delete from visible shortcuts
     if let Some(shortcuts) = {
         let mut shortcuts = state.shortcuts.lock().unwrap();
@@ -175,5 +168,7 @@ pub async fn delete_shortcut(
     }
 
     // Redirect back to the home page
-    HttpResponse::Found().append_header(("Location", "/")).finish()
+    HttpResponse::Found()
+        .append_header(("Location", "/"))
+        .finish()
 }

@@ -1,10 +1,19 @@
-use actix_web::{get, post, web::{self, Data, Form, Json}, HttpResponse, Responder};
-use std::{fs, io, process::Command, collections::HashMap, time::{Instant, SystemTime, UNIX_EPOCH}, sync::{Mutex, OnceLock}};
-use serde::{Deserialize, Serialize};
 use crate::app_db;
 use crate::app_state::{AppState, Theme};
 use crate::base_page::render_base_page;
+use actix_web::{
+    HttpResponse, Responder, get, post,
+    web::{self, Data, Form, Json},
+};
 use htmlescape::encode_minimal;
+use serde::{Deserialize, Serialize};
+use std::{
+    collections::HashMap,
+    fs, io,
+    process::Command,
+    sync::{Mutex, OnceLock},
+    time::{Instant, SystemTime, UNIX_EPOCH},
+};
 
 const REQUESTS_FILE: &str = "saved_requests.json";
 const REQUEST_FOLDERS_FILE: &str = "saved_request_folders.json";
@@ -22,7 +31,7 @@ struct SavedRequest {
     url: String,
     headers: String,
     body: String,
-    auth_type: Option<String>, 
+    auth_type: Option<String>,
     oauth_token_url: Option<String>,
     oauth_client_id: Option<String>,
     oauth_client_secret: Option<String>,
@@ -36,7 +45,7 @@ struct SaveRequestForm {
     name: String,
     method: String,
     url: String,
-    headers: String, 
+    headers: String,
     body: String,
     auth_type: Option<String>,
     oauth_token_url: Option<String>,
@@ -62,6 +71,24 @@ struct RenameRequestForm {
 #[derive(Deserialize)]
 struct CreateRequestFolderForm {
     folder_name: String,
+}
+
+#[derive(Deserialize)]
+struct DeleteRequestFolderForm {
+    folder_name: String,
+}
+
+#[derive(Deserialize)]
+struct MoveRequestForm {
+    name: String,
+    folder: Option<String>,
+    new_folder: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct MoveRequestFolderForm {
+    folder_name: String,
+    new_parent: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default)]
@@ -162,7 +189,63 @@ fn save_request_folders(folders: &[String]) -> io::Result<()> {
 }
 
 fn normalize_folder(folder: Option<&str>) -> String {
-    folder.unwrap_or("").trim().to_string()
+    normalize_folder_path(folder.unwrap_or(""))
+}
+
+fn normalize_folder_path(folder: &str) -> String {
+    folder
+        .replace(" / ", "/")
+        .split('/')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+fn folder_basename(folder: &str) -> String {
+    normalize_folder_path(folder)
+        .rsplit('/')
+        .next()
+        .unwrap_or("")
+        .to_string()
+}
+
+fn add_folder_path(folders: &mut Vec<String>, folder: &str) {
+    let folder = normalize_folder_path(folder);
+    if folder.is_empty() {
+        return;
+    }
+    let parts = folder.split('/').collect::<Vec<_>>();
+    for index in 1..=parts.len() {
+        let path = parts[..index].join("/");
+        if !folders
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(&path))
+        {
+            folders.push(path);
+        }
+    }
+}
+
+fn is_same_or_child_folder(folder: &str, parent: &str) -> bool {
+    folder == parent
+        || folder
+            .strip_prefix(parent)
+            .is_some_and(|rest| rest.starts_with('/'))
+}
+
+fn move_folder_path(value: &str, old_folder: &str, new_folder: &str) -> String {
+    if value == old_folder {
+        return new_folder.to_string();
+    }
+
+    if let Some(rest) = value.strip_prefix(old_folder) {
+        if rest.starts_with('/') {
+            return format!("{new_folder}{rest}");
+        }
+    }
+
+    value.to_string()
 }
 
 fn request_identity_matches(request: &SavedRequest, name: &str, folder: Option<&str>) -> bool {
@@ -242,7 +325,11 @@ fn normalize_request_variables(mut variables: RequestVariables) -> RequestVariab
     }
 }
 
-fn upsert_variable_set(variables: &mut RequestVariables, name: &str, values: HashMap<String, String>) {
+fn upsert_variable_set(
+    variables: &mut RequestVariables,
+    name: &str,
+    values: HashMap<String, String>,
+) {
     let normalized_name = name.trim();
     if normalized_name.is_empty() {
         return;
@@ -266,7 +353,7 @@ fn upsert_variable_set(variables: &mut RequestVariables, name: &str, values: Has
 
 fn normalize_saved_folder(folder: Option<&String>) -> Option<String> {
     folder
-        .map(|value| value.trim().to_string())
+        .map(|value| normalize_folder_path(value))
         .filter(|value| !value.is_empty())
 }
 
@@ -299,16 +386,17 @@ pub async fn request_save(form: Form<SaveRequestForm>) -> impl Responder {
         folder: folder.clone(),
     };
 
-    if let Some(idx) = requests.iter().position(|r| {
-        request_identity_matches(r, &new_req.name, folder.as_deref())
-    }) {
+    if let Some(idx) = requests
+        .iter()
+        .position(|r| request_identity_matches(r, &new_req.name, folder.as_deref()))
+    {
         requests[idx] = new_req;
     } else {
         requests.push(new_req);
     }
 
     let _ = save_requests_to_file(&requests);
-    
+
     HttpResponse::Found()
         .append_header(("Location", "/requests"))
         .finish()
@@ -316,11 +404,14 @@ pub async fn request_save(form: Form<SaveRequestForm>) -> impl Responder {
 
 #[post("/requests/folder")]
 pub async fn request_create_folder(form: Form<CreateRequestFolderForm>) -> impl Responder {
-    let folder_name = form.folder_name.trim();
+    let folder_name = normalize_folder_path(&form.folder_name);
     if !folder_name.is_empty() {
         let mut folders = load_request_folders();
-        if !folders.iter().any(|folder| folder.eq_ignore_ascii_case(folder_name)) {
-            folders.push(folder_name.to_string());
+        if !folders
+            .iter()
+            .any(|folder| folder.eq_ignore_ascii_case(&folder_name))
+        {
+            folders.push(folder_name);
             folders.sort_by_key(|folder| folder.to_lowercase());
             let _ = save_request_folders(&folders);
         }
@@ -331,16 +422,157 @@ pub async fn request_create_folder(form: Form<CreateRequestFolderForm>) -> impl 
         .finish()
 }
 
+#[post("/requests/folder/delete")]
+pub async fn request_delete_folder(form: Form<DeleteRequestFolderForm>) -> impl Responder {
+    let folder_name = normalize_folder_path(&form.folder_name);
+    if !folder_name.is_empty() {
+        let mut folders = load_request_folders();
+        folders.retain(|folder| {
+            !is_same_or_child_folder(&normalize_folder_path(folder), &folder_name)
+        });
+        if let Err(err) = save_request_folders(&folders) {
+            eprintln!("Failed to delete request folder: {err}");
+        }
+
+        let mut requests = load_requests();
+        requests.retain(|request| {
+            let folder = request
+                .folder
+                .as_deref()
+                .map(normalize_folder_path)
+                .unwrap_or_default();
+            !is_same_or_child_folder(&folder, &folder_name)
+        });
+        if let Err(err) = save_requests_to_file(&requests) {
+            eprintln!("Failed to delete requests in folder: {err}");
+        }
+    }
+
+    HttpResponse::Found()
+        .append_header(("Location", "/requests"))
+        .finish()
+}
+
+#[post("/requests/move")]
+pub async fn request_move(form: Form<MoveRequestForm>) -> impl Responder {
+    let new_folder = form
+        .new_folder
+        .as_deref()
+        .map(normalize_folder_path)
+        .filter(|folder| !folder.is_empty());
+    let old_folder = form.folder.as_deref();
+
+    let mut requests = load_requests();
+    if let Some(request) = requests
+        .iter_mut()
+        .find(|request| request_identity_matches(request, &form.name, old_folder))
+    {
+        request.folder = new_folder.clone();
+        if let Err(err) = save_requests_to_file(&requests) {
+            eprintln!("Failed to move request: {err}");
+        }
+    }
+
+    if let Some(folder) = new_folder {
+        let mut folders = load_request_folders();
+        if !folders
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(&folder))
+        {
+            folders.push(folder);
+            folders.sort_by_key(|folder| folder.to_lowercase());
+            if let Err(err) = save_request_folders(&folders) {
+                eprintln!("Failed to save request folder after move: {err}");
+            }
+        }
+    }
+
+    HttpResponse::NoContent().finish()
+}
+
+#[post("/requests/folder/move")]
+pub async fn request_move_folder(form: Form<MoveRequestFolderForm>) -> impl Responder {
+    let old_folder = normalize_folder_path(&form.folder_name);
+    let new_parent = form
+        .new_parent
+        .as_deref()
+        .map(normalize_folder_path)
+        .unwrap_or_default();
+
+    if old_folder.is_empty() || is_same_or_child_folder(&new_parent, &old_folder) {
+        return HttpResponse::BadRequest().body("Invalid folder move");
+    }
+
+    let basename = folder_basename(&old_folder);
+    if basename.is_empty() {
+        return HttpResponse::BadRequest().body("Invalid folder name");
+    }
+
+    let new_folder = if new_parent.is_empty() {
+        basename
+    } else {
+        format!("{new_parent}/{basename}")
+    };
+
+    if old_folder == new_folder {
+        return HttpResponse::NoContent().finish();
+    }
+
+    let mut folders = load_request_folders();
+    let mut folders_changed = false;
+    for folder in folders.iter_mut() {
+        let normalized = normalize_folder_path(folder);
+        if is_same_or_child_folder(&normalized, &old_folder) {
+            *folder = move_folder_path(&normalized, &old_folder, &new_folder);
+            folders_changed = true;
+        }
+    }
+    if !folders
+        .iter()
+        .any(|folder| folder.eq_ignore_ascii_case(&new_folder))
+    {
+        folders.push(new_folder.clone());
+        folders_changed = true;
+    }
+    if folders_changed {
+        folders.sort_by_key(|folder| folder.to_lowercase());
+        if let Err(err) = save_request_folders(&folders) {
+            eprintln!("Failed to move request folder: {err}");
+        }
+    }
+
+    let mut requests = load_requests();
+    let mut requests_changed = false;
+    for request in requests.iter_mut() {
+        let Some(folder) = request.folder.as_ref() else {
+            continue;
+        };
+        let folder = normalize_folder_path(folder);
+        if is_same_or_child_folder(&folder, &old_folder) {
+            request.folder = Some(move_folder_path(&folder, &old_folder, &new_folder));
+            requests_changed = true;
+        }
+    }
+    if requests_changed {
+        if let Err(err) = save_requests_to_file(&requests) {
+            eprintln!("Failed to move requests with folder: {err}");
+        }
+    }
+
+    HttpResponse::NoContent().finish()
+}
+
 #[post("/requests/delete")]
 pub async fn request_delete(form: Form<DeleteRequestForm>) -> impl Responder {
     let mut requests = load_requests();
-    if let Some(idx) = requests.iter().position(|r| {
-        request_identity_matches(r, &form.name, form.folder.as_deref())
-    }) {
+    if let Some(idx) = requests
+        .iter()
+        .position(|r| request_identity_matches(r, &form.name, form.folder.as_deref()))
+    {
         requests.remove(idx);
         let _ = save_requests_to_file(&requests);
     }
-    
+
     HttpResponse::Found()
         .append_header(("Location", "/requests"))
         .finish()
@@ -381,14 +613,20 @@ pub async fn request_run(payload: Json<ProxyRequest>) -> impl Responder {
             format!(
                 "req_{}_{}",
                 std::process::id(),
-                SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos()
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos()
             )
         });
 
         let run_id = format!(
             "{}_{}_{}",
             std::process::id(),
-            SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos(),
             payload.method
         );
         let mut header_path = std::env::temp_dir();
@@ -397,13 +635,17 @@ pub async fn request_run(payload: Json<ProxyRequest>) -> impl Responder {
         body_path.push(format!("go_service_body_{run_id}.txt"));
 
         cmd.arg("-sS")
-            .arg("--connect-timeout").arg("15")
-            .arg("--max-time").arg("60")
-            .arg("-X").arg(&payload.method);
+            .arg("--connect-timeout")
+            .arg("15")
+            .arg("--max-time")
+            .arg("60")
+            .arg("-X")
+            .arg(&payload.method);
 
         for header in &payload.headers {
             if !header.key.trim().is_empty() {
-                cmd.arg("-H").arg(format!("{}: {}", header.key, header.value));
+                cmd.arg("-H")
+                    .arg(format!("{}: {}", header.key, header.value));
             }
         }
 
@@ -411,9 +653,12 @@ pub async fn request_run(payload: Json<ProxyRequest>) -> impl Responder {
             cmd.arg("-d").arg(&payload.body);
         }
 
-        cmd.arg("-D").arg(&header_path)
-            .arg("-o").arg(&body_path)
-            .arg("-w").arg("%{http_code}")
+        cmd.arg("-D")
+            .arg(&header_path)
+            .arg("-o")
+            .arg(&body_path)
+            .arg("-w")
+            .arg("%{http_code}")
             .arg(&payload.url);
 
         let child = cmd.spawn()?;
@@ -445,11 +690,14 @@ pub async fn request_run(payload: Json<ProxyRequest>) -> impl Responder {
             curl_exit: output.status.code().unwrap_or(-1),
             duration_ms: started.elapsed().as_millis(),
         })
-    }).await;
+    })
+    .await;
 
     match res {
         Ok(Ok(output)) => HttpResponse::Ok().json(output),
-        Ok(Err(e)) => HttpResponse::InternalServerError().body(format!("Failed to execute curl: {}", e)),
+        Ok(Err(e)) => {
+            HttpResponse::InternalServerError().body(format!("Failed to execute curl: {}", e))
+        }
         _ => HttpResponse::InternalServerError().body("Blocked execution error"),
     }
 }
@@ -482,7 +730,9 @@ pub async fn request_save_variables(payload: Json<RequestVariables>) -> impl Res
 
     match save_request_variables(&variables) {
         Ok(_) => HttpResponse::Ok().json(normalize_request_variables(variables)),
-        Err(err) => HttpResponse::InternalServerError().body(format!("Failed to save variables: {err}")),
+        Err(err) => {
+            HttpResponse::InternalServerError().body(format!("Failed to save variables: {err}"))
+        }
     }
 }
 
@@ -498,7 +748,8 @@ pub async fn request_history_get() -> impl Responder {
 pub async fn request_history_save(payload: Json<serde_json::Value>) -> impl Responder {
     match app_db::put_json("requests", "history", &payload.into_inner()).await {
         Ok(_) => HttpResponse::NoContent().finish(),
-        Err(err) => HttpResponse::InternalServerError().body(format!("Failed to save request history: {err}")),
+        Err(err) => HttpResponse::InternalServerError()
+            .body(format!("Failed to save request history: {err}")),
     }
 }
 
@@ -514,7 +765,9 @@ pub async fn scratchpads_get() -> impl Responder {
 pub async fn scratchpads_save(payload: Json<serde_json::Value>) -> impl Responder {
     match app_db::put_json("scratchpads", "pads", &payload.into_inner()).await {
         Ok(_) => HttpResponse::NoContent().finish(),
-        Err(err) => HttpResponse::InternalServerError().body(format!("Failed to save scratch pads: {err}")),
+        Err(err) => {
+            HttpResponse::InternalServerError().body(format!("Failed to save scratch pads: {err}"))
+        }
     }
 }
 
@@ -533,7 +786,11 @@ pub async fn request_import_postman(payload: Json<PostmanImportPayload>) -> impl
 
     let mut parsed = Vec::new();
     let collection_auth = payload.collection.get("auth");
-    if let Some(items) = payload.collection.get("item").and_then(|items| items.as_array()) {
+    if let Some(items) = payload
+        .collection
+        .get("item")
+        .and_then(|items| items.as_array())
+    {
         parse_postman_items(
             items,
             &mut Vec::new(),
@@ -548,7 +805,10 @@ pub async fn request_import_postman(payload: Json<PostmanImportPayload>) -> impl
     let mut imported_folders = load_request_folders();
     for parsed_request in &parsed {
         if let Some(folder) = &parsed_request.folder {
-            if !imported_folders.iter().any(|existing| existing.eq_ignore_ascii_case(folder)) {
+            if !imported_folders
+                .iter()
+                .any(|existing| existing.eq_ignore_ascii_case(folder))
+            {
                 imported_folders.push(folder.clone());
             }
         }
@@ -583,13 +843,16 @@ pub async fn request_import_postman(payload: Json<PostmanImportPayload>) -> impl
     upsert_variable_set(&mut request_variables, &collection_name, imported_variables);
 
     if let Err(err) = save_requests_to_file(&requests) {
-        return HttpResponse::InternalServerError().body(format!("Failed to save imported requests: {err}"));
+        return HttpResponse::InternalServerError()
+            .body(format!("Failed to save imported requests: {err}"));
     }
     if let Err(err) = save_request_folders(&imported_folders) {
-        return HttpResponse::InternalServerError().body(format!("Failed to save request folders: {err}"));
+        return HttpResponse::InternalServerError()
+            .body(format!("Failed to save request folders: {err}"));
     }
     if let Err(err) = save_request_variables(&request_variables) {
-        return HttpResponse::InternalServerError().body(format!("Failed to save request variables: {err}"));
+        return HttpResponse::InternalServerError()
+            .body(format!("Failed to save request variables: {err}"));
     }
 
     HttpResponse::Ok().json(PostmanImportResponse {
@@ -671,13 +934,21 @@ fn postman_headers_to_lines(headers: Option<&serde_json::Value>) -> Vec<String> 
         .map(|headers| {
             headers
                 .iter()
-                .filter(|header| !header.get("disabled").and_then(|value| value.as_bool()).unwrap_or(false))
+                .filter(|header| {
+                    !header
+                        .get("disabled")
+                        .and_then(|value| value.as_bool())
+                        .unwrap_or(false)
+                })
                 .filter_map(|header| {
                     let key = header.get("key").and_then(|key| key.as_str())?.trim();
                     if key.is_empty() {
                         return None;
                     }
-                    let value = header.get("value").and_then(|value| value.as_str()).unwrap_or("");
+                    let value = header
+                        .get("value")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or("");
                     Some(format!("{key}: {value}"))
                 })
                 .collect()
@@ -716,10 +987,18 @@ fn postman_url_to_string(url: Option<&serde_json::Value>) -> String {
         .map(|items| {
             items
                 .iter()
-                .filter(|item| !item.get("disabled").and_then(|value| value.as_bool()).unwrap_or(false))
+                .filter(|item| {
+                    !item
+                        .get("disabled")
+                        .and_then(|value| value.as_bool())
+                        .unwrap_or(false)
+                })
                 .filter_map(|item| {
                     let key = item.get("key").and_then(|key| key.as_str())?;
-                    let value = item.get("value").and_then(|value| value.as_str()).unwrap_or("");
+                    let value = item
+                        .get("value")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or("");
                     Some(format!("{}={}", percent_encode(key), percent_encode(value)))
                 })
                 .collect::<Vec<_>>()
@@ -758,12 +1037,19 @@ fn percent_encode(value: &str) -> String {
         .collect()
 }
 
-fn postman_body_to_string(body: Option<&serde_json::Value>, request_name: &str) -> (String, Vec<String>) {
+fn postman_body_to_string(
+    body: Option<&serde_json::Value>,
+    request_name: &str,
+) -> (String, Vec<String>) {
     let mut warnings = Vec::new();
     let Some(body) = body else {
         return (String::new(), warnings);
     };
-    match body.get("mode").and_then(|mode| mode.as_str()).unwrap_or("") {
+    match body
+        .get("mode")
+        .and_then(|mode| mode.as_str())
+        .unwrap_or("")
+    {
         "raw" => (
             body.get("raw")
                 .and_then(|raw| raw.as_str())
@@ -778,10 +1064,18 @@ fn postman_body_to_string(body: Option<&serde_json::Value>, request_name: &str) 
                 .map(|items| {
                     items
                         .iter()
-                        .filter(|item| !item.get("disabled").and_then(|value| value.as_bool()).unwrap_or(false))
+                        .filter(|item| {
+                            !item
+                                .get("disabled")
+                                .and_then(|value| value.as_bool())
+                                .unwrap_or(false)
+                        })
                         .filter_map(|item| {
                             let key = item.get("key").and_then(|key| key.as_str())?;
-                            let value = item.get("value").and_then(|value| value.as_str()).unwrap_or("");
+                            let value = item
+                                .get("value")
+                                .and_then(|value| value.as_str())
+                                .unwrap_or("");
                             Some(format!("{}={}", percent_encode(key), percent_encode(value)))
                         })
                         .collect::<Vec<_>>()
@@ -791,20 +1085,30 @@ fn postman_body_to_string(body: Option<&serde_json::Value>, request_name: &str) 
             (encoded, warnings)
         }
         "formdata" => {
-            warnings.push(format!("{request_name}: imported form-data body as text; file fields are skipped"));
+            warnings.push(format!(
+                "{request_name}: imported form-data body as text; file fields are skipped"
+            ));
             let text = body
                 .get("formdata")
                 .and_then(|items| items.as_array())
                 .map(|items| {
                     items
                         .iter()
-                        .filter(|item| !item.get("disabled").and_then(|value| value.as_bool()).unwrap_or(false))
+                        .filter(|item| {
+                            !item
+                                .get("disabled")
+                                .and_then(|value| value.as_bool())
+                                .unwrap_or(false)
+                        })
                         .filter_map(|item| {
                             if item.get("type").and_then(|value| value.as_str()) == Some("file") {
                                 return None;
                             }
                             let key = item.get("key").and_then(|key| key.as_str())?;
-                            let value = item.get("value").and_then(|value| value.as_str()).unwrap_or("");
+                            let value = item
+                                .get("value")
+                                .and_then(|value| value.as_str())
+                                .unwrap_or("");
                             Some(format!("{key}={value}"))
                         })
                         .collect::<Vec<_>>()
@@ -827,7 +1131,10 @@ fn postman_body_to_string(body: Option<&serde_json::Value>, request_name: &str) 
 }
 
 fn postman_auth_type(auth: Option<&serde_json::Value>) -> Option<&str> {
-    match auth.and_then(|auth| auth.get("type")).and_then(|value| value.as_str()) {
+    match auth
+        .and_then(|auth| auth.get("type"))
+        .and_then(|value| value.as_str())
+    {
         Some("bearer") => Some("bearer"),
         Some("basic") => Some("basic"),
         Some("apikey") => Some("apikey"),
@@ -836,9 +1143,12 @@ fn postman_auth_type(auth: Option<&serde_json::Value>) -> Option<&str> {
     }
 }
 
-fn postman_auth_array_value(auth: Option<&serde_json::Value>, auth_type: &str, key: &str) -> Option<String> {
-    auth
-        .and_then(|auth| auth.get(auth_type))
+fn postman_auth_array_value(
+    auth: Option<&serde_json::Value>,
+    auth_type: &str,
+    key: &str,
+) -> Option<String> {
+    auth.and_then(|auth| auth.get(auth_type))
         .and_then(|items| items.as_array())
         .and_then(|items| {
             items.iter().find_map(|item| {
@@ -865,7 +1175,10 @@ fn apply_postman_auth(
     warnings: &mut Vec<String>,
     request_name: &str,
 ) {
-    let Some(auth_type) = auth.and_then(|auth| auth.get("type")).and_then(|value| value.as_str()) else {
+    let Some(auth_type) = auth
+        .and_then(|auth| auth.get("type"))
+        .and_then(|value| value.as_str())
+    else {
         return;
     };
     match auth_type {
@@ -878,21 +1191,30 @@ fn apply_postman_auth(
             let username = postman_auth_array_value(auth, "basic", "username").unwrap_or_default();
             let password = postman_auth_array_value(auth, "basic", "password").unwrap_or_default();
             if !username.is_empty() || !password.is_empty() {
-                headers.push(format!("Authorization: Basic {{basic_auth:{username}:{password}}}"));
-                warnings.push(format!("{request_name}: basic auth was imported as a placeholder header"));
+                headers.push(format!(
+                    "Authorization: Basic {{basic_auth:{username}:{password}}}"
+                ));
+                warnings.push(format!(
+                    "{request_name}: basic auth was imported as a placeholder header"
+                ));
             }
         }
         "apikey" => {
             let key = postman_auth_array_value(auth, "apikey", "key").unwrap_or_default();
             let value = postman_auth_array_value(auth, "apikey", "value").unwrap_or_default();
-            let location = postman_auth_array_value(auth, "apikey", "in").unwrap_or_else(|| "header".to_string());
+            let location = postman_auth_array_value(auth, "apikey", "in")
+                .unwrap_or_else(|| "header".to_string());
             if key.is_empty() {
                 return;
             }
             if location == "query" {
                 let raw_url = postman_url_to_string(request_url);
                 let separator = if raw_url.contains('?') { "&" } else { "?" };
-                headers.push(format!("X-Postman-Imported-Query-Auth: {raw_url}{separator}{}={}", percent_encode(&key), percent_encode(&value)));
+                headers.push(format!(
+                    "X-Postman-Imported-Query-Auth: {raw_url}{separator}{}={}",
+                    percent_encode(&key),
+                    percent_encode(&value)
+                ));
                 warnings.push(format!("{request_name}: query API key was noted in headers; add it to the URL if needed"));
             } else {
                 headers.push(format!("{key}: {value}"));
@@ -903,13 +1225,21 @@ fn apply_postman_auth(
                 headers.push(format!("Authorization: Bearer {token}"));
             }
         }
-        other => warnings.push(format!("{request_name}: auth type '{other}' is not fully supported")),
+        other => warnings.push(format!(
+            "{request_name}: auth type '{other}' is not fully supported"
+        )),
     }
 }
 
-fn extract_postman_variables(collection: &serde_json::Value, collection_name: &str) -> HashMap<String, String> {
+fn extract_postman_variables(
+    collection: &serde_json::Value,
+    collection_name: &str,
+) -> HashMap<String, String> {
     let mut variables = HashMap::new();
-    if let Some(items) = collection.get("variable").and_then(|items| items.as_array()) {
+    if let Some(items) = collection
+        .get("variable")
+        .and_then(|items| items.as_array())
+    {
         for item in items {
             let Some(key) = item.get("key").and_then(|key| key.as_str()).map(str::trim) else {
                 continue;
@@ -939,13 +1269,15 @@ fn unique_request_name(requests: &[SavedRequest], base_name: &str, folder: Optio
     let mut count = 2;
     loop {
         let candidate = format!("{base_name} ({count})");
-        if !requests.iter().any(|request| request_identity_matches(request, &candidate, folder)) {
+        if !requests
+            .iter()
+            .any(|request| request_identity_matches(request, &candidate, folder))
+        {
             return candidate;
         }
         count += 1;
     }
 }
-
 
 // --- Rendering ---
 
@@ -956,11 +1288,17 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
         .replace("</", "<\\/");
     let mut request_folders = load_request_folders();
     for request in &saved_requests {
-        if let Some(folder) = request.folder.as_ref().filter(|folder| !folder.trim().is_empty()) {
-            if !request_folders.iter().any(|existing| existing.eq_ignore_ascii_case(folder)) {
-                request_folders.push(folder.clone());
-            }
+        if let Some(folder) = request
+            .folder
+            .as_ref()
+            .filter(|folder| !folder.trim().is_empty())
+        {
+            add_folder_path(&mut request_folders, folder);
         }
+    }
+    let existing_folders = request_folders.clone();
+    for folder in existing_folders {
+        add_folder_path(&mut request_folders, &folder);
     }
     request_folders.sort_by_key(|folder| folder.to_lowercase());
 
@@ -969,8 +1307,9 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
         let name_attr = htmlescape::encode_attribute(&r.name);
         let folder_attr = htmlescape::encode_attribute(r.folder.as_deref().unwrap_or(""));
         // Use standard strings with escaped quotes
-        format!(r##"
-                <li class="saved-req-item">
+        format!(
+            r##"
+                <li class="saved-req-item" draggable="true" data-name="{}" data-folder="{}">
                     <div class="saved-req-link-wrap">
                         <span class="req-method {}">{}</span>
                         <a href="#" class="req-link" 
@@ -998,12 +1337,15 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
                         <button type="submit" class="btn-danger-text" title="Delete">×</button>
                     </form>
                 </li>"##,
-            r.method.to_lowercase(), r.method, 
-            name_attr, 
-            htmlescape::encode_attribute(&r.method), 
-            htmlescape::encode_attribute(&r.url), 
-            htmlescape::encode_attribute(&r.headers), 
-            htmlescape::encode_attribute(&r.body), 
+            name_attr,
+            folder_attr,
+            r.method.to_lowercase(),
+            r.method,
+            name_attr,
+            htmlescape::encode_attribute(&r.method),
+            htmlescape::encode_attribute(&r.url),
+            htmlescape::encode_attribute(&r.headers),
+            htmlescape::encode_attribute(&r.body),
             r.auth_type.as_deref().unwrap_or("none"),
             htmlescape::encode_attribute(r.oauth_token_url.as_deref().unwrap_or("")),
             htmlescape::encode_attribute(r.oauth_client_id.as_deref().unwrap_or("")),
@@ -1032,17 +1374,32 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
         saved_list_parts.extend(unfiled_requests);
     }
     for folder in &request_folders {
-        let folder_attr = htmlescape::encode_attribute(folder);
+        let folder_path = normalize_folder_path(folder);
+        let folder_depth = folder_path.matches('/').count();
+        let folder_label = folder_basename(&folder_path);
+        let folder_attr = htmlescape::encode_attribute(&folder_path);
+        let folder_confirm = htmlescape::encode_attribute(&folder_path);
         saved_list_parts.push(format!(
-            r#"<li class="saved-req-folder" data-folder="{}"><span class="saved-req-folder-toggle">▾</span><span class="saved-req-folder-name">{}</span></li>"#,
+            r#"<li class="saved-req-folder" draggable="true" data-folder="{}" data-depth="{}" style="--folder-depth:{};"><span class="saved-req-folder-name">{}</span><form method="POST" action="/requests/folder/delete" class="delete-request-folder-form" onsubmit="return confirm('Delete folder {} and all saved requests inside it?');"><input type="hidden" name="folder_name" value="{}"><button type="submit" class="btn-danger-text saved-folder-delete-btn" title="Delete folder">×</button></form><span class="saved-req-folder-toggle">▾</span></li>"#,
             folder_attr,
-            encode_minimal(folder)
+            folder_depth,
+            folder_depth,
+            encode_minimal(&folder_label),
+            folder_confirm,
+            folder_attr
         ));
         saved_list_parts.extend(
             saved_requests
                 .iter()
-                .filter(|request| request.folder.as_deref() == Some(folder.as_str()))
-                .map(render_saved_request)
+                .filter(|request| {
+                    request
+                        .folder
+                        .as_deref()
+                        .map(normalize_folder_path)
+                        .as_deref()
+                        == Some(folder_path.as_str())
+                })
+                .map(render_saved_request),
         );
     }
     let saved_list_html = saved_list_parts.join("\n");
@@ -1050,14 +1407,16 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
     let request_folder_options = request_folders
         .iter()
         .map(|folder| {
-            let folder_attr = htmlescape::encode_attribute(folder);
-            let folder_safe = encode_minimal(folder);
+            let folder = normalize_folder_path(folder);
+            let folder_attr = htmlescape::encode_attribute(&folder);
+            let folder_safe = encode_minimal(&folder);
             format!(r#"<option value="{folder_attr}">{folder_safe}</option>"#)
         })
         .collect::<Vec<_>>()
         .join("\n");
 
-    let sidebar_content = format!(r#"
+    let sidebar_content = format!(
+        r#"
         <div class="requests-sidebar-fixed">
             <div class="requests-sidebar-heading">
                 <h2 class="requests-sidebar-title">Saved Requests</h2>
@@ -1089,11 +1448,14 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
         <ul class="saved-list" id="saved-list">
             {}
         </ul>
-    "#, saved_list_html);
-    
+    "#,
+        saved_list_html
+    );
+
     let sidebar_html = crate::elements::sidebar::render(&sidebar_content);
 
-    let content = format!(r#"
+    let content = format!(
+        r#"
     <div class="req-container">
 
         {sidebar_html}
@@ -1117,13 +1479,9 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
                 </div>
             </div>
 
-            <!-- Save Form (Hidden by default) -->
-            <form method="POST" action="/requests/save" class="save-controls" id="save-controls">
-                <input type="text" name="name" id="req-name" placeholder="Request Name" required>
-                <select name="folder" id="req-folder" title="Request folder">
-                    <option value="">Unfiled</option>
-                    {request_folder_options}
-                </select>
+            <form method="POST" action="/requests/save" class="save-controls" id="save-controls" hidden>
+                <input type="hidden" name="name" id="req-name">
+                <input type="hidden" name="folder" id="req-folder">
                 <input type="hidden" name="method" id="save-method">
                 <input type="hidden" name="url" id="save-url">
                 <input type="hidden" name="headers" id="save-headers">
@@ -1133,8 +1491,28 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
                 <input type="hidden" name="oauth_client_id" id="save-oauth-client-id">
                 <input type="hidden" name="oauth_client_secret" id="save-oauth-client-secret">
                 <input type="hidden" name="oauth_scope" id="save-oauth-scope">
-                <button type="submit" class="save-btn btn-small">Confirm Save</button>
             </form>
+
+            <dialog id="save-request-modal" class="save-request-modal">
+                <form method="dialog" class="save-request-modal-content">
+                    <div class="save-request-modal-header">
+                        <h3>Save Request</h3>
+                    </div>
+                    <div class="save-request-modal-body">
+                        <label for="save-request-name-input">Name</label>
+                        <input type="text" id="save-request-name-input" placeholder="Request name" autocomplete="off">
+                        <label for="save-request-folder-select">Folder</label>
+                        <select id="save-request-folder-select" title="Request folder">
+                            <option value="">Unfiled</option>
+                            {request_folder_options}
+                        </select>
+                    </div>
+                    <div class="save-request-modal-actions">
+                        <button type="button" id="cancel-save-request-btn" class="save-btn btn-small request-save-cancel-btn">Cancel</button>
+                        <button type="button" id="confirm-save-request-btn" class="save-btn btn-small">Confirm Save</button>
+                    </div>
+                </form>
+            </dialog>
             
             <!-- Wrapper for Input Section to control height -->
             <div class="input-container">
@@ -1319,7 +1697,19 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
     </dialog>
     <script type="application/json" id="request-variables-data">{request_variables_json}</script>
     <script src="/static/requests.js" defer></script>
-    "#, sidebar_html = sidebar_html, request_folder_options = request_folder_options, request_variables_json = request_variables_json);
+    "#,
+        sidebar_html = sidebar_html,
+        request_folder_options = request_folder_options,
+        request_variables_json = request_variables_json
+    );
 
-    render_base_page("Request Builder", &format!(r#"<link rel="stylesheet" href="/static/requests.css">{}"#, content), current_theme, saved_themes)
+    render_base_page(
+        "Request Builder",
+        &format!(
+            r#"<link rel="stylesheet" href="/static/requests.css">{}"#,
+            content
+        ),
+        current_theme,
+        saved_themes,
+    )
 }

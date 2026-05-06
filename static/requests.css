@@ -89,6 +89,7 @@
     }
     
     .saved-req-folder {
+        position: relative;
         display: flex;
         align-items: center;
         gap: 2px;
@@ -101,11 +102,55 @@
         font-weight: bold;
         line-height: 1.4;
         opacity: 0.75;
-        padding: 1px 0 !important;
+        padding: 1px 0 1px calc(var(--folder-depth, 0) * 12px) !important;
         text-transform: uppercase;
         user-select: none;
         width: 100%;
         box-sizing: border-box;
+    }
+
+    .saved-req-folder.drop-target,
+    .saved-list.drop-target {
+        outline: 2px solid var(--link-hover);
+        outline-offset: -1px;
+        background: rgba(73, 204, 144, 0.18);
+        opacity: 1;
+    }
+
+    .saved-req-folder.drop-target::after {
+        content: "Drop to move here";
+        position: absolute;
+        right: 18px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--link-hover);
+        font-size: calc(var(--font-size-small) * 0.8);
+        font-weight: normal;
+        text-transform: none;
+    }
+
+    .saved-req-folder.drop-target-invalid {
+        outline: 2px solid #ff6b6b;
+        outline-offset: -1px;
+        background: rgba(255, 107, 107, 0.18);
+        opacity: 1;
+    }
+
+    .saved-req-folder.drop-target-invalid::after {
+        content: "Cannot move here";
+        position: absolute;
+        right: 18px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #ff6b6b;
+        font-size: calc(var(--font-size-small) * 0.8);
+        font-weight: normal;
+        text-transform: none;
+    }
+
+    .saved-req-folder.dragging,
+    .saved-req-item.dragging {
+        opacity: 0.45;
     }
 
     .saved-req-folder:hover {
@@ -117,19 +162,36 @@
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        order: 2;
+        order: 3;
         width: 14px;
         flex: 0 0 14px;
-        margin-left: auto;
+        margin-left: 2px;
         font-size: calc(var(--font-size-small) * 0.8);
     }
 
     .saved-req-folder-name {
         order: 1;
+        flex: 1 1 auto;
         min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+    }
+    .delete-request-folder-form {
+        display: inline-flex;
+        align-items: center;
+        flex: 0 0 auto;
+        margin: 0;
+        order: 2;
+    }
+    .saved-req-folder .saved-folder-delete-btn {
+        width: 16px;
+        height: 16px;
+        min-width: 16px;
+        min-height: 16px;
+        margin: 0;
+        padding: 0;
+        line-height: 1;
     }
 
     .saved-req-item { display: flex; align-items: center; padding: 0; min-height: 22px; background-color: transparent; cursor: pointer; transition: background 0.2s; width: 100%; box-sizing: border-box; }
@@ -160,7 +222,7 @@
     .main-area { flex-grow: 1; min-width: 0; padding: 0; display: flex; flex-direction: column; overflow: hidden; height: 100%; box-sizing: border-box; background-color: var(--primary-bg); }
     
     /* Request Bar */
-    .request-bar { display: grid; grid-template-columns: auto minmax(180px, 520px) auto; justify-content: start; column-gap: 3px; row-gap: 3px; padding: 4px; background: var(--secondary-bg); border-bottom: 1px solid var(--border-color); flex-shrink: 0; align-items: center; }
+    .request-bar { display: grid; grid-template-columns: auto minmax(180px, 1fr) max-content; column-gap: 3px; row-gap: 0; padding: 4px; background: var(--secondary-bg); border-bottom: 1px solid var(--border-color); flex-shrink: 0; align-items: center; }
     .request-bar button,
     .request-bar .btn-small {
         margin: 0 !important;
@@ -179,9 +241,10 @@
         padding-right: 6px;
     }
 
-    @media (max-width: 1100px) {
+    @media (max-width: 700px) {
         .request-bar {
             grid-template-columns: auto minmax(0, 1fr);
+            row-gap: 3px;
         }
 
         .request-actions {
@@ -626,10 +689,78 @@
     #headers-body-resizer { height: 6px; background: var(--tertiary-bg); border-top: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color); cursor: row-resize; flex-shrink: 0; }
     #headers-body-resizer.resizing { background: var(--link-color); }
     
-    /* Save Modal */
-    .save-controls { display: flex; gap: 5px; align-items: center; background: var(--tertiary-bg); padding: 10px; border-bottom: 1px solid var(--border-color); margin: calc(var(--element-margin) / 2) var(--element-margin); display: none; flex-shrink: 0; }
-    .save-controls input { flex-grow: 1; padding: 4px; border: 1px solid var(--border-color); border-radius: 3px; }
-    .save-controls select { padding: 4px; border: 1px solid var(--border-color); border-radius: 3px; background: var(--primary-bg); color: var(--text-color); }
+    .save-request-modal {
+        width: min(420px, calc(100vw - 32px));
+        padding: 0;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        background: var(--secondary-bg);
+        color: var(--text-color);
+        box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+    }
+
+    .save-request-modal::backdrop {
+        background: rgba(0, 0, 0, 0.6);
+    }
+
+    .save-request-modal-content {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        margin: 0;
+    }
+
+    .save-request-modal-header {
+        display: flex;
+        align-items: center;
+        min-height: 34px;
+        padding: 6px 10px;
+        border-bottom: 1px solid var(--border-color);
+        background: var(--tertiary-bg);
+    }
+
+    .save-request-modal-header h3 {
+        margin: 0;
+        font-size: var(--font-size-medium);
+    }
+
+    .save-request-modal-body {
+        display: grid;
+        grid-template-columns: 88px minmax(0, 1fr);
+        gap: 8px;
+        align-items: center;
+        padding: 12px;
+    }
+
+    .save-request-modal-body label {
+        font-size: var(--font-size-small);
+        font-weight: bold;
+    }
+
+    .save-request-modal-body input,
+    .save-request-modal-body select {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 5px 6px;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        background: var(--primary-bg);
+        color: var(--text-color);
+        font-size: var(--font-size-small);
+    }
+
+    .save-request-modal-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 6px;
+        padding: 8px 10px;
+        border-top: 1px solid var(--border-color);
+    }
+
+    .request-save-cancel-btn {
+        background: var(--tertiary-bg);
+        opacity: 0.9;
+    }
 
     .postman-import-modal {
         width: min(560px, calc(100vw - 32px));

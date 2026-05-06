@@ -74,14 +74,29 @@ fn font_options(selected_family: &str) -> Vec<FontOption> {
     [
         ("sans-serif", "Sans Serif"),
         ("Arial, sans-serif", "Arial"),
-        ("'Segoe UI', Tahoma, Geneva, Verdana, sans-serif", "Segoe UI"),
-        ("'Helvetica Neue', Helvetica, Arial, sans-serif", "Helvetica"),
+        (
+            "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
+            "Segoe UI",
+        ),
+        (
+            "'Helvetica Neue', Helvetica, Arial, sans-serif",
+            "Helvetica",
+        ),
         ("Georgia, 'Times New Roman', serif", "Georgia"),
         ("'Trebuchet MS', sans-serif", "Trebuchet"),
         ("'Courier New', Courier, monospace", "Courier New"),
-        ("'Comic Sans MS', 'Comic Sans', 'Chalkboard SE', 'Marker Felt', cursive", "Comic / Chalkboard"),
-        ("Impact, Haettenschweiler, 'Arial Narrow Bold', sans-serif", "Impact Display"),
-        ("'Brush Script MT', 'Lucida Handwriting', cursive", "Brush Script"),
+        (
+            "'Comic Sans MS', 'Comic Sans', 'Chalkboard SE', 'Marker Felt', cursive",
+            "Comic / Chalkboard",
+        ),
+        (
+            "Impact, Haettenschweiler, 'Arial Narrow Bold', sans-serif",
+            "Impact Display",
+        ),
+        (
+            "'Brush Script MT', 'Lucida Handwriting', cursive",
+            "Brush Script",
+        ),
     ]
     .into_iter()
     .map(|(value, label)| FontOption {
@@ -98,13 +113,7 @@ pub fn render_base_page(
     current_theme: &Theme,
     saved_themes: &HashMap<String, Theme>,
 ) -> String {
-    render_base_page_with_options(
-        title,
-        body_content,
-        current_theme,
-        saved_themes,
-        false,
-    )
+    render_base_page_with_options(title, body_content, current_theme, saved_themes, false)
 }
 
 pub fn render_base_page_with_options(

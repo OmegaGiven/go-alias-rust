@@ -50,6 +50,11 @@
         const addRequestVariableBtn = document.getElementById('add-request-variable-btn');
         const saveRequestVariablesBtn = document.getElementById('save-request-variables-btn');
         const requestVariablesStatus = document.getElementById('request-variables-status');
+        const saveRequestModal = document.getElementById('save-request-modal');
+        const saveRequestNameInput = document.getElementById('save-request-name-input');
+        const saveRequestFolderSelect = document.getElementById('save-request-folder-select');
+        const confirmSaveRequestBtn = document.getElementById('confirm-save-request-btn');
+        const cancelSaveRequestBtn = document.getElementById('cancel-save-request-btn');
         const RESPONSE_HEIGHT_KEY = 'request-response-height';
         const RESPONSE_HEADERS_HEIGHT_KEY = 'request-response-headers-height';
         const REQUEST_HISTORY_KEY = 'request_run_history';
@@ -67,6 +72,67 @@
         let latestResponseMeta = null;
         let variableSetDialogMode = 'create';
         let requestHistoryCache = [];
+
+        function normalizeFolderPath(folder) {
+            return String(folder || '')
+                .replace(/\s+\/\s+/g, '/')
+                .split('/')
+                .map((part) => part.trim())
+                .filter(Boolean)
+                .join('/');
+        }
+
+        function isSameOrChildFolder(folder, parent) {
+            return folder === parent || folder.startsWith(parent + '/');
+        }
+
+        function pathHasCollapsedFolder(folder, collapsedFolders, includeSelf = true) {
+            const normalized = normalizeFolderPath(folder);
+            if (!normalized) return false;
+            const parts = normalized.split('/');
+            const max = includeSelf ? parts.length : parts.length - 1;
+            for (let index = 1; index <= max; index += 1) {
+                if (collapsedFolders.has(parts.slice(0, index).join('/'))) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function writeRequestDragPayload(event, payload) {
+            const raw = JSON.stringify(payload);
+            event.dataTransfer.clearData();
+            event.dataTransfer.setData('application/x-go-request-drag', raw);
+            event.dataTransfer.setData('text/plain', raw);
+            event.dataTransfer.effectAllowed = 'move';
+        }
+
+        function readRequestDragPayload(event) {
+            const raw = event.dataTransfer.getData('application/x-go-request-drag')
+                || event.dataTransfer.getData('text/plain')
+                || '{}';
+            return JSON.parse(raw);
+        }
+
+        function clearRequestDropTargets() {
+            savedList.querySelectorAll('.dragging, .drop-target, .drop-target-invalid').forEach((element) => {
+                element.classList.remove('dragging', 'drop-target', 'drop-target-invalid');
+            });
+            savedList.classList.remove('drop-target', 'drop-target-invalid');
+        }
+
+        async function postRequestMove(url, fields) {
+            const body = new URLSearchParams();
+            Object.entries(fields).forEach(([key, value]) => body.append(key, value || ''));
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+                body,
+            });
+            if (!response.ok) {
+                throw new Error(await response.text());
+            }
+        }
         
         // Save Logic Elements
         const toggleSaveBtn = document.getElementById('toggle-save-btn');
@@ -81,7 +147,7 @@
         const saveOAuthClientSecret = document.getElementById('save-oauth-client-secret');
         const saveOAuthScope = document.getElementById('save-oauth-scope');
         const reqNameInput = document.getElementById('req-name');
-        const reqFolderSelect = document.getElementById('req-folder');
+        const reqFolderInput = document.getElementById('req-folder');
 
         // Auth Elements
         const authTypeSelect = document.getElementById('auth-type');
@@ -765,59 +831,43 @@
             if (!savedRequestSearch || !savedList) return;
 
             const filter = savedRequestSearch.value.toUpperCase();
-            const folderStates = [];
-            let currentFolder = null;
-            let currentFolderKey = '';
-            let currentFolderCollapsed = false;
-            let folderHasVisibleRequest = false;
+            const visibleFolders = new Set();
+            const requestItems = Array.from(savedList.querySelectorAll('.saved-req-item'));
 
-            Array.from(savedList.children).forEach((item) => {
-                if (item.classList.contains('saved-req-folder')) {
-                    if (currentFolder) {
-                        folderStates.push({
-                            element: currentFolder,
-                            hasVisibleRequest: folderHasVisibleRequest,
-                            collapsed: currentFolderCollapsed,
-                        });
-                    }
-
-                    currentFolder = item;
-                    currentFolderKey = item.dataset.folder || '';
-                    currentFolderCollapsed = collapsedRequestFolders.has(currentFolderKey);
-                    folderHasVisibleRequest = false;
-                    item.style.display = 'none';
-                    item.classList.toggle('collapsed', currentFolderCollapsed);
-                    const toggle = item.querySelector('.saved-req-folder-toggle');
-                    if (toggle) toggle.textContent = currentFolderCollapsed ? '▸' : '▾';
-                    return;
-                }
-
+            requestItems.forEach((item) => {
                 const link = item.querySelector('.req-link');
                 if (!link) return;
 
+                const folder = normalizeFolderPath(item.dataset.folder || link.dataset.folder || '');
                 const itemText = [
                     link.dataset.name || '',
                     link.dataset.method || '',
                     link.dataset.url || '',
                 ].join(' ');
                 const matchesFilter = itemText.toUpperCase().includes(filter);
-                const isVisible = matchesFilter && !currentFolderCollapsed;
+                const isCollapsed = pathHasCollapsedFolder(folder, collapsedRequestFolders, true);
+                const isVisible = matchesFilter && !isCollapsed;
                 item.style.display = isVisible ? 'flex' : 'none';
-                if (matchesFilter) {
-                    folderHasVisibleRequest = true;
+
+                if (matchesFilter && folder) {
+                    const parts = folder.split('/');
+                    for (let index = 1; index <= parts.length; index += 1) {
+                        visibleFolders.add(parts.slice(0, index).join('/'));
+                    }
                 }
             });
 
-            if (currentFolder) {
-                folderStates.push({
-                    element: currentFolder,
-                    hasVisibleRequest: folderHasVisibleRequest,
-                    collapsed: currentFolderCollapsed,
-                });
-            }
-
-            folderStates.forEach((folder) => {
-                folder.element.style.display = folder.hasVisibleRequest || filter === '' ? 'flex' : 'none';
+            Array.from(savedList.querySelectorAll('.saved-req-folder')).forEach((folder) => {
+                const folderKey = normalizeFolderPath(folder.dataset.folder || '');
+                const folderText = folder.textContent || '';
+                const matchesFolder = folderKey.toUpperCase().includes(filter) || folderText.toUpperCase().includes(filter);
+                const hiddenByAncestor = pathHasCollapsedFolder(folderKey, collapsedRequestFolders, false);
+                const shouldShow = !hiddenByAncestor && (folderKey === '' || filter === '' || visibleFolders.has(folderKey) || matchesFolder);
+                const isCollapsed = collapsedRequestFolders.has(folderKey);
+                folder.style.display = shouldShow ? 'flex' : 'none';
+                folder.classList.toggle('collapsed', isCollapsed);
+                const toggle = folder.querySelector('.saved-req-folder-toggle');
+                if (toggle) toggle.textContent = isCollapsed ? '▸' : '▾';
             });
         }
 
@@ -830,8 +880,7 @@
             currentAbortController = null;
             cancelBtn.disabled = true;
             reqNameInput.value = '';
-            if (reqFolderSelect) reqFolderSelect.value = '';
-            saveControls.style.display = 'none';
+            if (reqFolderInput) reqFolderInput.value = '';
             authTypeSelect.value = 'none';
             renderAuthInputs();
             const rawBodyOption = document.querySelector('input[name="body-type"][value="raw"]');
@@ -966,7 +1015,7 @@
                 createdAt: new Date().toISOString(),
                 request: {
                     name: reqNameInput.value.trim(),
-                    folder: reqFolderSelect ? reqFolderSelect.value : '',
+                    folder: reqFolderInput ? reqFolderInput.value : '',
                     method: methodSelect.value,
                     url: urlInput.value,
                     finalUrl: requestDetails.finalUrl,
@@ -1032,7 +1081,7 @@
             urlInput.value = request.url || request.finalUrl || '';
             bodyInput.value = request.body || '';
             reqNameInput.value = request.name || '';
-            if (reqFolderSelect) reqFolderSelect.value = request.folder || '';
+            if (reqFolderInput) reqFolderInput.value = request.folder || '';
             stringToHeadersTable(request.headers || '');
             applyAuthSnapshot(request.auth || {});
             if (request.activeVariableSet && requestVariables.sets.some((set) => set.name === request.activeVariableSet)) {
@@ -1097,8 +1146,107 @@
                 const folderName = window.prompt('Folder name');
                 if (!folderName || folderName.trim() === '') return;
 
-                newRequestFolderName.value = folderName.trim();
+                newRequestFolderName.value = normalizeFolderPath(folderName);
                 createRequestFolderForm.submit();
+            });
+        }
+
+        if (savedList) {
+            savedList.addEventListener('dragstart', (event) => {
+                const folder = event.target.closest('.saved-req-folder[data-folder]');
+                const item = event.target.closest('.saved-req-item');
+
+                if (folder && folder.dataset.folder) {
+                    writeRequestDragPayload(event, {
+                        type: 'folder',
+                        folder: normalizeFolderPath(folder.dataset.folder),
+                    });
+                    folder.classList.add('dragging');
+                    return;
+                }
+
+                if (item) {
+                    writeRequestDragPayload(event, {
+                        type: 'request',
+                        name: item.dataset.name || '',
+                        folder: normalizeFolderPath(item.dataset.folder || ''),
+                    });
+                    item.classList.add('dragging');
+                }
+            });
+
+            savedList.addEventListener('dragend', () => {
+                clearRequestDropTargets();
+            });
+
+            savedList.addEventListener('dragover', (event) => {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = 'move';
+                savedList.querySelectorAll('.drop-target, .drop-target-invalid').forEach((element) => {
+                    element.classList.remove('drop-target', 'drop-target-invalid');
+                });
+                savedList.classList.remove('drop-target', 'drop-target-invalid');
+
+                const folder = event.target.closest('.saved-req-folder[data-folder]');
+                let payload = {};
+                try {
+                    payload = readRequestDragPayload(event);
+                } catch {
+                    payload = {};
+                }
+
+                if (folder) {
+                    const targetFolder = normalizeFolderPath(folder.dataset.folder || '');
+                    const draggedFolder = normalizeFolderPath(payload.folder || '');
+                    const invalid = payload.type === 'folder' && (!draggedFolder || draggedFolder === targetFolder || isSameOrChildFolder(targetFolder, draggedFolder));
+                    folder.classList.add(invalid ? 'drop-target-invalid' : 'drop-target');
+                    event.dataTransfer.dropEffect = invalid ? 'none' : 'move';
+                } else {
+                    savedList.classList.add('drop-target');
+                }
+            });
+
+            savedList.addEventListener('dragleave', (event) => {
+                const target = event.target.closest('.saved-req-folder');
+                if (target) target.classList.remove('drop-target', 'drop-target-invalid');
+                if (!savedList.contains(event.relatedTarget)) {
+                    savedList.classList.remove('drop-target', 'drop-target-invalid');
+                }
+            });
+
+            savedList.addEventListener('drop', async (event) => {
+                event.preventDefault();
+
+                let payload;
+                try {
+                    payload = readRequestDragPayload(event);
+                } catch {
+                    return;
+                } finally {
+                    clearRequestDropTargets();
+                }
+
+                const targetFolder = normalizeFolderPath(event.target.closest('.saved-req-folder[data-folder]')?.dataset.folder || '');
+                try {
+                    if (payload.type === 'request') {
+                        await postRequestMove('/requests/move', {
+                            name: payload.name,
+                            folder: payload.folder,
+                            new_folder: targetFolder,
+                        });
+                        window.location.reload();
+                    } else if (payload.type === 'folder') {
+                        const draggedFolder = normalizeFolderPath(payload.folder);
+                        if (!draggedFolder || draggedFolder === targetFolder || isSameOrChildFolder(targetFolder, draggedFolder)) return;
+                        await postRequestMove('/requests/folder/move', {
+                            folder_name: draggedFolder,
+                            new_parent: targetFolder,
+                        });
+                        window.location.reload();
+                    }
+                } catch (error) {
+                    window.alert(`Move failed: ${error.message}`);
+                }
             });
         }
 
@@ -1318,14 +1466,7 @@
             });
         }
 
-        toggleSaveBtn.addEventListener('click', () => {
-            saveControls.style.display = saveControls.style.display === 'flex' ? 'none' : 'flex';
-            if (saveControls.style.display === 'flex') {
-                reqNameInput.focus();
-            }
-        });
-
-        saveControls.addEventListener('submit', () => {
+        function populateSaveFormFields() {
             saveMethod.value = methodSelect.value;
             saveUrl.value = urlInput.value;
             const headers = constructHeaders();
@@ -1340,7 +1481,52 @@
                 saveOAuthClientSecret.value = document.getElementById('oauth-client-secret')?.value || '';
                 saveOAuthScope.value = document.getElementById('oauth-scope')?.value || '';
             }
-        });
+        }
+
+        function openSaveRequestModal() {
+            if (!saveRequestModal) return;
+            saveRequestNameInput.value = reqNameInput.value || '';
+            saveRequestFolderSelect.value = reqFolderInput ? reqFolderInput.value : '';
+            saveRequestModal.showModal();
+            saveRequestNameInput.focus();
+        }
+
+        function closeSaveRequestModal() {
+            if (saveRequestModal?.open) {
+                saveRequestModal.close();
+            }
+        }
+
+        toggleSaveBtn.addEventListener('click', openSaveRequestModal);
+
+        if (cancelSaveRequestBtn) {
+            cancelSaveRequestBtn.addEventListener('click', closeSaveRequestModal);
+        }
+
+        if (saveRequestModal) {
+            saveRequestModal.addEventListener('click', (event) => {
+                if (event.target === saveRequestModal) {
+                    closeSaveRequestModal();
+                }
+            });
+        }
+
+        if (confirmSaveRequestBtn) {
+            confirmSaveRequestBtn.addEventListener('click', () => {
+                const name = saveRequestNameInput.value.trim();
+                if (!name) {
+                    saveRequestNameInput.focus();
+                    return;
+                }
+
+                reqNameInput.value = name;
+                if (reqFolderInput) {
+                    reqFolderInput.value = saveRequestFolderSelect.value || '';
+                }
+                populateSaveFormFields();
+                saveControls.submit();
+            });
+        }
 
         savedList.addEventListener('click', (e) => {
             const renameButton = e.target.closest('.rename-saved-request-btn');
@@ -1353,6 +1539,10 @@
 
                 form.querySelector('input[name="new_name"]').value = nextName.trim();
                 form.submit();
+                return;
+            }
+
+            if (e.target.closest('.delete-request-folder-form')) {
                 return;
             }
 
@@ -1382,8 +1572,8 @@
                 stringToHeadersTable(link.dataset.headers);
                 bodyInput.value = link.dataset.body;
                 reqNameInput.value = link.dataset.name;
-                if (reqFolderSelect) {
-                    reqFolderSelect.value = link.dataset.folder || '';
+                if (reqFolderInput) {
+                    reqFolderInput.value = link.dataset.folder || '';
                 }
                 
                 let savedAuthType = link.dataset.authType || 'none';

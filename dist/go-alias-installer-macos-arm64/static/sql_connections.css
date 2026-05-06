@@ -1,0 +1,96 @@
+        .sql-connections-page {
+            max-width: 900px;
+            margin: calc(var(--element-margin) / 2) 0;
+        }
+        .forms-container {
+            display: flex;
+            gap: 0;
+            flex-wrap: wrap;
+            margin: 0;
+        }
+        .sql-connections-panel {
+            background-color: var(--secondary-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            margin: calc(var(--element-margin) / 2) var(--element-margin);
+            padding: 12px;
+            box-sizing: border-box;
+        }
+        .forms-container .sql-connections-panel {
+            flex: 1;
+            min-width: 300px;
+        }
+        .sql-connections-panel h2 {
+            margin-top: 0;
+        }
+        .connection-form input, .connection-form select {
+            width: 100%;
+            padding: 10px;
+            margin: calc(var(--element-margin) / 2) 0 !important;
+            box-sizing: border-box;
+            background-color: var(--primary-bg);
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+        }
+        .connection-form label,
+        .connection-form p {
+            margin-left: 0 !important;
+            margin-right: 0 !important;
+        }
+        .connection-form button {
+            width: 100%;
+            padding: 10px;
+            cursor: pointer;
+            background-color: var(--tertiary-bg);
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+        }
+        .connection-form button:hover {
+            background-color: var(--link-hover);
+            color: #fff;
+        }
+        .connection-form .create-sqlite-submit,
+        .connection-form .save-connection-submit {
+            display: block;
+            width: auto;
+            min-width: 160px;
+            margin: calc(var(--element-margin) / 2) auto !important;
+            padding-left: 18px;
+            padding-right: 18px;
+        }
+        .saved-connections-list ul {
+            list-style-type: none;
+            padding: 0;
+            margin: 0;
+        }
+        .saved-connections-list li {
+            background-color: var(--tertiary-bg);
+            margin: calc(var(--element-margin) / 2) var(--element-margin);
+            padding: 10px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+        .saved-connection-link {
+            flex: 1;
+            min-width: 0;
+        }
+        .delete-connection-form {
+            margin: calc(var(--element-margin) / 2) var(--element-margin);
+        }
+        .delete-connection-button {
+            padding: 8px 12px;
+            cursor: pointer;
+            background-color: transparent;
+            color: var(--link-hover);
+            border: 1px solid var(--link-hover);
+            border-radius: 4px;
+        }
+        .delete-connection-button:hover {
+            background-color: var(--link-hover);
+            color: #fff;
+        }

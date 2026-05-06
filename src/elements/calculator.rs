@@ -1,4 +1,4 @@
-use actix_web::{get, web::Data, HttpResponse, Responder};
+use actix_web::{HttpResponse, Responder, get, web::Data};
 use std::sync::Arc;
 
 use crate::app_state::AppState;
@@ -27,5 +27,10 @@ pub async fn calculator_get(state: Data<Arc<AppState>>) -> impl Responder {
 
     HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")
-        .body(render_base_page("Calculator", content, &current_theme, &saved_themes))
+        .body(render_base_page(
+            "Calculator",
+            content,
+            &current_theme,
+            &saved_themes,
+        ))
 }

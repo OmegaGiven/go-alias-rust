@@ -1,18 +1,14 @@
 // --- Updated Module Declarations ---
-mod app_state;
 mod app_db;
+mod app_state;
 mod base_page;
 mod elements;
 
 // Grouping all page-related modules under the new pages module.
-mod pages; 
+mod pages;
 
 use actix_files::Files;
-use actix_web::{
-    get, 
-    web::{Data}, 
-    App, HttpResponse, HttpServer, Responder,
-};
+use actix_web::{App, HttpResponse, HttpServer, Responder, get, web::Data};
 use std::{
     collections::HashMap,
     fs,
@@ -21,25 +17,26 @@ use std::{
 
 use app_state::AppState;
 
+use pages::inspector::inspector_get;
+use pages::not_found::{go, render_home_shortcuts_content};
 use pages::request::{
-    request_cancel, request_create_folder, request_delete, request_get, request_import_postman,
-    request_history_get, request_history_save, request_rename, request_run, request_save,
-    request_save_variables, scratchpads_get, scratchpads_save,
+    request_cancel, request_create_folder, request_delete, request_delete_folder, request_get,
+    request_history_get, request_history_save, request_import_postman, request_move,
+    request_move_folder, request_rename, request_run, request_save, request_save_variables,
+    scratchpads_get, scratchpads_save,
 };
-use pages::inspector::inspector_get; 
-use pages::not_found::{go, render_home_shortcuts_content}; 
 
 // Re-exporting SQL routes from the nested pages module
 use pages::sql;
 
-use elements::theme::{save_theme};
-use elements::shortcut::{add_shortcut, delete_shortcut}; 
-use elements::calculator::calculator_get;
 use base_page::render_base_page_with_options;
+use elements::calculator::calculator_get;
+use elements::shortcut::{add_shortcut, delete_shortcut};
+use elements::theme::save_theme;
 
 static SHORTCUTS_FILE: &str = "shortcuts.json";
 static HIDDEN_SHORTCUTS_FILE: &str = "hidden-shortcuts.json";
-static WORK_SHORTCUTS_FILE: &str = "work-shortcuts.json"; 
+static WORK_SHORTCUTS_FILE: &str = "work-shortcuts.json";
 
 // Only shortcut loading remains here
 fn load_shortcuts(path: &str) -> std::io::Result<HashMap<String, String>> {
@@ -53,10 +50,12 @@ async fn load_shortcuts_doc(key: &str, path: &str) -> HashMap<String, String> {
     app_db::get_json("shortcuts", key)
         .await
         .or_else(|| {
-            load_shortcuts(path).map_err(|e| {
-                eprintln!("Failed to load {path}: {e}");
-                e
-            }).ok()
+            load_shortcuts(path)
+                .map_err(|e| {
+                    eprintln!("Failed to load {path}: {e}");
+                    e
+                })
+                .ok()
         })
         .unwrap_or_default()
 }
@@ -87,7 +86,7 @@ async fn index(state: Data<Arc<AppState>>) -> impl Responder {
     // Combine all *visible* shortcuts for display on the home page
     let mut combined_shortcuts = shortcuts;
     combined_shortcuts.extend(work_shortcuts);
-    
+
     let full_page_content = render_home_shortcuts_content(&combined_shortcuts);
     let final_html = render_base_page_with_options(
         "Aliases",
@@ -113,10 +112,26 @@ async fn main() -> std::io::Result<()> {
         eprintln!("Failed to initialize app database. Falling back where possible: {err}");
     }
     app_db::migrate_json_file::<serde_json::Value>("sql", "queries", "saved_queries.json").await;
-    app_db::migrate_json_file::<serde_json::Value>("sql", "query_folders", "saved_query_folders.json").await;
-    app_db::migrate_json_file::<serde_json::Value>("requests", "saved", "saved_requests.json").await;
-    app_db::migrate_json_file::<serde_json::Value>("requests", "folders", "saved_request_folders.json").await;
-    app_db::migrate_json_file::<serde_json::Value>("requests", "variables", "request_variables.json").await;
+    app_db::migrate_json_file::<serde_json::Value>(
+        "sql",
+        "query_folders",
+        "saved_query_folders.json",
+    )
+    .await;
+    app_db::migrate_json_file::<serde_json::Value>("requests", "saved", "saved_requests.json")
+        .await;
+    app_db::migrate_json_file::<serde_json::Value>(
+        "requests",
+        "folders",
+        "saved_request_folders.json",
+    )
+    .await;
+    app_db::migrate_json_file::<serde_json::Value>(
+        "requests",
+        "variables",
+        "request_variables.json",
+    )
+    .await;
 
     // --- Shortcut Loading ---
     let shortcuts = load_shortcuts_doc("visible", SHORTCUTS_FILE).await;
@@ -132,11 +147,14 @@ async fn main() -> std::io::Result<()> {
         map
     });
 
-    let current_theme = elements::theme::load_current_theme("current_theme.json").unwrap_or_else(|e| {
-        eprintln!("Failed to load current_theme.json: {e}. Using default theme.");
-        saved_themes.get("Dark Default").cloned().unwrap_or_else(elements::theme::default_dark_theme)
-    });
-
+    let current_theme =
+        elements::theme::load_current_theme("current_theme.json").unwrap_or_else(|e| {
+            eprintln!("Failed to load current_theme.json: {e}. Using default theme.");
+            saved_themes
+                .get("Dark Default")
+                .cloned()
+                .unwrap_or_else(elements::theme::default_dark_theme)
+        });
 
     // Shared application state
     let state = Arc::new(AppState {
@@ -169,11 +187,14 @@ async fn main() -> std::io::Result<()> {
             .service(request_delete)
             .service(request_rename)
             .service(request_create_folder)
+            .service(request_delete_folder)
+            .service(request_move)
+            .service(request_move_folder)
             .service(request_save_variables)
             .service(request_history_get)
             .service(request_history_save)
             .service(request_import_postman)
-            .service(request_run) 
+            .service(request_run)
             .service(request_cancel)
             .service(scratchpads_get)
             .service(scratchpads_save)
@@ -190,19 +211,22 @@ async fn main() -> std::io::Result<()> {
             .service(sql::sql_export_queries)
             .service(sql::sql_import_queries)
             .service(sql::sql_view)
-            .service(sql::sql_save) 
-            .service(sql::sql_delete) 
+            .service(sql::sql_save)
+            .service(sql::sql_delete)
             .service(sql::sql_rename)
             .service(sql::sql_create_folder)
+            .service(sql::sql_delete_folder)
+            .service(sql::sql_move_query)
+            .service(sql::sql_move_folder)
             .service(sql::sql_disconnect)
             .service(sql::sql_disconnect_connection)
             .service(sql::sql_delete_connection)
-            .service(sql::sql_schema_json) 
+            .service(sql::sql_schema_json)
             .service(Files::new("/static", "./static").prefer_utf8(true))
-            .service(add_shortcut)      
-            .service(delete_shortcut)       
-            .service(save_theme)        
-            .service(go) 
+            .service(add_shortcut)
+            .service(delete_shortcut)
+            .service(save_theme)
+            .service(go)
     })
     .bind(("0.0.0.0", port))?
     .run()

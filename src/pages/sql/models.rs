@@ -9,9 +9,9 @@ fn default_db_type() -> String {
 pub struct DbConnection {
     #[serde(default = "default_db_type")]
     pub db_type: String, // "postgres" or "sqlite"
-    pub host: String,    // For sqlite, this is the filename/path
-    pub db_name: String, // Postgres only
-    pub user: String,    // Postgres only
+    pub host: String,     // For sqlite, this is the filename/path
+    pub db_name: String,  // Postgres only
+    pub user: String,     // Postgres only
     pub password: String, // Postgres only
     pub nickname: String,
 }

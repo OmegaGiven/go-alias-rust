@@ -1,6 +1,6 @@
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Mutex;
-use serde::{Serialize, Deserialize};
 
 use crate::sql::DbConnection;
 
@@ -30,16 +30,16 @@ pub struct Theme {
     pub name: String,
     #[serde(default = "default_theme_mode")]
     pub mode: String,
-    pub primary_bg: String,    // e.g., #2e2e2e (Main page background)
-    pub secondary_bg: String,  // e.g., #222 (Navigation/Modal background)
-    pub tertiary_bg: String,   // e.g., #3a3a3a (Table header/List item background)
-    pub text_color: String,    // e.g., #eee (Main text color)
+    pub primary_bg: String,   // e.g., #2e2e2e (Main page background)
+    pub secondary_bg: String, // e.g., #222 (Navigation/Modal background)
+    pub tertiary_bg: String,  // e.g., #3a3a3a (Table header/List item background)
+    pub text_color: String,   // e.g., #eee (Main text color)
     #[serde(default = "default_accent_color")]
-    pub accent_color: String,  // e.g., #4da6ff (Primary UI accent color)
-    pub link_color: String,    // e.g., #4da6ff (Default link color)
-    pub link_visited: String,  // e.g., #b366ff (Visited link color)
-    pub link_hover: String,    // e.g., #66ccff (Hover link color)
-    pub border_color: String,  // e.g., #444 (Borders/Dividers)
+    pub accent_color: String, // e.g., #4da6ff (Primary UI accent color)
+    pub link_color: String,   // e.g., #4da6ff (Default link color)
+    pub link_visited: String, // e.g., #b366ff (Visited link color)
+    pub link_hover: String,   // e.g., #66ccff (Hover link color)
+    pub border_color: String, // e.g., #444 (Borders/Dividers)
     pub font_size_small: u32,
     pub font_size_medium: u32,
     pub font_size_large: u32,

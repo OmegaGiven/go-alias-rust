@@ -59,17 +59,91 @@
     
     .saved-query-item { display: flex; align-items: center; width: 100%; padding-left: 2px; box-sizing: border-box; }
     .saved-query-folder {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 2px;
         background: var(--primary-bg);
         border-bottom: 1px solid var(--border-color);
         border-top: 1px solid var(--border-color);
         color: var(--text-color);
-        cursor: default !important;
+        cursor: pointer !important;
         font-size: calc(var(--sql-workspace-font-size) * 0.9);
         font-weight: bold;
         line-height: 1.4;
         opacity: 0.75;
-        padding: 1px 5px !important;
+        padding: 1px 5px 1px calc(5px + (var(--folder-depth, 0) * 12px)) !important;
         text-transform: uppercase;
+        user-select: none;
+    }
+    .saved-query-folder-name {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .delete-query-folder-form {
+        display: inline-flex;
+        flex: 0 0 auto;
+        margin: 0;
+    }
+    .saved-folder-delete-btn {
+        width: 16px !important;
+        height: 16px;
+        min-width: 16px;
+        padding: 0;
+        margin: 0 !important;
+        line-height: 1;
+    }
+    .saved-query-folder-toggle {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 14px;
+        flex: 0 0 14px;
+        margin-left: 2px;
+        font-size: calc(var(--sql-workspace-font-size) * 0.8);
+    }
+    .saved-query-folder.drop-target,
+    #saved-queries-list.drop-target {
+        outline: 2px solid var(--link-hover);
+        outline-offset: -1px;
+        background: rgba(73, 204, 144, 0.18);
+        color: var(--text-color);
+        opacity: 1;
+    }
+    .saved-query-folder.drop-target::after {
+        content: "Drop to move here";
+        position: absolute;
+        right: 4px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--link-hover);
+        font-size: calc(var(--sql-workspace-font-size) * 0.85);
+        font-weight: normal;
+        text-transform: none;
+    }
+    .saved-query-folder.drop-target-invalid {
+        outline: 2px solid #ff6b6b;
+        outline-offset: -1px;
+        background: rgba(255, 107, 107, 0.18);
+        opacity: 1;
+    }
+    .saved-query-folder.drop-target-invalid::after {
+        content: "Cannot move here";
+        position: absolute;
+        right: 4px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #ff6b6b;
+        font-size: calc(var(--sql-workspace-font-size) * 0.85);
+        font-weight: normal;
+        text-transform: none;
+    }
+    .saved-query-folder.dragging,
+    .saved-query-item.dragging {
+        opacity: 0.45;
     }
     .create-query-folder-form,
     .import-query-form {

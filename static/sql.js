@@ -31,6 +31,8 @@ const mainContent = document.getElementById('main');
       const highlights = backdrop.querySelector('.highlights');
       const connectionNickname = document.querySelector("input[name=connection]")?.value || "";
       const varsStorageKey = "sql_vars_" + connectionNickname;
+      const savedQueryFoldersCollapsedKey = "sql_saved_query_folders_collapsed_" + connectionNickname;
+      let collapsedSqlFolders = readCollapsedSqlFolders();
 
       function openUntitledSqlFile() {
           editor.value = '';
@@ -41,6 +43,19 @@ const mainContent = document.getElementById('main');
           scanForVariables();
           handleInput();
           editor.focus();
+      }
+
+      function readCollapsedSqlFolders() {
+          try {
+              const values = JSON.parse(localStorage.getItem(savedQueryFoldersCollapsedKey) || '[]');
+              return new Set(Array.isArray(values) ? values : []);
+          } catch (_) {
+              return new Set();
+          }
+      }
+
+      function saveCollapsedSqlFolders() {
+          localStorage.setItem(savedQueryFoldersCollapsedKey, JSON.stringify(Array.from(collapsedSqlFolders)));
       }
 
       // --- Clear Button Logic ---
@@ -416,42 +431,101 @@ WHERE customer_id = {{customer_id}}
       styleSheet.innerText = `@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`;
       document.head.appendChild(styleSheet);
 
+      function normalizeFolderPath(folder) {
+          return String(folder || '')
+              .replace(/\s+\/\s+/g, '/')
+              .split('/')
+              .map((part) => part.trim())
+              .filter(Boolean)
+              .join('/');
+      }
+
+      function isSameOrChildFolder(folder, parent) {
+          return folder === parent || folder.startsWith(parent + '/');
+      }
+
+      function pathHasCollapsedFolder(folder, collapsedFolders, includeSelf = true) {
+          const normalized = normalizeFolderPath(folder);
+          if (!normalized) return false;
+          const parts = normalized.split('/');
+          const max = includeSelf ? parts.length : parts.length - 1;
+          for (let index = 1; index <= max; index += 1) {
+              if (collapsedFolders.has(parts.slice(0, index).join('/'))) {
+                  return true;
+              }
+          }
+          return false;
+      }
+
+      function writeSqlDragPayload(event, payload) {
+          const raw = JSON.stringify(payload);
+          event.dataTransfer.clearData();
+          event.dataTransfer.setData('application/x-go-sql-drag', raw);
+          event.dataTransfer.setData('text/plain', raw);
+          event.dataTransfer.effectAllowed = 'move';
+      }
+
+      function readSqlDragPayload(event) {
+          const raw = event.dataTransfer.getData('application/x-go-sql-drag')
+              || event.dataTransfer.getData('text/plain')
+              || '{}';
+          return JSON.parse(raw);
+      }
+
+      function clearSqlDropTargets() {
+          savedQueriesList.querySelectorAll('.dragging, .drop-target, .drop-target-invalid').forEach((element) => {
+              element.classList.remove('dragging', 'drop-target', 'drop-target-invalid');
+          });
+          savedQueriesList.classList.remove('drop-target', 'drop-target-invalid');
+      }
+
+      async function postSqlMove(url, fields) {
+          const body = new URLSearchParams();
+          Object.entries(fields).forEach(([key, value]) => body.append(key, value || ''));
+          const response = await fetch(url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+              body,
+          });
+          if (!response.ok) {
+              throw new Error(await response.text());
+          }
+      }
+
       function filterSavedQueries() {
           const filter = querySearchInput.value.toUpperCase();
-          const folderStates = [];
-          let currentFolder = null;
-          let folderHasVisibleQuery = false;
+          const queryItems = Array.from(savedQueriesList.querySelectorAll('.saved-query-item'));
+          const visibleFolders = new Set();
 
-          Array.from(savedQueriesList.children).forEach((item) => {
-              if (item.classList.contains('saved-query-folder')) {
-                  if (currentFolder) {
-                      folderStates.push({ element: currentFolder, hasVisibleQuery: folderHasVisibleQuery });
-                  }
-
-                  currentFolder = item;
-                  folderHasVisibleQuery = false;
-                  item.style.display = 'none';
-                  return;
-              }
-
+          queryItems.forEach((item) => {
               const queryLink = item.querySelector('.query-link');
               if (!queryLink) return;
 
+              const folder = normalizeFolderPath(item.dataset.folder || queryLink.dataset.folder || '');
               const itemText = queryLink.textContent || queryLink.innerText || '';
-              const isVisible = itemText.toUpperCase().indexOf(filter) > -1;
+              const isCollapsed = pathHasCollapsedFolder(folder, collapsedSqlFolders, true);
+              const isVisible = itemText.toUpperCase().indexOf(filter) > -1 && !isCollapsed;
               item.style.display = isVisible ? 'flex' : 'none';
 
-              if (isVisible) {
-                  folderHasVisibleQuery = true;
+              if (itemText.toUpperCase().indexOf(filter) > -1 && folder) {
+                  const parts = folder.split('/');
+                  for (let index = 1; index <= parts.length; index += 1) {
+                      visibleFolders.add(parts.slice(0, index).join('/'));
+                  }
               }
           });
 
-          if (currentFolder) {
-              folderStates.push({ element: currentFolder, hasVisibleQuery: folderHasVisibleQuery });
-          }
-
-          folderStates.forEach((folder) => {
-              folder.element.style.display = folder.hasVisibleQuery || filter === '' ? 'block' : 'none';
+          Array.from(savedQueriesList.querySelectorAll('.saved-query-folder')).forEach((folder) => {
+              const folderPath = normalizeFolderPath(folder.dataset.folder || '');
+              const folderText = folder.textContent || '';
+              const matchesFolder = folderPath.toUpperCase().includes(filter) || folderText.toUpperCase().includes(filter);
+              const hiddenByAncestor = pathHasCollapsedFolder(folderPath, collapsedSqlFolders, false);
+              const isCollapsed = collapsedSqlFolders.has(folderPath);
+              const shouldShow = !hiddenByAncestor && (folderPath === '' || filter === '' || visibleFolders.has(folderPath) || matchesFolder);
+              folder.style.display = shouldShow ? 'block' : 'none';
+              folder.classList.toggle('collapsed', isCollapsed);
+              const toggle = folder.querySelector('.saved-query-folder-toggle');
+              if (toggle) toggle.textContent = isCollapsed ? '▸' : '▾';
           });
       }
       querySearchInput.addEventListener('keyup', filterSavedQueries);
@@ -461,8 +535,108 @@ WHERE customer_id = {{customer_id}}
               const folderName = window.prompt('Folder name');
               if (!folderName || folderName.trim() === '') return;
 
-              newQueryFolderName.value = folderName.trim();
+              newQueryFolderName.value = normalizeFolderPath(folderName);
               createQueryFolderForm.submit();
+          });
+      }
+
+      if (savedQueriesList) {
+          savedQueriesList.addEventListener('dragstart', (event) => {
+              const folder = event.target.closest('.saved-query-folder[data-folder]');
+              const item = event.target.closest('.saved-query-item');
+
+              if (folder && folder.dataset.folder) {
+                  writeSqlDragPayload(event, {
+                      type: 'folder',
+                      folder: normalizeFolderPath(folder.dataset.folder),
+                  });
+                  folder.classList.add('dragging');
+                  return;
+              }
+
+              if (item) {
+                  writeSqlDragPayload(event, {
+                      type: 'query',
+                      name: item.dataset.queryName || '',
+                      folder: normalizeFolderPath(item.dataset.folder || ''),
+                  });
+                  item.classList.add('dragging');
+              }
+          });
+
+          savedQueriesList.addEventListener('dragend', () => {
+              clearSqlDropTargets();
+          });
+
+          savedQueriesList.addEventListener('dragover', (event) => {
+              event.preventDefault();
+              event.dataTransfer.dropEffect = 'move';
+              savedQueriesList.querySelectorAll('.drop-target, .drop-target-invalid').forEach((element) => {
+                  element.classList.remove('drop-target', 'drop-target-invalid');
+              });
+              savedQueriesList.classList.remove('drop-target', 'drop-target-invalid');
+
+              const folder = event.target.closest('.saved-query-folder[data-folder]');
+              let payload = {};
+              try {
+                  payload = readSqlDragPayload(event);
+              } catch {
+                  payload = {};
+              }
+
+              if (folder) {
+                  const targetFolder = normalizeFolderPath(folder.dataset.folder || '');
+                  const draggedFolder = normalizeFolderPath(payload.folder || '');
+                  const invalid = payload.type === 'folder' && (!draggedFolder || draggedFolder === targetFolder || isSameOrChildFolder(targetFolder, draggedFolder));
+                  folder.classList.add(invalid ? 'drop-target-invalid' : 'drop-target');
+                  event.dataTransfer.dropEffect = invalid ? 'none' : 'move';
+              } else {
+                  savedQueriesList.classList.add('drop-target');
+              }
+          });
+
+          savedQueriesList.addEventListener('dragleave', (event) => {
+              const target = event.target.closest('.saved-query-folder');
+              if (target) target.classList.remove('drop-target', 'drop-target-invalid');
+              if (!savedQueriesList.contains(event.relatedTarget)) {
+                  savedQueriesList.classList.remove('drop-target', 'drop-target-invalid');
+              }
+          });
+
+          savedQueriesList.addEventListener('drop', async (event) => {
+              event.preventDefault();
+
+              let payload;
+              try {
+                  payload = readSqlDragPayload(event);
+              } catch {
+                  return;
+              } finally {
+                  clearSqlDropTargets();
+              }
+
+              const targetFolder = normalizeFolderPath(event.target.closest('.saved-query-folder[data-folder]')?.dataset.folder || '');
+              try {
+                  if (payload.type === 'query') {
+                      await postSqlMove('/sql/query/move', {
+                          query_name: payload.name,
+                          connection: connectionNickname,
+                          new_folder: targetFolder,
+                      });
+                      window.location.reload();
+                  } else if (payload.type === 'folder') {
+                      const draggedFolder = normalizeFolderPath(payload.folder);
+                      if (!draggedFolder || draggedFolder === targetFolder || isSameOrChildFolder(targetFolder, draggedFolder)) return;
+                      await postSqlMove('/sql/folder/move', {
+                          folder_name: draggedFolder,
+                          connection: connectionNickname,
+                          new_parent: targetFolder,
+                      });
+                      window.location.reload();
+                  }
+              } catch (error) {
+                  window.alert(`Move failed: ${error.message}`);
+              }
           });
       }
 
@@ -1154,6 +1328,24 @@ WHERE customer_id = {{customer_id}}
 
               form.querySelector('input[name="new_query_name"]').value = nextName.trim();
               form.submit();
+              return;
+          }
+
+          if (e.target.closest('.delete-query-folder-form')) {
+              return;
+          }
+
+          const folderHeader = e.target.closest('.saved-query-folder[data-folder]');
+          if (folderHeader) {
+              const folderKey = normalizeFolderPath(folderHeader.dataset.folder || '');
+              if (!folderKey) return;
+              if (collapsedSqlFolders.has(folderKey)) {
+                  collapsedSqlFolders.delete(folderKey);
+              } else {
+                  collapsedSqlFolders.add(folderKey);
+              }
+              saveCollapsedSqlFolders();
+              filterSavedQueries();
               return;
           }
 

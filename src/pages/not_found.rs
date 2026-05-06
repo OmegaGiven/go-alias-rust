@@ -1,4 +1,7 @@
-use actix_web::{get, web::{self, Data}, HttpResponse, Responder};
+use actix_web::{
+    HttpResponse, Responder, get,
+    web::{self, Data},
+};
 use htmlescape::encode_minimal;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -9,7 +12,10 @@ use crate::base_page::{render_base_page_with_options, render_inline_add_shortcut
 
 fn grouped_shortcuts_table(shortcuts: &HashMap<String, String>, empty_message: &str) -> String {
     if shortcuts.is_empty() {
-        return format!(r#"<p class="shortcut-empty">{}</p>"#, encode_minimal(empty_message));
+        return format!(
+            r#"<p class="shortcut-empty">{}</p>"#,
+            encode_minimal(empty_message)
+        );
     }
 
     let mut grouped: HashMap<&str, Vec<&str>> = HashMap::new();
@@ -114,18 +120,10 @@ pub fn not_found_page(
 
         {}
         "#,
-        requested_path_display,
-        requested_path_display,
-        home_content
+        requested_path_display, requested_path_display, home_content
     );
 
-    render_base_page_with_options(
-        "Aliases",
-        &content,
-        current_theme,
-        saved_themes,
-        true,
-    )
+    render_base_page_with_options("Aliases", &content, current_theme, saved_themes, true)
 }
 
 #[get("/{tail:.*}")]
@@ -139,7 +137,8 @@ pub async fn go(path: web::Path<String>, state: Data<Arc<AppState>>) -> impl Res
     let saved_themes = state.saved_themes.lock().unwrap();
 
     let find_url = |key: &str| -> Option<String> {
-        shortcuts.get(key)
+        shortcuts
+            .get(key)
             .or_else(|| hidden_shortcuts.get(key))
             .or_else(|| work_shortcuts.get(key))
             .cloned()

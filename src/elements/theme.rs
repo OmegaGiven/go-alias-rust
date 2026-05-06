@@ -1,15 +1,9 @@
 use actix_web::{
-    post,
-    web::{Data, Form}, 
-    HttpResponse, Responder,
+    HttpResponse, Responder, post,
+    web::{Data, Form},
 };
 use serde::Deserialize;
-use std::{
-    collections::HashMap,
-    fs,
-    io,
-    sync::Arc,
-};
+use std::{collections::HashMap, fs, io, sync::Arc};
 
 use crate::app_state::{AppState, Theme};
 
@@ -72,8 +66,8 @@ pub struct ThemeForm {
     // FIX: Changed to Option to prevent "missing field" errors if the frontend
     // doesn't send this hidden input correctly.
     #[serde(rename = "original_name")]
-    pub _original_name: Option<String>, 
-    
+    pub _original_name: Option<String>,
+
     pub theme_name: String,
     pub theme_mode: String,
     pub primary_bg: String,
@@ -91,9 +85,9 @@ pub struct ThemeForm {
     pub element_margin: u32,
     pub nav_height: u32,
     pub font_family: String,
-    
+
     pub load_theme_name: Option<String>,
-    
+
     // Action is optional because JS submissions might not include button values
     pub action: Option<String>,
 
@@ -182,10 +176,7 @@ fn theme_from_form(form: &ThemeForm) -> Theme {
 
 // Handler for POST /save_theme
 #[post("/save_theme")]
-pub async fn save_theme(
-    form: Form<ThemeForm>,
-    state: Data<Arc<AppState>>,
-) -> impl Responder {
+pub async fn save_theme(form: Form<ThemeForm>, state: Data<Arc<AppState>>) -> impl Responder {
     let redirect_target = theme_redirect_target(&form);
 
     // 1. Handle loading a theme first (if requested via dropdown)
@@ -200,12 +191,11 @@ pub async fn save_theme(
                 eprintln!("Failed to save current theme after loading: {}", e);
             }
         }
-        
+
         return HttpResponse::Found()
             .append_header(("Location", redirect_target))
             .finish();
     }
-
 
     // 2. Create the new theme from form data
     let new_theme = theme_from_form(&form);
@@ -214,7 +204,7 @@ pub async fn save_theme(
     {
         let mut current_theme = state.current_theme.lock().unwrap();
         *current_theme = new_theme.clone();
-        
+
         // Persist the current theme regardless of save action
         if let Err(e) = save_current_theme(CURRENT_THEME_FILE, &current_theme) {
             eprintln!("Failed to save current theme: {}", e);

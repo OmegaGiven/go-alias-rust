@@ -1,8 +1,8 @@
-use aes_gcm::{Aes256Gcm, Nonce};
+use crate::pages::sql::DbConnection;
 use aes_gcm::aead::{Aead, KeyInit};
+use aes_gcm::{Aes256Gcm, Nonce};
 use rand::RngCore;
 use std::{fs, io};
-use crate::pages::sql::DbConnection;
 
 const CONN_FILE: &str = "connections.json.enc";
 const KEY_FILE: &str = "connections.key";
@@ -30,7 +30,8 @@ pub fn encrypt_and_save(connections: &[DbConnection]) -> io::Result<()> {
     let nonce = Nonce::from_slice(&nonce_bytes);
 
     let json = serde_json::to_vec(connections)?;
-    let ciphertext = cipher.encrypt(nonce, json.as_ref())
+    let ciphertext = cipher
+        .encrypt(nonce, json.as_ref())
         .map_err(|_| io::Error::new(io::ErrorKind::Other, "encryption failure"))?;
 
     let mut blob = Vec::with_capacity(NONCE_LEN + ciphertext.len());

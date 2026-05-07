@@ -1610,6 +1610,31 @@ const mainContent = document.getElementById('main');
               .filter((index) => index >= 0);
       }
 
+      function getVisibleColumnNames(table) {
+          const headers = Array.from(table.querySelectorAll('thead th'));
+          return getVisibleColumnIndexes(table)
+              .map((index) => getCleanHeaderText(headers[index], `Column ${index + 1}`))
+              .filter(Boolean);
+      }
+
+      function rewriteEditorSelectColumns(table) {
+          const visibleColumns = getVisibleColumnNames(table);
+          if (visibleColumns.length === 0) return;
+
+          const nextSelectList = visibleColumns
+              .map((column) => `    ${quoteSqlIdentifierForDisplay(column)}`)
+              .join(',\n');
+          const currentSql = editor.value || '';
+          const selectMatch = currentSql.match(/^(\s*SELECT\s+(?:DISTINCT\s+)?)([\s\S]*?)(\s+FROM\s+[\s\S]*)$/i);
+
+          if (!selectMatch) return;
+
+          editor.value = `${selectMatch[1]}\n${nextSelectList}${selectMatch[3]}`;
+          scanForVariables();
+          handleInput();
+          saveSqlWorkspaceState();
+      }
+
       function getExportRows(table, rowsMode) {
           const visibleBodyRows = Array.from(table.querySelectorAll('tbody tr'))
               .filter((row) => row.style.display !== 'none');
@@ -1720,6 +1745,60 @@ const mainContent = document.getElementById('main');
           });
       }
 
+      function attachStickyResultHeader(table) {
+          const scrollRoot = table.closest('.table-browser-results') || output;
+          if (!scrollRoot) return;
+
+          if (scrollRoot._sqlStickyHeaderCleanup) {
+              scrollRoot._sqlStickyHeaderCleanup();
+          }
+          scrollRoot.querySelectorAll('.sql-sticky-header-clone').forEach((element) => element.remove());
+
+          const sourceThead = table.querySelector('thead');
+          if (!sourceThead) return;
+
+          const sticky = document.createElement('div');
+          sticky.className = 'sql-sticky-header-clone';
+          sticky.hidden = true;
+
+          const stickyTable = document.createElement('table');
+          stickyTable.className = table.className;
+          stickyTable.classList.add('sql-sticky-header-table');
+          sticky.appendChild(stickyTable);
+          scrollRoot.insertBefore(sticky, scrollRoot.firstChild);
+
+          const syncStickyHeader = () => {
+              const sourceColgroup = table.querySelector('colgroup');
+              const clonedColgroup = sourceColgroup ? sourceColgroup.cloneNode(true) : null;
+              const clonedThead = sourceThead.cloneNode(true);
+              clonedThead.querySelectorAll('.column-sort-indicator, .column-resize-handle').forEach((element) => element.remove());
+
+              stickyTable.innerHTML = '';
+              if (clonedColgroup) stickyTable.appendChild(clonedColgroup);
+              stickyTable.appendChild(clonedThead);
+              stickyTable.style.width = table.offsetWidth + 'px';
+
+              const tableRect = table.getBoundingClientRect();
+              const rootRect = scrollRoot.getBoundingClientRect();
+              const isScrolledPastHeader = tableRect.top < rootRect.top;
+              const isTableStillVisible = tableRect.bottom > rootRect.top;
+              sticky.hidden = !(isScrolledPastHeader && isTableStillVisible);
+          };
+
+          const onScroll = () => syncStickyHeader();
+          const onResize = () => syncStickyHeader();
+          scrollRoot.addEventListener('scroll', onScroll, { passive: true });
+          window.addEventListener('resize', onResize);
+          scrollRoot._sqlStickyHeaderCleanup = () => {
+              scrollRoot.removeEventListener('scroll', onScroll);
+              window.removeEventListener('resize', onResize);
+              sticky.remove();
+              delete scrollRoot._sqlStickyHeaderCleanup;
+          };
+          table._syncStickyHeader = syncStickyHeader;
+          syncStickyHeader();
+      }
+
       function makeTableInteractable(table) {
         const ths = table.querySelectorAll('th');
         const tbody = table.querySelector('tbody');
@@ -1738,6 +1817,12 @@ const mainContent = document.getElementById('main');
                 colgroup.appendChild(col);
             });
             table.insertBefore(colgroup, table.firstChild);
+        } else {
+            while (colgroup.children.length < ths.length) {
+                const col = document.createElement('col');
+                col.style.width = minColumnWidth + 'px';
+                colgroup.appendChild(col);
+            }
         }
         
         rows.forEach((row, i) => {
@@ -1784,6 +1869,7 @@ const mainContent = document.getElementById('main');
                     if (col) {
                         col.style.width = nextWidth + 'px';
                     }
+                    if (table._syncStickyHeader) table._syncStickyHeader();
                 };
 
                 const onMouseUp = () => {
@@ -1792,6 +1878,7 @@ const mainContent = document.getElementById('main');
                     document.body.style.userSelect = '';
                     document.removeEventListener('mousemove', onMouseMove);
                     document.removeEventListener('mouseup', onMouseUp);
+                    if (table._syncStickyHeader) table._syncStickyHeader();
                 };
 
                 document.addEventListener('mousemove', onMouseMove);
@@ -1846,6 +1933,7 @@ const mainContent = document.getElementById('main');
         });
 
         renderColumnMenu(table);
+        attachStickyResultHeader(table);
       }
 
       function setColumnVisibility(table, colIndex, isVisible) {
@@ -1853,6 +1941,13 @@ const mainContent = document.getElementById('main');
           cells.forEach((cell) => {
               cell.classList.toggle('sql-column-hidden', !isVisible);
           });
+          const col = table.querySelector('colgroup')?.children[colIndex];
+          if (col) {
+              col.classList.toggle('sql-column-hidden', !isVisible);
+              col.style.visibility = isVisible ? '' : 'collapse';
+              col.style.width = isVisible && !col.style.width ? 'auto' : col.style.width;
+          }
+          if (table._syncStickyHeader) table._syncStickyHeader();
       }
 
       function renderColumnMenu(table) {
@@ -1877,7 +1972,12 @@ const mainContent = document.getElementById('main');
               checkbox.type = 'checkbox';
               checkbox.checked = !th.classList.contains('sql-column-hidden');
               checkbox.addEventListener('change', () => {
+                  if (!checkbox.checked && getVisibleColumnIndexes(table).length <= 1) {
+                      checkbox.checked = true;
+                      return;
+                  }
                   setColumnVisibility(table, colIndex, checkbox.checked);
+                  rewriteEditorSelectColumns(table);
               });
 
               const labelText = document.createElement('span');

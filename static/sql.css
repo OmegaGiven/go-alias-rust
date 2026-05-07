@@ -444,10 +444,36 @@
         font-family: monospace; 
         font-size: var(--sql-workspace-font-size); 
         line-height: 1.25;
+        position: relative;
     }
     .output * { font-size: var(--sql-workspace-font-size); }
     .output table,
-    .output table.grid { width: 100%; border-collapse: collapse; margin: calc(var(--element-margin) / 2) var(--element-margin); table-layout: fixed; }
+    .output table.grid {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        margin: 0;
+        table-layout: fixed;
+    }
+    .sql-sticky-header-clone {
+        background: var(--primary-bg);
+        left: 0;
+        overflow: hidden;
+        pointer-events: none;
+        position: sticky;
+        top: 0;
+        z-index: 40;
+    }
+    .sql-sticky-header-clone[hidden] {
+        display: none !important;
+    }
+    .sql-sticky-header-clone table,
+    .sql-sticky-header-clone table.grid {
+        margin: 0 !important;
+    }
+    .sql-sticky-header-clone th {
+        cursor: default;
+    }
     .output th,
     .output td,
     .output table.grid th,
@@ -542,7 +568,25 @@
     .output th,
     .output table.grid th { user-select: none; }
     .output .sql-column-hidden { display: none; }
-    .output th { background: var(--tertiary-bg); position: sticky; top: 0; z-index: 1; cursor: pointer; }
+    .output col.sql-column-hidden {
+        display: none;
+        visibility: collapse;
+        width: 0 !important;
+    }
+    .output thead,
+    .output table.grid thead {
+        position: sticky;
+        top: 0;
+        z-index: 6;
+    }
+    .output th {
+        background: var(--tertiary-bg);
+        position: sticky;
+        top: 0;
+        z-index: 7;
+        cursor: pointer;
+        box-shadow: 0 1px 0 var(--border-color);
+    }
     .output th .column-resize-handle {
         position: absolute;
         top: 0;

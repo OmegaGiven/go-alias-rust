@@ -1,0 +1,15 @@
+[package]
+name = "go_alias_desktop"
+version = "0.1.5"
+description = "Desktop wrapper for Go Alias"
+authors = ["Go Alias contributors"]
+license = ""
+repository = ""
+edition = "2024"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+go_service = { path = ".." }
+tauri = { version = "2", features = [] }

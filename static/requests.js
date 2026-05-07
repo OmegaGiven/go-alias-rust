@@ -63,7 +63,10 @@
         const REQUEST_HISTORY_KEY = 'request_run_history';
         const SAVED_REQUEST_FOLDERS_COLLAPSED_KEY = 'saved-request-folders-collapsed';
         const INSPECTOR_PENDING_PAYLOAD_KEY = 'inspector_pending_payload';
+        const REQUEST_WORKSPACE_TABS_KEY = 'go_service_request_workspace_tabs';
+        const REQUEST_WORKSPACE_PENDING_KEY = 'go_service_pending_request_workspace';
         const MAX_REQUEST_HISTORY_ENTRIES = 12;
+        const activeRequestTabId = new URLSearchParams(window.location.search).get('tab') || '';
         let pendingPostmanCollection = null;
         let collapsedRequestFolders = readCollapsedRequestFolders();
         let latestCurlCommand = '';
@@ -73,6 +76,84 @@
         let variableSetDialogMode = 'create';
         let requestHistoryCache = [];
         let requestHistorySavePromise = Promise.resolve();
+
+        function makeRequestWorkspaceTabId() {
+            return `request-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        }
+
+        function requestWorkspaceStorageKey(tabId) {
+            return `request_workspace_${tabId || 'default'}`;
+        }
+
+        function readRequestWorkspaceTabs() {
+            try {
+                const tabs = JSON.parse(localStorage.getItem(REQUEST_WORKSPACE_TABS_KEY) || '[]');
+                return Array.isArray(tabs) ? tabs.filter((tab) => tab && typeof tab.id === 'string') : [];
+            } catch (_) {
+                return [];
+            }
+        }
+
+        function writeRequestWorkspaceTabs(tabs) {
+            localStorage.setItem(REQUEST_WORKSPACE_TABS_KEY, JSON.stringify(tabs));
+        }
+
+        function readRequestWorkspace(tabId) {
+            if (
+                typeof window.readRequestWorkspace === 'function'
+                && window.readRequestWorkspace !== readRequestWorkspace
+            ) {
+                return window.readRequestWorkspace(tabId);
+            }
+            try {
+                return JSON.parse(localStorage.getItem(requestWorkspaceStorageKey(tabId)) || '{}');
+            } catch (_) {
+                return {};
+            }
+        }
+
+        function writeRequestWorkspace(tabId, workspace) {
+            if (!tabId) return;
+            localStorage.setItem(requestWorkspaceStorageKey(tabId), JSON.stringify(workspace || {}));
+        }
+
+        function createRequestWorkspaceTab(workspace = {}) {
+            if (
+                typeof window.createRequestWorkspaceTab === 'function'
+                && window.createRequestWorkspaceTab !== createRequestWorkspaceTab
+            ) {
+                return window.createRequestWorkspaceTab(workspace);
+            }
+
+            const id = makeRequestWorkspaceTabId();
+            const title = String(workspace.title || workspace.name || 'New Request').trim() || 'New Request';
+            const tabs = readRequestWorkspaceTabs();
+            const tab = { id, title, lastOpenedAt: Date.now() };
+            tabs.push(tab);
+            writeRequestWorkspaceTabs(tabs);
+            writeRequestWorkspace(id, { ...workspace, title });
+            return tab;
+        }
+
+        function updateRequestWorkspaceTab(tabId, workspace = {}) {
+            if (!tabId) return;
+            if (
+                typeof window.updateRequestWorkspaceTab === 'function'
+                && window.updateRequestWorkspaceTab !== updateRequestWorkspaceTab
+            ) {
+                window.updateRequestWorkspaceTab(tabId, workspace);
+                return;
+            }
+
+            const tabs = readRequestWorkspaceTabs();
+            const tab = tabs.find((candidate) => candidate.id === tabId);
+            if (tab) {
+                tab.title = String(workspace.title || workspace.name || tab.title || 'Request').trim() || 'Request';
+                tab.lastOpenedAt = Date.now();
+                writeRequestWorkspaceTabs(tabs);
+            }
+            writeRequestWorkspace(tabId, workspace);
+        }
 
         function normalizeFolderPath(folder) {
             return String(folder || '')
@@ -505,6 +586,7 @@
             if (containerId === 'params-container') {
                 updateUrlFromParams();
             }
+            saveActiveRequestWorkspace();
         }
 
         function updateUrlFromParams() {
@@ -561,10 +643,13 @@
             });
         }
         
-        urlInput.addEventListener('input', () => { parseUrlToParams(); detectPathVariables(); });
+        urlInput.addEventListener('input', () => { parseUrlToParams(); detectPathVariables(); saveActiveRequestWorkspace(); });
+        methodSelect.addEventListener('change', saveActiveRequestWorkspace);
+        bodyInput.addEventListener('input', saveActiveRequestWorkspace);
 
         // --- Auth UI ---
-        authTypeSelect.addEventListener('change', () => renderAuthInputs());
+        authTypeSelect.addEventListener('change', () => { renderAuthInputs(); saveActiveRequestWorkspace(); });
+        authInputs.addEventListener('input', saveActiveRequestWorkspace);
 
         function renderAuthInputs(savedData = null) {
             const type = authTypeSelect.value;
@@ -991,6 +1076,95 @@
             const h = constructHeaders();
             return h.map(([k, v]) => `${k}: ${v}`).join('\\n');
         }
+
+        function requestWorkspaceFromLink(link) {
+            return {
+                title: link.dataset.name || 'Request',
+                name: link.dataset.name || '',
+                folder: link.dataset.folder || '',
+                method: link.dataset.method || 'GET',
+                url: link.dataset.url || '',
+                headers: link.dataset.headers || '',
+                body: link.dataset.body || '',
+                authType: link.dataset.authType || 'none',
+                oauthTokenUrl: link.dataset.oauthTokenUrl || '',
+                oauthClientId: link.dataset.oauthClientId || '',
+                oauthClientSecret: link.dataset.oauthClientSecret || '',
+                oauthScope: link.dataset.oauthScope || '',
+            };
+        }
+
+        function collectCurrentRequestWorkspace() {
+            return {
+                title: reqNameInput.value.trim() || 'New Request',
+                name: reqNameInput.value.trim(),
+                folder: reqFolderInput ? reqFolderInput.value || '' : '',
+                method: methodSelect.value || 'GET',
+                url: urlInput.value || '',
+                headers: getKvPairs('headers-container').map(([key, value]) => `${key}: ${value}`).join('\n'),
+                body: bodyInput.value || '',
+                authType: authTypeSelect.value || 'none',
+                oauthTokenUrl: document.getElementById('oauth-token-url')?.value || '',
+                oauthClientId: document.getElementById('oauth-client-id')?.value || '',
+                oauthClientSecret: document.getElementById('oauth-client-secret')?.value || '',
+                oauthScope: document.getElementById('oauth-scope')?.value || '',
+            };
+        }
+
+        function saveActiveRequestWorkspace() {
+            if (!activeRequestTabId) return;
+            updateRequestWorkspaceTab(activeRequestTabId, collectCurrentRequestWorkspace());
+        }
+
+        function loadRequestWorkspace(workspace = {}, selectSavedRow = true) {
+            methodSelect.value = workspace.method || 'GET';
+            urlInput.value = workspace.url || '';
+            stringToHeadersTable(workspace.headers || '');
+            bodyInput.value = workspace.body || '';
+            reqNameInput.value = workspace.name || '';
+            if (reqFolderInput) {
+                reqFolderInput.value = workspace.folder || '';
+            }
+
+            if (selectSavedRow) {
+                document.querySelectorAll('.saved-req-item').forEach(el => el.classList.remove('selected'));
+                const selectedLink = findSavedRequestLink(workspace.name || '', workspace.folder || '');
+                selectedLink?.closest('.saved-req-item')?.classList.add('selected');
+            }
+
+            let savedAuthType = workspace.authType || 'none';
+            if (savedAuthType === 'none') {
+                const inferred = inferAuthTypeFromHeaders();
+                if (inferred !== 'none') savedAuthType = inferred;
+            }
+            authTypeSelect.value = savedAuthType;
+            renderAuthInputs({
+                oauth_token_url: workspace.oauthTokenUrl,
+                oauth_client_id: workspace.oauthClientId,
+                oauth_client_secret: workspace.oauthClientSecret,
+                oauth_scope: workspace.oauthScope,
+            });
+            applyAuthDefaultsFromHeaders(savedAuthType);
+            parseUrlToParams();
+            detectPathVariables();
+            saveActiveRequestWorkspace();
+        }
+
+        function openSavedRequestInNewTab(link) {
+            if (!link) return;
+            const workspace = requestWorkspaceFromLink(link);
+            const tab = createRequestWorkspaceTab(workspace);
+            if (tab) {
+                sessionStorage.setItem(REQUEST_WORKSPACE_PENDING_KEY, JSON.stringify({
+                    tabId: tab.id,
+                    workspace,
+                }));
+                if (typeof window.renderRequestWorkspaceTabs === 'function') {
+                    window.renderRequestWorkspaceTabs();
+                }
+                window.location.href = `/requests?tab=${encodeURIComponent(tab.id)}`;
+            }
+        }
         
         function stringToHeadersTable(headerStr) {
             const container = document.getElementById('headers-container');
@@ -1061,6 +1235,22 @@
         window.addKvRow = addKvRow; window.openTab = openTab; window.onKvChange = onKvChange; window.fetchOAuthToken = fetchOAuthToken; window.toggleBodyType = toggleBodyType; window.copyToClipboard = copyToClipboard;
         addKvRow('params-container'); addKvRow('headers-container'); parseUrlToParams(); detectPathVariables();
         renderRequestVariables();
+        if (activeRequestTabId) {
+            let workspace = readRequestWorkspace(activeRequestTabId);
+            try {
+                const pending = JSON.parse(sessionStorage.getItem(REQUEST_WORKSPACE_PENDING_KEY) || '{}');
+                if (pending.tabId === activeRequestTabId && pending.workspace) {
+                    workspace = pending.workspace;
+                    writeRequestWorkspace(activeRequestTabId, workspace);
+                    sessionStorage.removeItem(REQUEST_WORKSPACE_PENDING_KEY);
+                }
+            } catch (_) {
+                sessionStorage.removeItem(REQUEST_WORKSPACE_PENDING_KEY);
+            }
+            if (workspace && Object.keys(workspace).length > 0) {
+                loadRequestWorkspace(workspace);
+            }
+        }
 
         function filterSavedRequests() {
             if (!savedRequestSearch || !savedList) return;
@@ -1358,7 +1548,17 @@
         }
 
         if (newRequestBtn) {
-            newRequestBtn.addEventListener('click', resetRequestBuilder);
+            newRequestBtn.addEventListener('click', () => {
+                const tab = createRequestWorkspaceTab({ title: 'New Request', method: 'GET', authType: 'none' });
+                if (tab) {
+                    if (typeof window.renderRequestWorkspaceTabs === 'function') {
+                        window.renderRequestWorkspaceTabs();
+                    }
+                    window.location.href = `/requests?tab=${encodeURIComponent(tab.id)}`;
+                    return;
+                }
+                resetRequestBuilder();
+            });
         }
 
         if (createRequestFolderBtn && createRequestFolderForm && newRequestFolderName) {
@@ -1841,6 +2041,7 @@
                     } catch (refreshError) {
                         syncSavedRequestDomFromSaveForm();
                     }
+                    saveActiveRequestWorkspace();
                     confirmSaveRequestBtn.textContent = 'Saved';
                     window.setTimeout(() => {
                         confirmSaveRequestBtn.textContent = originalText;
@@ -1856,6 +2057,15 @@
         }
 
         savedList.addEventListener('click', (e) => {
+            const openTabButton = e.target.closest('.saved-req-open-tab');
+            if (openTabButton) {
+                e.preventDefault();
+                e.stopPropagation();
+                const link = openTabButton.closest('.saved-req-item')?.querySelector('.req-link');
+                openSavedRequestInNewTab(link);
+                return;
+            }
+
             const renameButton = e.target.closest('.rename-saved-request-btn');
             if (renameButton) {
                 e.preventDefault();
@@ -1886,39 +2096,11 @@
                 return;
             }
 
-            const link = e.target.closest('.req-link');
+            const requestItem = e.target.closest('.saved-req-item');
+            const link = e.target.closest('.req-link') || requestItem?.querySelector('.req-link');
             if (link) {
                 e.preventDefault();
-                
-                // Toggle selection class
-                document.querySelectorAll('.saved-req-item').forEach(el => el.classList.remove('selected'));
-                link.closest('.saved-req-item').classList.add('selected');
-
-                methodSelect.value = link.dataset.method;
-                urlInput.value = link.dataset.url;
-                stringToHeadersTable(link.dataset.headers);
-                bodyInput.value = link.dataset.body;
-                reqNameInput.value = link.dataset.name;
-                if (reqFolderInput) {
-                    reqFolderInput.value = link.dataset.folder || '';
-                }
-                
-                let savedAuthType = link.dataset.authType || 'none';
-                if (savedAuthType === 'none') {
-                    const inferred = inferAuthTypeFromHeaders();
-                    if (inferred !== 'none') savedAuthType = inferred;
-                }
-                authTypeSelect.value = savedAuthType;
-                const savedAuthData = {
-                    oauth_token_url: link.dataset.oauthTokenUrl,
-                    oauth_client_id: link.dataset.oauthClientId,
-                    oauth_client_secret: link.dataset.oauthClientSecret,
-                    oauth_scope: link.dataset.oauthScope
-                };
-                renderAuthInputs(savedAuthData);
-                applyAuthDefaultsFromHeaders(savedAuthType);
-                parseUrlToParams(); 
-                detectPathVariables();
+                loadRequestWorkspace(requestWorkspaceFromLink(link));
             }
         });
 

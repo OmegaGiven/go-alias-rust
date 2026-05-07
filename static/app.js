@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const SQL_CONNECTION_TABS_KEY = 'go_service_sql_connection_tabs';
     const SQL_CONNECTION_GROUPS_COLLAPSED_KEY = 'go_service_sql_connection_groups_collapsed';
     const SQL_CONNECTION_GROUP_ORDER_KEY = 'go_service_sql_connection_group_order';
+    const REQUEST_WORKSPACE_TABS_KEY = 'go_service_request_workspace_tabs';
     const TOP_NAV_ORDER_KEY = 'go_service_top_nav_order';
     let draggedSqlConnectionGroupName = '';
     let draggedTopNavItemName = '';
@@ -162,6 +163,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         item.addEventListener('dragstart', (event) => {
             if (event.target.closest('.sql-connection-group')) return;
+            if (event.target.closest('.request-workspace-tab')) return;
             draggedTopNavItemName = item.dataset.topNavItem || '';
             if (!draggedTopNavItemName) return;
             event.dataTransfer.effectAllowed = 'move';
@@ -223,15 +225,33 @@ document.addEventListener('DOMContentLoaded', () => {
         return { navLeft, sqlLink, cluster };
     }
 
+    function ensureRequestNavCluster() {
+        const navLeft = document.querySelector('.nav-left');
+        const requestsLink = document.querySelector('.nav-left a[href="/requests"]');
+        if (!navLeft || !requestsLink) return null;
+
+        let cluster = document.getElementById('request-nav-cluster');
+        if (!cluster) {
+            cluster = document.createElement('div');
+            cluster.id = 'request-nav-cluster';
+            cluster.className = 'request-nav-cluster';
+            cluster.dataset.topNavItem = 'requests';
+            navLeft.insertBefore(cluster, requestsLink);
+            cluster.appendChild(requestsLink);
+        }
+
+        requestsLink.classList.add('request-nav-main-link');
+        return { navLeft, requestsLink, cluster };
+    }
+
     function setupTopNavDragging() {
         const navLeft = document.querySelector('.nav-left');
         const sqlCluster = ensureSqlNavCluster()?.cluster;
-        const requestsLink = document.querySelector('.nav-left a[href="/requests"]');
+        const requestCluster = ensureRequestNavCluster()?.cluster;
         const inspectorLink = document.querySelector('.nav-left a[href="/inspector"]');
-        if (requestsLink) requestsLink.dataset.topNavItem = 'requests';
         if (inspectorLink) inspectorLink.dataset.topNavItem = 'inspector';
 
-        [sqlCluster, requestsLink, inspectorLink].forEach(setupTopNavDraggableItem);
+        [sqlCluster, requestCluster, inspectorLink].forEach(setupTopNavDraggableItem);
         applyTopNavOrder();
 
         if (navLeft && navLeft.dataset.topNavDropReady !== 'true') {
@@ -255,6 +275,143 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
         }
+    }
+
+    function makeRequestWorkspaceTabId() {
+        return `request-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    }
+
+    function requestWorkspaceStorageKey(tabId) {
+        return `request_workspace_${tabId || 'default'}`;
+    }
+
+    function readRequestWorkspaceTabs() {
+        try {
+            const tabs = JSON.parse(localStorage.getItem(REQUEST_WORKSPACE_TABS_KEY) || '[]');
+            return Array.isArray(tabs)
+                ? tabs
+                    .filter((tab) => tab && typeof tab.id === 'string')
+                    .map((tab) => ({
+                        id: tab.id,
+                        title: String(tab.title || 'Request').trim() || 'Request',
+                        lastOpenedAt: Number(tab.lastOpenedAt || Date.now()),
+                    }))
+                : [];
+        } catch (_) {
+            return [];
+        }
+    }
+
+    function writeRequestWorkspaceTabs(tabs) {
+        localStorage.setItem(REQUEST_WORKSPACE_TABS_KEY, JSON.stringify(tabs));
+    }
+
+    function readRequestWorkspace(tabId) {
+        try {
+            return JSON.parse(localStorage.getItem(requestWorkspaceStorageKey(tabId)) || '{}');
+        } catch (_) {
+            return {};
+        }
+    }
+
+    function writeRequestWorkspace(tabId, workspace) {
+        if (!tabId) return;
+        localStorage.setItem(requestWorkspaceStorageKey(tabId), JSON.stringify(workspace || {}));
+    }
+
+    function createRequestWorkspaceTab(workspace = {}) {
+        const id = makeRequestWorkspaceTabId();
+        const title = String(workspace.title || workspace.name || 'New Request').trim() || 'New Request';
+        const tabs = readRequestWorkspaceTabs();
+        const tab = { id, title, lastOpenedAt: Date.now() };
+        tabs.push(tab);
+        writeRequestWorkspaceTabs(tabs);
+        writeRequestWorkspace(id, { ...workspace, title });
+        renderRequestWorkspaceTabs();
+        return tab;
+    }
+
+    function updateRequestWorkspaceTab(tabId, workspace = {}) {
+        if (!tabId) return;
+        const tabs = readRequestWorkspaceTabs();
+        const tab = tabs.find((candidate) => candidate.id === tabId);
+        if (tab) {
+            const title = String(workspace.title || workspace.name || tab.title || 'Request').trim() || 'Request';
+            tab.title = title;
+            tab.lastOpenedAt = Date.now();
+            writeRequestWorkspaceTabs(tabs);
+        }
+        writeRequestWorkspace(tabId, workspace);
+        renderRequestWorkspaceTabs();
+    }
+
+    function closeRequestWorkspaceTab(tabId) {
+        const tabs = readRequestWorkspaceTabs();
+        const nextTabs = tabs.filter((tab) => tab.id !== tabId);
+        writeRequestWorkspaceTabs(nextTabs);
+        localStorage.removeItem(requestWorkspaceStorageKey(tabId));
+        renderRequestWorkspaceTabs();
+
+        const activeTabId = new URLSearchParams(window.location.search).get('tab') || '';
+        if (path.startsWith('/requests') && activeTabId === tabId) {
+            const nextTab = nextTabs[0];
+            window.location.href = nextTab ? `/requests?tab=${encodeURIComponent(nextTab.id)}` : '/requests';
+        }
+    }
+
+    function renderRequestWorkspaceTabs() {
+        const requestNav = ensureRequestNavCluster();
+        if (!requestNav) return;
+        const { cluster } = requestNav;
+
+        let tabList = document.getElementById('request-workspace-tabs');
+        if (!tabList) {
+            tabList = document.createElement('div');
+            tabList.id = 'request-workspace-tabs';
+            tabList.className = 'request-workspace-tabs';
+            cluster.appendChild(tabList);
+        }
+
+        const activeTabId = new URLSearchParams(window.location.search).get('tab') || '';
+        const tabs = readRequestWorkspaceTabs();
+        tabList.innerHTML = '';
+        tabList.hidden = tabs.length === 0;
+        cluster.classList.toggle('has-tabs', tabs.length > 0);
+        cluster.classList.toggle('active', tabs.length > 0 && path.startsWith('/requests'));
+
+        tabs.forEach((tab) => {
+            const workspace = readRequestWorkspace(tab.id);
+            const labelText = String(workspace.title || workspace.name || tab.title || 'Request').trim() || 'Request';
+            const tabEl = document.createElement('a');
+            tabEl.href = `/requests?tab=${encodeURIComponent(tab.id)}`;
+            tabEl.className = 'nav-link-item request-workspace-tab';
+            tabEl.title = `Request tab: ${labelText}`;
+            tabEl.classList.toggle('active', path.startsWith('/requests') && activeTabId === tab.id);
+
+            const label = document.createElement('span');
+            label.className = 'request-workspace-tab-label';
+            label.textContent = labelText;
+
+            const closeButton = document.createElement('button');
+            closeButton.type = 'button';
+            closeButton.className = 'request-workspace-tab-action request-workspace-tab-close';
+            closeButton.setAttribute('aria-label', `Close ${labelText} request tab`);
+            closeButton.title = `Close ${labelText}`;
+            closeButton.innerHTML = `
+                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                    <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                </svg>
+            `;
+            closeButton.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                closeRequestWorkspaceTab(tab.id);
+            });
+
+            tabEl.appendChild(label);
+            tabEl.appendChild(closeButton);
+            tabList.appendChild(tabEl);
+        });
     }
 
     function sqlWorkspaceStorageKey(nickname, tabId) {
@@ -384,7 +541,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const collapsedGroups = readCollapsedSqlConnectionGroups();
         let activatedFallbackTab = false;
         tabList.innerHTML = '';
-        cluster.classList.toggle('active', path.startsWith('/sql'));
 
         const groups = [];
         tabs.forEach((tab) => {
@@ -399,6 +555,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             group.tabs.push(tab);
         });
+
+        const hasOpenSqlTabs = groups.some((group) => group.tabs.length > 0);
+        cluster.classList.toggle('has-tabs', hasOpenSqlTabs);
+        cluster.classList.toggle('active', hasOpenSqlTabs && path.startsWith('/sql'));
 
         tabList.ondragover = (event) => {
             if (!draggedSqlConnectionGroupName) return;
@@ -577,9 +737,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     setupTopNavDragging();
     renderSqlConnectionTabs();
+    renderRequestWorkspaceTabs();
 
     window.closeSqlConnectionTab = closeSqlConnectionTab;
     window.renderSqlConnectionTabs = renderSqlConnectionTabs;
+    window.createRequestWorkspaceTab = createRequestWorkspaceTab;
+    window.updateRequestWorkspaceTab = updateRequestWorkspaceTab;
+    window.readRequestWorkspace = readRequestWorkspace;
+    window.renderRequestWorkspaceTabs = renderRequestWorkspaceTabs;
 
     const documentationWindow = document.getElementById('floating-documentation');
     const documentationHandle = document.getElementById('documentation-drag-handle');

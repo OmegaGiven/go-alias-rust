@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use crate::sql::DbConnection;
+use crate::pages::sql::DbConnection;
 
 pub fn default_font_family() -> String {
     "sans-serif".to_string()
@@ -21,7 +21,7 @@ pub fn default_element_margin() -> u32 {
 }
 
 pub fn default_nav_height() -> u32 {
-    30
+    50
 }
 
 // Define the structure for a theme, which consists of CSS color variables

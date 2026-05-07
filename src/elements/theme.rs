@@ -29,7 +29,7 @@ pub fn default_dark_theme() -> Theme {
         font_size_medium: 16,
         font_size_large: 18,
         element_margin: 10,
-        nav_height: 30,
+        nav_height: 50,
         font_family: "sans-serif".to_string(),
     }
 }

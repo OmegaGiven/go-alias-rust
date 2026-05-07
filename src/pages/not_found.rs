@@ -143,7 +143,7 @@ pub fn render_shortcuts_table(
                     <form method="POST" action="/shortcut_group/create" class="shortcut-create-group-form">
                         <input type="hidden" name="scope" value="visible">
                         <input type="text" name="group_name" placeholder="New group name" required>
-                        <button type="submit" class="form-submit-btn">Create Group</button>
+                        <button type="submit" class="form-submit-btn">Create Grouping</button>
                     </form>
                 </div>
                 {global_table}
@@ -157,7 +157,7 @@ pub fn render_shortcuts_table(
                     </div>
                     <form class="shortcut-create-group-form" data-local-shortcut-group-form>
                         <input type="text" name="group_name" placeholder="New group name" required>
-                        <button type="submit" class="form-submit-btn">Create Group</button>
+                        <button type="submit" class="form-submit-btn">Create Grouping</button>
                     </form>
                 </div>
                 <div id="local-shortcuts-table"></div>

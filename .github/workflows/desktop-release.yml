@@ -1,0 +1,99 @@
+name: Desktop Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-desktop:
+    name: Build desktop ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-arm64
+            os: macos-latest
+          - name: windows-x86_64
+            os: windows-latest
+          - name: linux-x86_64
+            os: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Install Linux Tauri dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Build macOS desktop app
+        if: runner.os == 'macOS'
+        run: npm run tauri:build -- --ci --no-sign --bundles app
+
+      - name: Build Windows desktop bundles
+        if: runner.os == 'Windows'
+        run: npm run tauri:build -- --ci --no-sign
+
+      - name: Build Linux desktop bundles
+        if: runner.os == 'Linux'
+        run: npm run tauri:build -- --ci --no-sign
+
+      - name: Collect desktop bundles
+        shell: bash
+        run: |
+          mkdir -p "dist/desktop-${{ matrix.name }}"
+          if [[ "${{ runner.os }}" == "macOS" ]]; then
+            COPYFILE_DISABLE=1 ditto -c -k --keepParent \
+              "src-tauri/target/release/bundle/macos/Go Alias.app" \
+              "dist/desktop-${{ matrix.name }}/go-alias-desktop-${{ matrix.name }}.zip"
+          else
+            find src-tauri/target/release/bundle -type f \
+              \( -name "*.msi" -o -name "*.exe" -o -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \) \
+              -exec cp {} "dist/desktop-${{ matrix.name }}/" \;
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: go-alias-desktop-${{ matrix.name }}
+          path: dist/desktop-${{ matrix.name }}/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish desktop GitHub release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build-desktop
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

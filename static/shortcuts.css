@@ -21,21 +21,24 @@
 
 .shortcut-section-heading {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
     gap: 12px;
     margin: 0 0 10px 0;
 }
 
 .shortcut-create-group-form {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(160px, 1fr) auto;
     align-items: center;
     gap: 4px;
     margin: 0;
+    min-width: min(100%, 320px);
 }
 
 .shortcut-create-group-form input {
     min-width: 160px;
+    width: 100%;
     height: 30px;
     box-sizing: border-box;
     padding: 4px 8px;
@@ -44,13 +47,23 @@
     background: var(--primary-bg);
     color: var(--text-color);
     font-size: var(--font-size-small);
+    line-height: 30px;
+    margin: 0;
 }
 
 .shortcut-create-group-form .form-submit-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     height: 30px;
+    min-height: 30px;
+    box-sizing: border-box;
     margin: 0;
     padding: 0 8px;
+    font-size: var(--font-size-small);
+    line-height: 1;
     white-space: nowrap;
+    width: auto;
 }
 
 .shortcut-home-intro {

@@ -1311,6 +1311,13 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
             r##"
                 <li class="saved-req-item" draggable="true" data-name="{}" data-folder="{}">
                     <div class="saved-req-link-wrap">
+                        <button type="button" class="saved-req-open-tab" title="Open in new request tab" aria-label="Open {} in new request tab">
+                            <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                                <path d="M5 3.5h7.5V11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                <path d="M12.5 3.5L5 11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                                <path d="M3.5 5.5v7h7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </button>
                         <span class="req-method {}">{}</span>
                         <a href="#" class="req-link" 
                         data-name="{}" 
@@ -1339,6 +1346,7 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
                 </li>"##,
             name_attr,
             folder_attr,
+            name_attr,
             r.method.to_lowercase(),
             r.method,
             name_attr,

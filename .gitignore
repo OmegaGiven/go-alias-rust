@@ -1,5 +1,14 @@
 # Rust build output
 /target/
+/src-tauri/target/
+/src-tauri/gen/
+/dist/
+
+# Node/Tauri tooling
+/node_modules/
+
+# OS metadata
+.DS_Store
 
 # Local runtime data
 /current_theme.json

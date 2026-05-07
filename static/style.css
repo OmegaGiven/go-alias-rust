@@ -861,22 +861,61 @@ ul li a:hover {
     gap: 4px;
     height: calc(100% - 4px);
     min-width: 0;
-    padding: 1px 4px;
-    border: 1px solid color-mix(in srgb, var(--accent-color) 26%, transparent);
+    padding: 0;
+    border: 1px solid transparent;
     border-radius: 8px;
-    background: color-mix(in srgb, var(--accent-color) 6%, transparent);
+    background: transparent;
     box-sizing: border-box;
     position: relative;
     align-self: center;
 }
 
-.sql-nav-cluster.active {
+.sql-nav-cluster.has-tabs {
+    padding: 1px 4px;
+    border-color: color-mix(in srgb, var(--accent-color) 26%, transparent);
+    background: color-mix(in srgb, var(--accent-color) 6%, transparent);
+}
+
+.sql-nav-cluster.has-tabs.active {
     border-color: color-mix(in srgb, var(--accent-color) 58%, var(--border-color));
     background: color-mix(in srgb, var(--accent-color) 10%, var(--secondary-bg));
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-color) 18%, transparent);
 }
 
 .modern-nav .sql-nav-cluster .sql-nav-main-link {
+    height: 100%;
+    border-radius: 5px;
+    padding-left: 10px;
+    padding-right: 10px;
+}
+
+.request-nav-cluster {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: calc(100% - 4px);
+    min-width: 0;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    box-sizing: border-box;
+    position: relative;
+    align-self: center;
+}
+
+.request-nav-cluster.has-tabs {
+    padding: 1px 4px;
+    border-color: color-mix(in srgb, var(--accent-color) 22%, transparent);
+    background: color-mix(in srgb, var(--accent-color) 5%, transparent);
+}
+
+.request-nav-cluster.has-tabs.active {
+    border-color: color-mix(in srgb, var(--accent-color) 45%, var(--border-color));
+    background: color-mix(in srgb, var(--accent-color) 9%, var(--secondary-bg));
+}
+
+.modern-nav .request-nav-cluster .request-nav-main-link {
     height: 100%;
     border-radius: 5px;
     padding-left: 10px;
@@ -917,6 +956,91 @@ ul li a:hover {
     height: 100%;
     gap: 3px;
     min-width: 0;
+}
+
+.request-workspace-tabs {
+    display: inline-flex;
+    align-items: center;
+    height: calc(100% - 4px);
+    gap: 3px;
+    min-width: 0;
+    align-self: center;
+}
+
+.request-workspace-tabs[hidden] {
+    display: none;
+}
+
+.modern-nav .request-workspace-tab {
+    position: relative;
+    gap: 6px;
+    max-width: 180px;
+    min-width: 86px;
+    height: 100%;
+    padding: 0 6px 0 10px;
+    border: 1px solid color-mix(in srgb, var(--accent-color) 35%, var(--border-color));
+    border-radius: 5px;
+    background: color-mix(in srgb, var(--accent-color) 10%, transparent);
+    box-shadow: inset 0 -3px 0 var(--accent-color);
+    opacity: 0.92;
+    justify-content: flex-start;
+    align-self: center;
+}
+
+.modern-nav .request-workspace-tab:hover,
+.modern-nav .request-workspace-tab.active {
+    background: color-mix(in srgb, var(--accent-color) 20%, var(--tertiary-bg));
+    border-color: color-mix(in srgb, var(--accent-color) 55%, var(--border-color));
+    opacity: 1;
+}
+
+.request-workspace-tab-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+}
+
+.request-workspace-tab-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    min-width: 18px;
+    margin: 0 !important;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text-color);
+    cursor: pointer;
+    line-height: 1;
+    opacity: 0;
+    align-self: center;
+    transition: background-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+}
+
+.request-workspace-tab-action svg {
+    display: block;
+    width: 12px;
+    height: 12px;
+    pointer-events: none;
+}
+
+.request-workspace-tab:hover .request-workspace-tab-action,
+.request-workspace-tab:focus-within .request-workspace-tab-action,
+.request-workspace-tab.active .request-workspace-tab-action {
+    opacity: 1;
+}
+
+.request-workspace-tab-action:hover {
+    background: color-mix(in srgb, var(--accent-color) 28%, var(--secondary-bg));
+    border-color: color-mix(in srgb, var(--accent-color) 45%, transparent);
+    color: var(--text-color);
 }
 
 .sql-connection-group {

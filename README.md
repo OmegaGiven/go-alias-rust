@@ -28,6 +28,30 @@ For a system service, set the same env var before launching the binary, for exam
 Environment=PORT=8080
 ```
 
+## Desktop App Development
+
+The desktop app is a Tauri wrapper around the same Actix server, templates, static assets, and app database code used by the browser version. UI and backend changes should still be made in the shared Rust, `templates/`, and `static/` files so both launch modes stay unified.
+
+Run the browser/server version from the repo root:
+
+```sh
+PORT=8080 cargo run
+```
+
+Run the desktop wrapper from the repo root:
+
+```sh
+npm run tauri:dev
+```
+
+or from `src-tauri/`:
+
+```sh
+cargo tauri dev
+```
+
+Desktop mode starts the shared server on `127.0.0.1` using an available local port, then opens a native Tauri window pointed at that server. The desktop database defaults to the operating system app-data directory and can still be overridden with `GO_ALIAS_DB_PATH`.
+
 ## Making `go/alias` Work
 
 The app already routes `/alias` paths. To type this in a browser:

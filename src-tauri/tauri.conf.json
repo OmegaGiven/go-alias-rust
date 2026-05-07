@@ -1,0 +1,23 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Go Alias",
+  "version": "0.1.5",
+  "identifier": "com.goalias.desktop",
+  "build": {
+    "frontendDist": "../static"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "resources": [
+      "../static",
+      "../templates"
+    ]
+  }
+}

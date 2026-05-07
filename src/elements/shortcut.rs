@@ -28,6 +28,19 @@ pub struct DeleteShortcutForm {
     pub key: String,
 }
 
+#[derive(Deserialize)]
+pub struct CreateShortcutGroupForm {
+    pub scope: Option<String>,
+    pub group_name: String,
+}
+
+#[derive(Deserialize)]
+pub struct MoveShortcutGroupForm {
+    pub scope: Option<String>,
+    pub key: String,
+    pub group_name: Option<String>,
+}
+
 // Helper function to save shortcuts back to JSON file
 fn save_shortcuts(path: &str, shortcuts: &HashMap<String, String>) -> io::Result<()> {
     // Use serde_json::to_string_pretty for readable JSON
@@ -171,4 +184,40 @@ pub async fn delete_shortcut(
     HttpResponse::Found()
         .append_header(("Location", "/"))
         .finish()
+}
+
+#[post("/shortcut_group/create")]
+pub async fn create_shortcut_group(form: Form<CreateShortcutGroupForm>) -> impl Responder {
+    let scope = form.scope.as_deref().unwrap_or("visible");
+    let group_name = form.group_name.trim();
+    if group_name.is_empty() {
+        return HttpResponse::BadRequest().body("Group name cannot be empty.");
+    }
+
+    if let Err(e) = app_db::create_shortcut_group(scope, group_name).await {
+        eprintln!("Failed to create shortcut group: {}", e);
+        return HttpResponse::InternalServerError().body("Failed to create shortcut group.");
+    }
+
+    HttpResponse::Found()
+        .append_header(("Location", "/"))
+        .finish()
+}
+
+#[post("/shortcut_group/move")]
+pub async fn move_shortcut_to_group(form: Form<MoveShortcutGroupForm>) -> impl Responder {
+    let scope = form.scope.as_deref().unwrap_or("visible");
+    let key = form.key.trim();
+    if key.is_empty() {
+        return HttpResponse::BadRequest().body("Shortcut key cannot be empty.");
+    }
+
+    if let Err(e) =
+        app_db::set_shortcut_group(scope, key, form.group_name.as_deref().unwrap_or("")).await
+    {
+        eprintln!("Failed to move shortcut to group: {}", e);
+        return HttpResponse::InternalServerError().body("Failed to move shortcut to group.");
+    }
+
+    HttpResponse::Ok().body("ok")
 }

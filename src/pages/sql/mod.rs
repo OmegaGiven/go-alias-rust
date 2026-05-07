@@ -8,7 +8,9 @@ pub use helpers::{find_connection, render_table};
 pub use models::{AddConnForm, DbConnection, SqlForm};
 pub use routes::{
     sql_add, sql_create_folder, sql_delete, sql_delete_connection, sql_delete_folder,
-    sql_disconnect, sql_disconnect_connection, sql_export, sql_export_queries, sql_get,
-    sql_import_queries, sql_job, sql_job_activate, sql_jobs, sql_move_folder, sql_move_query,
-    sql_rename, sql_run, sql_run_background, sql_save, sql_schema_json, sql_view,
+    sql_disconnect, sql_disconnect_connection, sql_export, sql_export_queries, sql_functions_json,
+    sql_get, sql_import_queries, sql_job, sql_job_activate, sql_jobs, sql_move_folder,
+    sql_move_query, sql_rename, sql_run, sql_run_background, sql_run_history_clear,
+    sql_run_history_delete, sql_run_history_get, sql_run_history_save, sql_save, sql_schema_json,
+    sql_table_data, sql_table_update, sql_update_connection, sql_view,
 };

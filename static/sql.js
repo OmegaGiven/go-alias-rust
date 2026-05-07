@@ -1,10 +1,15 @@
 const schemaTemplate = document.getElementById('sql-schema-data');
 let dbSchema = schemaTemplate ? JSON.parse(schemaTemplate.textContent || '{}') : {};
+const functionsTemplate = document.getElementById('sql-functions-data');
+let dbFunctions = functionsTemplate ? JSON.parse(functionsTemplate.textContent || '[]') : [];
 
 const mainContent = document.getElementById('main');
       const editor = document.getElementById('sql-editor');
       const sidebarSearchInput = document.getElementById('sidebar-search-input');
       const sidebarTableList = document.getElementById('table-list');
+      const sidebarFunctionList = document.getElementById('function-list');
+      const schemaTabTables = document.getElementById('schema-tab-tables');
+      const schemaTabFunctions = document.getElementById('schema-tab-functions');
       const querySearchInput = document.getElementById('query-search-input');
       const savedQueriesList = document.getElementById('saved-queries-list');
       const saveQueryForm = document.getElementById('save-query-form');
@@ -21,8 +26,7 @@ const mainContent = document.getElementById('main');
       const importQueryForm = document.getElementById('import-query-form');
       const importQueryPayload = document.getElementById('import-query-payload');
       const variablesSection = document.getElementById('variables-section');
-      const variableHelpBtn = document.getElementById('variable-help-btn');
-      const sqlDisconnectBtn = document.getElementById('sql-disconnect-btn');
+      const variablesLeft = variablesSection?.querySelector('.variables-left') || variablesSection;
       const autocompleteList = document.getElementById('autocomplete-list');
       const saveSqlFileBtn = document.getElementById('save-sql-file-btn');
       let currentFocus = -1;
@@ -30,9 +34,34 @@ const mainContent = document.getElementById('main');
       const backdrop = document.getElementById('sql-backdrop');
       const highlights = backdrop.querySelector('.highlights');
       const connectionNickname = document.querySelector("input[name=connection]")?.value || "";
+      const activeSqlTabId = new URLSearchParams(window.location.search).get('tab') || 'default';
+      const sqlWorkspaceStorageKey = `sql_workspace_${connectionNickname}_${activeSqlTabId}`;
       const varsStorageKey = "sql_vars_" + connectionNickname;
       const savedQueryFoldersCollapsedKey = "sql_saved_query_folders_collapsed_" + connectionNickname;
       let collapsedSqlFolders = readCollapsedSqlFolders();
+      let isRestoringWorkspace = false;
+
+      function resetSqlOutputPane() {
+          output.innerHTML = "<pre>Click a table name or enter a query and press 'Run Query'.</pre>";
+          if (outputFilterInput) {
+              outputFilterInput.value = '';
+          }
+          const countSpan = document.getElementById('row-count');
+          if (countSpan) {
+              countSpan.innerText = '';
+          }
+          if (outputHistorySelect) {
+              outputHistorySelect.value = '';
+          }
+          if (columnMenuPanel) {
+              columnMenuPanel.innerHTML = '<div class="sql-result-menu-empty">Run a query to choose columns.</div>';
+              columnMenuPanel.hidden = true;
+          }
+          if (columnMenuBtn) {
+              columnMenuBtn.setAttribute('aria-expanded', 'false');
+          }
+          updateSelectionCount();
+      }
 
       function openUntitledSqlFile() {
           editor.value = '';
@@ -40,6 +69,7 @@ const mainContent = document.getElementById('main');
           if (queryFolderInput) {
               queryFolderInput.value = '';
           }
+          resetSqlOutputPane();
           scanForVariables();
           handleInput();
           editor.focus();
@@ -62,7 +92,6 @@ const mainContent = document.getElementById('main');
       const clearBtn = document.getElementById('clear-editor-btn');
       if (clearBtn) {
           clearBtn.addEventListener('click', () => {
-              if (editor.value.trim() === '' && queryNameInput.value.trim() === '') return;
               openUntitledSqlFile();
           });
       }
@@ -215,91 +244,6 @@ const mainContent = document.getElementById('main');
           nameInput.focus();
       }
 
-      function closeVariableHelpDialog() {
-          const existingDialog = document.getElementById('variable-help-dialog-backdrop');
-          if (existingDialog) {
-              existingDialog.remove();
-          }
-      }
-
-      function openVariableHelpDialog() {
-          closeVariableHelpDialog();
-
-          const backdropEl = document.createElement('div');
-          backdropEl.id = 'variable-help-dialog-backdrop';
-          backdropEl.className = 'sql-dialog-backdrop';
-
-          const dialogEl = document.createElement('div');
-          dialogEl.className = 'sql-dialog sql-help-dialog';
-          dialogEl.setAttribute('role', 'dialog');
-          dialogEl.setAttribute('aria-modal', 'true');
-          dialogEl.setAttribute('aria-labelledby', 'variable-help-dialog-title');
-
-          const titleEl = document.createElement('h3');
-          titleEl.id = 'variable-help-dialog-title';
-          titleEl.textContent = 'SQL Variables';
-
-          const bodyEl = document.createElement('div');
-          bodyEl.className = 'sql-help-dialog-body';
-          bodyEl.innerHTML = `
-              <p>Use variables when a query needs values you may change each run.</p>
-              <p>Type a placeholder in SQL using double braces, like <code>{{customer_id}}</code>. The variable bar will create an input for it automatically.</p>
-              <p>Use <strong>+ Var</strong> to add a manual variable input, then use that same name in the query.</p>
-              <pre>SELECT *
-FROM orders
-WHERE customer_id = {{customer_id}}
-  AND status = '{{status}}';</pre>
-          `;
-
-          const actionsEl = document.createElement('div');
-          actionsEl.className = 'sql-dialog-actions';
-
-          const closeBtn = document.createElement('button');
-          closeBtn.type = 'button';
-          closeBtn.textContent = 'Close';
-          closeBtn.addEventListener('click', closeVariableHelpDialog);
-
-          backdropEl.addEventListener('click', (event) => {
-              if (event.target === backdropEl) {
-                  closeVariableHelpDialog();
-              }
-          });
-
-          dialogEl.addEventListener('keydown', (event) => {
-              if (event.key === 'Escape') {
-                  closeVariableHelpDialog();
-              }
-          });
-
-          actionsEl.appendChild(closeBtn);
-          dialogEl.appendChild(titleEl);
-          dialogEl.appendChild(bodyEl);
-          dialogEl.appendChild(actionsEl);
-          backdropEl.appendChild(dialogEl);
-          document.body.appendChild(backdropEl);
-          closeBtn.focus();
-      }
-
-      if (variableHelpBtn) {
-          variableHelpBtn.addEventListener('click', openVariableHelpDialog);
-      }
-
-      if (sqlDisconnectBtn) {
-          sqlDisconnectBtn.addEventListener('click', async () => {
-              if (typeof window.closeSqlConnectionTab === 'function') {
-                  await window.closeSqlConnectionTab(connectionNickname);
-                  return;
-              }
-
-              try {
-                  await fetch(`/sql/disconnect/${encodeURIComponent(connectionNickname)}`, { method: 'POST' });
-              } catch (error) {
-                  console.error('Failed to disconnect SQL connection', error);
-              }
-              window.location.href = '/sql';
-          });
-      }
-      
       const outputResizer = document.getElementById('output-resizer');
       const outputPane = document.getElementById('output');
       let isOutputResizing = false;
@@ -340,21 +284,32 @@ WHERE customer_id = {{customer_id}}
       const tableQueryResizer = document.getElementById('table-query-resizer');
       const tableListPane = document.getElementById('table-list');
       const tableListHeightKey = `sql_table_list_height_${connectionNickname}`;
+      const schemaListPanes = [sidebarTableList, sidebarFunctionList].filter(Boolean);
       let isTableListResizing = false;
       let lastTableListDownY = 0;
       let startTableListHeight = 0;
 
+      function activeSchemaListPane() {
+          return activeSchemaTab() === 'functions' ? sidebarFunctionList : sidebarTableList;
+      }
+
+      function applySchemaListHeight(height) {
+          schemaListPanes.forEach((pane) => {
+              pane.style.flex = '0 0 auto';
+              pane.style.height = `${height}px`;
+          });
+      }
+
       const savedTableListHeight = Number(localStorage.getItem(tableListHeightKey));
       if (savedTableListHeight > 40) {
-          tableListPane.style.flex = '0 0 auto';
-          tableListPane.style.height = `${savedTableListHeight}px`;
+          applySchemaListHeight(savedTableListHeight);
       }
 
       if (tableQueryResizer && tableListPane) {
           tableQueryResizer.addEventListener('mousedown', (event) => {
               isTableListResizing = true;
               lastTableListDownY = event.clientY;
-              startTableListHeight = tableListPane.offsetHeight;
+              startTableListHeight = activeSchemaListPane()?.offsetHeight || tableListPane.offsetHeight;
               tableQueryResizer.classList.add('resizing');
               document.body.style.cursor = 'row-resize';
               document.body.style.userSelect = 'none';
@@ -371,8 +326,7 @@ WHERE customer_id = {{customer_id}}
           if (nextHeight < 40) nextHeight = 40;
           if (nextHeight > maxHeight) nextHeight = maxHeight;
 
-          tableListPane.style.flex = '0 0 auto';
-          tableListPane.style.height = `${nextHeight}px`;
+          applySchemaListHeight(nextHeight);
       });
 
       document.addEventListener('mouseup', () => {
@@ -382,7 +336,7 @@ WHERE customer_id = {{customer_id}}
           tableQueryResizer.classList.remove('resizing');
           document.body.style.cursor = '';
           document.body.style.userSelect = '';
-          localStorage.setItem(tableListHeightKey, tableListPane.offsetHeight.toString());
+          localStorage.setItem(tableListHeightKey, (activeSchemaListPane()?.offsetHeight || tableListPane.offsetHeight).toString());
       });
 
       function renderTableList() {
@@ -396,15 +350,504 @@ WHERE customer_id = {{customer_id}}
                   a.className = 'table-list-item';
                   a.textContent = tableName;
                   a.href = '#';
-                  a.title = "Click to SELECT * LIMIT 100";
-                  a.onclick = (e) => { e.preventDefault(); editor.value = "SELECT * FROM " + tableName + " LIMIT 100;"; handleInput(); };
+                  a.title = "Click to browse live table";
+                  a.onclick = (e) => { e.preventDefault(); openLiveTableBrowser(tableName); };
                   li.appendChild(a);
                   sidebarTableList.appendChild(li);
               }
           });
       }
+
+      function functionDisplayText(fn) {
+          const header = [
+              `-- Function: ${fn.signature || fn.name || ''}`,
+              fn.return_type ? `-- Returns: ${fn.return_type}` : '',
+          ].filter(Boolean).join('\n');
+          return `${header}\n\n${fn.definition || ''}`.trim();
+      }
+
+      function openFunctionDisplay(fn) {
+          editor.value = functionDisplayText(fn);
+          queryNameInput.value = '';
+          if (queryFolderInput) {
+              queryFolderInput.value = '';
+          }
+          handleInput();
+          scanForVariables();
+          output.innerHTML = `
+              <div class="sql-function-display">
+                  <div><strong>Function</strong>: ${escapeHtmlText(fn.signature || fn.name || '')}</div>
+                  ${fn.return_type ? `<div><strong>Returns</strong>: ${escapeHtmlText(fn.return_type)}</div>` : ''}
+                  <div class="sql-function-display-note">Definition loaded into the SQL editor for inspection.</div>
+              </div>
+          `;
+      }
+
+      function renderFunctionList() {
+          const filter = sidebarSearchInput.value.toUpperCase();
+          sidebarFunctionList.innerHTML = '';
+
+          if (!Array.isArray(dbFunctions) || dbFunctions.length === 0) {
+              const empty = document.createElement('li');
+              empty.className = 'schema-list-empty';
+              empty.textContent = 'No functions found';
+              sidebarFunctionList.appendChild(empty);
+              return;
+          }
+
+          dbFunctions
+              .slice()
+              .sort((a, b) => String(a.signature || a.name || '').localeCompare(String(b.signature || b.name || '')))
+              .forEach((fn) => {
+                  const label = fn.signature || fn.name || '';
+                  if (label.toUpperCase().indexOf(filter) === -1) return;
+
+                  const li = document.createElement('li');
+                  const a = document.createElement('a');
+                  a.className = 'function-list-item';
+                  a.textContent = label;
+                  a.href = '#';
+                  a.title = 'Click to inspect function definition';
+                  a.addEventListener('click', (e) => {
+                      e.preventDefault();
+                      openFunctionDisplay(fn);
+                  });
+                  li.appendChild(a);
+                  sidebarFunctionList.appendChild(li);
+              });
+
+          if (!sidebarFunctionList.children.length) {
+              const empty = document.createElement('li');
+              empty.className = 'schema-list-empty';
+              empty.textContent = 'No matching functions';
+              sidebarFunctionList.appendChild(empty);
+          }
+      }
+
+      function activeSchemaTab() {
+          return schemaTabFunctions?.classList.contains('active') ? 'functions' : 'tables';
+      }
+
+      function renderActiveSchemaList() {
+          if (activeSchemaTab() === 'functions') {
+              renderFunctionList();
+          } else {
+              renderTableList();
+          }
+      }
+
+      function setSchemaTab(tabName) {
+          const showFunctions = tabName === 'functions';
+          schemaTabTables?.classList.toggle('active', !showFunctions);
+          schemaTabFunctions?.classList.toggle('active', showFunctions);
+          schemaTabTables?.setAttribute('aria-selected', showFunctions ? 'false' : 'true');
+          schemaTabFunctions?.setAttribute('aria-selected', showFunctions ? 'true' : 'false');
+          sidebarTableList.hidden = showFunctions;
+          sidebarFunctionList.hidden = !showFunctions;
+          sidebarSearchInput.placeholder = showFunctions ? 'Search functions...' : 'Search tables...';
+          sidebarSearchInput.value = '';
+          renderActiveSchemaList();
+      }
+
       renderTableList();
-      sidebarSearchInput.addEventListener('keyup', renderTableList);
+      renderFunctionList();
+      schemaTabTables?.addEventListener('click', () => setSchemaTab('tables'));
+      schemaTabFunctions?.addEventListener('click', () => setSchemaTab('functions'));
+      sidebarSearchInput.addEventListener('keyup', renderActiveSchemaList);
+
+      function tableFilterStorageKey(tableName) {
+          return `sql_table_filters_${connectionNickname}_${tableName}`;
+      }
+
+      function escapeHtmlText(value) {
+          return String(value || '')
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;');
+      }
+
+      function escapeAttribute(value) {
+          return escapeHtmlText(value).replace(/'/g, '&#39;');
+      }
+
+      function loadSavedTableFilters(tableName) {
+          try {
+              const filters = JSON.parse(localStorage.getItem(tableFilterStorageKey(tableName)) || '[]');
+              return Array.isArray(filters) ? filters : [];
+          } catch (_) {
+              return [];
+          }
+      }
+
+      function saveSavedTableFilters(tableName, filters) {
+          localStorage.setItem(tableFilterStorageKey(tableName), JSON.stringify(filters));
+      }
+
+      function quoteSqlIdentifierForDisplay(identifier) {
+          return `"${String(identifier || '').replace(/"/g, '""')}"`;
+      }
+
+      function quoteSqlLiteralForDisplay(value) {
+          return `'${String(value || '').replace(/'/g, "''")}'`;
+      }
+
+      function tableReferenceForDisplay(tableName) {
+          return `"public".${quoteSqlIdentifierForDisplay(tableName)}`;
+      }
+
+      function tableFilterSqlForDisplay(columnExpression, op, value) {
+          const valueLiteral = quoteSqlLiteralForDisplay(value);
+          switch (op) {
+              case 'is_null':
+                  return `${columnExpression} IS NULL`;
+              case 'not_null':
+                  return `${columnExpression} IS NOT NULL`;
+              case 'eq':
+                  return `${columnExpression} = ${valueLiteral}`;
+              case 'not_eq':
+                  return `${columnExpression} <> ${valueLiteral}`;
+              case 'contains':
+                  return `CAST(${columnExpression} AS TEXT) LIKE ${quoteSqlLiteralForDisplay(`%${value}%`)}`;
+              case 'begins_with':
+                  return `CAST(${columnExpression} AS TEXT) LIKE ${quoteSqlLiteralForDisplay(`${value}%`)}`;
+              case 'ends_with':
+                  return `CAST(${columnExpression} AS TEXT) LIKE ${quoteSqlLiteralForDisplay(`%${value}`)}`;
+              case 'like':
+                  return `CAST(${columnExpression} AS TEXT) LIKE ${valueLiteral}`;
+              default:
+                  return '';
+          }
+      }
+
+      function tableWhereSqlForDisplay(filters, columns) {
+          const clauses = [];
+          filters.forEach((filter) => {
+              const op = filter.op || 'contains';
+              const value = filter.value || '';
+              const isNullOp = op === 'is_null' || op === 'not_null';
+              if (!isNullOp && value === '') return;
+
+              if (!filter.column) {
+                  const anyClauses = columns
+                      .map((column) => tableFilterSqlForDisplay(quoteSqlIdentifierForDisplay(column), op, value))
+                      .filter(Boolean);
+                  if (anyClauses.length > 0) {
+                      clauses.push(`(${anyClauses.join(' OR ')})`);
+                  }
+                  return;
+              }
+
+              const clause = tableFilterSqlForDisplay(quoteSqlIdentifierForDisplay(filter.column), op, value);
+              if (clause) clauses.push(clause);
+          });
+
+          return clauses.length > 0 ? `\nWHERE ${clauses.join('\n  AND ')}` : '';
+      }
+
+      function tableBrowserSqlForDisplay(tableName, columns, filters, page, pageSize) {
+          const offset = Math.max(0, (page - 1) * pageSize);
+          return [
+              `SELECT *`,
+              `FROM ${tableReferenceForDisplay(tableName)}${tableWhereSqlForDisplay(filters, columns)}`,
+              `LIMIT ${pageSize + 1}`,
+              `OFFSET ${offset};`
+          ].join('\n');
+      }
+
+      function rowUpdateSqlForDisplay(tableName, columns, original, current) {
+          const setClauses = [];
+          const whereClauses = [];
+          columns.forEach((column) => {
+              const originalValue = original[column] || '';
+              const currentValue = current[column] || '';
+              const columnSql = quoteSqlIdentifierForDisplay(column);
+              whereClauses.push(`${columnSql} = ${quoteSqlLiteralForDisplay(originalValue)}`);
+              if (originalValue !== currentValue) {
+                  setClauses.push(`${columnSql} = ${quoteSqlLiteralForDisplay(currentValue)}`);
+              }
+          });
+
+          if (setClauses.length === 0) return '';
+          return `UPDATE ${tableReferenceForDisplay(tableName)}\nSET ${setClauses.join(',\n    ')}\nWHERE ${whereClauses.join('\n  AND ')};`;
+      }
+
+      function tableBrowserUpdateSqlForDisplay(tableName, columns, changes) {
+          return changes
+              .map((change) => rowUpdateSqlForDisplay(tableName, columns, change.original, change.current))
+              .filter(Boolean)
+              .join('\n\n');
+      }
+
+      function tableBrowserFilterRow(columns, filter = {}) {
+          const row = document.createElement('div');
+          row.className = 'table-browser-filter-row';
+          row.innerHTML = `
+              <select class="table-filter-column" title="Column">
+                  <option value="">Any column</option>
+                  ${columns.map((column) => `<option value="${escapeAttribute(column)}">${escapeHtmlText(column)}</option>`).join('')}
+              </select>
+              <select class="table-filter-op" title="Filter operation">
+                  <option value="contains">contains</option>
+                  <option value="eq">eq</option>
+                  <option value="not_eq">not eq</option>
+                  <option value="is_null">is null</option>
+                  <option value="not_null">not null</option>
+                  <option value="begins_with">begins with</option>
+                  <option value="ends_with">ends with</option>
+                  <option value="like">like</option>
+              </select>
+              <input class="table-filter-value" type="text" placeholder="Value">
+              <button type="button" class="add-var-btn table-filter-remove">x</button>
+          `;
+          row.querySelector('.table-filter-column').value = filter.column || '';
+          row.querySelector('.table-filter-op').value = filter.op || 'contains';
+          row.querySelector('.table-filter-value').value = filter.value || '';
+          row.querySelector('.table-filter-remove').addEventListener('click', () => row.remove());
+          return row;
+      }
+
+      function readTableBrowserFilters(container) {
+          return Array.from(container.querySelectorAll('.table-browser-filter-row')).map((row) => ({
+              column: row.querySelector('.table-filter-column')?.value || '',
+              op: row.querySelector('.table-filter-op')?.value || 'contains',
+              value: row.querySelector('.table-filter-value')?.value || '',
+          }));
+      }
+
+      function renderSavedTableFilterOptions(select, tableName) {
+          select.innerHTML = '<option value="">Saved filters</option>';
+          loadSavedTableFilters(tableName).forEach((preset) => {
+              const option = document.createElement('option');
+              option.value = preset.name;
+              option.textContent = preset.name;
+              select.appendChild(option);
+          });
+      }
+
+      function openLiveTableBrowser(tableName) {
+          const columns = dbSchema[tableName] || [];
+          let page = 1;
+          const pageSize = 100;
+          output.innerHTML = `
+              <div class="table-browser" data-table="${escapeAttribute(tableName)}">
+                  <div class="table-browser-toolbar">
+                      <strong>${escapeHtmlText(tableName)}</strong>
+                      <button type="button" class="add-var-btn table-browser-add-filter">+ Filter</button>
+                      <button type="button" class="add-var-btn table-browser-apply">Apply</button>
+                      <button type="button" class="add-var-btn table-browser-save-filter">Save Filter</button>
+                      <select class="table-browser-saved-filters"></select>
+                      <button type="button" class="add-var-btn table-browser-prev">Prev</button>
+                      <span class="table-browser-page">Page 1</span>
+                      <button type="button" class="add-var-btn table-browser-next">Next</button>
+                      <div class="table-browser-change-actions" hidden>
+                          <button type="button" class="add-var-btn table-browser-discard-changes">Discard Changes</button>
+                          <button type="button" class="add-var-btn table-browser-save-changes">Save Changes</button>
+                      </div>
+                  </div>
+                  <div class="table-browser-filters"></div>
+                  <div class="table-browser-status">Loading...</div>
+                  <div class="table-browser-results"></div>
+              </div>
+          `;
+
+          const browser = output.querySelector('.table-browser');
+          const filtersContainer = browser.querySelector('.table-browser-filters');
+          const savedSelect = browser.querySelector('.table-browser-saved-filters');
+          const status = browser.querySelector('.table-browser-status');
+          const results = browser.querySelector('.table-browser-results');
+          const pageLabel = browser.querySelector('.table-browser-page');
+          const prevBtn = browser.querySelector('.table-browser-prev');
+          const nextBtn = browser.querySelector('.table-browser-next');
+          const changeActions = browser.querySelector('.table-browser-change-actions');
+          const discardChangesBtn = browser.querySelector('.table-browser-discard-changes');
+          const saveChangesBtn = browser.querySelector('.table-browser-save-changes');
+          const countSpan = document.getElementById('row-count');
+          let baseBrowserSql = '';
+          let pendingChanges = [];
+          if (countSpan) countSpan.innerText = '';
+          renderSavedTableFilterOptions(savedSelect, tableName);
+
+          function collectPendingTableChanges() {
+              const table = results.querySelector('table');
+              if (!table) return [];
+
+              return Array.from(table.querySelectorAll('tbody tr'))
+                  .map((row) => {
+                      const original = {};
+                      const current = {};
+                      let changed = false;
+
+                      columns.forEach((column, index) => {
+                          const cell = row.children[index];
+                          const originalValue = cell?.dataset.originalValue || '';
+                          const currentValue = cell?.innerText || '';
+                          original[column] = originalValue;
+                          current[column] = currentValue;
+                          if (originalValue !== currentValue) {
+                              changed = true;
+                          }
+                      });
+
+                      return changed ? { original, current } : null;
+                  })
+                  .filter(Boolean);
+          }
+
+          function updateTableBrowserEditorSql() {
+              pendingChanges = collectPendingTableChanges();
+              const updateSql = tableBrowserUpdateSqlForDisplay(tableName, columns, pendingChanges);
+              editor.value = updateSql
+                  ? `${baseBrowserSql}\n\n-- Pending table edit SQL\n${updateSql}`
+                  : baseBrowserSql;
+              if (changeActions) changeActions.hidden = pendingChanges.length === 0;
+              scanForVariables();
+              handleInput();
+          }
+
+          function makeTableBrowserEditable(table) {
+              Array.from(table.querySelectorAll('tbody tr')).forEach((row) => {
+                  Array.from(row.children).forEach((cell) => {
+                      cell.dataset.originalValue = cell.innerText || '';
+                      cell.contentEditable = 'true';
+                      cell.spellcheck = false;
+                      cell.classList.add('table-browser-editable-cell');
+                      cell.addEventListener('input', () => {
+                          cell.classList.toggle('table-browser-cell-edited', (cell.innerText || '') !== (cell.dataset.originalValue || ''));
+                          updateTableBrowserEditorSql();
+                      });
+                      cell.addEventListener('keydown', (event) => {
+                          if (event.key === 'Enter') {
+                              event.preventDefault();
+                              cell.blur();
+                          }
+                      });
+                  });
+              });
+          }
+
+          const fetchPage = async () => {
+              status.textContent = 'Loading...';
+              const activeFilters = readTableBrowserFilters(filtersContainer);
+              baseBrowserSql = tableBrowserSqlForDisplay(tableName, columns, activeFilters, page, pageSize);
+              editor.value = baseBrowserSql;
+              queryNameInput.value = '';
+              if (queryFolderInput) queryFolderInput.value = '';
+              scanForVariables();
+              handleInput();
+              const resp = await fetch('/sql/table-data', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                      connection: connectionNickname,
+                      table: tableName,
+                      page,
+                      page_size: pageSize,
+                      filters: activeFilters,
+                  }),
+              });
+              if (!resp.ok) throw new Error(await resp.text());
+              const data = await resp.json();
+              results.innerHTML = data.html;
+              const table = results.querySelector('table');
+              if (table) {
+                  makeTableInteractable(table);
+                  makeTableBrowserEditable(table);
+              }
+              status.textContent = data.row_count_text || '0 rows';
+              if (countSpan) countSpan.innerText = data.row_count_text || '0 rows';
+              pageLabel.textContent = `Page ${data.page}`;
+              prevBtn.disabled = data.page <= 1;
+              nextBtn.disabled = !data.has_next;
+              pendingChanges = [];
+              if (changeActions) changeActions.hidden = true;
+          };
+
+          const safeFetchPage = () => {
+              fetchPage().catch((error) => {
+                  status.textContent = `Error: ${error.message}`;
+              });
+          };
+
+          browser.querySelector('.table-browser-add-filter').addEventListener('click', () => {
+              filtersContainer.appendChild(tableBrowserFilterRow(columns));
+          });
+          browser.querySelector('.table-browser-apply').addEventListener('click', () => {
+              page = 1;
+              safeFetchPage();
+          });
+          browser.querySelector('.table-browser-save-filter').addEventListener('click', () => {
+              const name = window.prompt('Save table filter as');
+              if (!name || !name.trim()) return;
+              const filters = loadSavedTableFilters(tableName).filter((preset) => preset.name !== name.trim());
+              filters.push({ name: name.trim(), filters: readTableBrowserFilters(filtersContainer) });
+              saveSavedTableFilters(tableName, filters);
+              renderSavedTableFilterOptions(savedSelect, tableName);
+              savedSelect.value = name.trim();
+          });
+          savedSelect.addEventListener('change', () => {
+              const preset = loadSavedTableFilters(tableName).find((item) => item.name === savedSelect.value);
+              filtersContainer.innerHTML = '';
+              if (preset) {
+                  preset.filters.forEach((filter) => filtersContainer.appendChild(tableBrowserFilterRow(columns, filter)));
+                  page = 1;
+                  safeFetchPage();
+              }
+          });
+          prevBtn.addEventListener('click', () => {
+              page = Math.max(1, page - 1);
+              safeFetchPage();
+          });
+          nextBtn.addEventListener('click', () => {
+              page += 1;
+              safeFetchPage();
+          });
+          discardChangesBtn.addEventListener('click', () => {
+              const table = results.querySelector('table');
+              if (!table) return;
+              table.querySelectorAll('tbody td').forEach((cell) => {
+                  cell.innerText = cell.dataset.originalValue || '';
+                  cell.classList.remove('table-browser-cell-edited');
+              });
+              updateTableBrowserEditorSql();
+          });
+          saveChangesBtn.addEventListener('click', async () => {
+              pendingChanges = collectPendingTableChanges();
+              if (pendingChanges.length === 0) return;
+              if (!window.confirm(`Save ${pendingChanges.length} edited row(s) to ${tableName}?`)) return;
+
+              saveChangesBtn.disabled = true;
+              status.textContent = 'Saving table edits...';
+              try {
+                  const resp = await fetch('/sql/table-update', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                          connection: connectionNickname,
+                          tab_id: activeSqlTabId,
+                          table: tableName,
+                          changes: pendingChanges,
+                      }),
+                  });
+                  if (!resp.ok) throw new Error(await resp.text());
+                  const result = await resp.json();
+                  await refreshOutputHistoryOptions();
+                  alert(result.message || 'Table edit complete.');
+                  if (result.status === 'completed') {
+                      safeFetchPage();
+                  } else {
+                      status.textContent = result.message || 'Table edit did not apply.';
+                  }
+              } catch (error) {
+                  alert(`Table edit failed: ${error.message}`);
+                  status.textContent = `Save failed: ${error.message}`;
+              } finally {
+                  saveChangesBtn.disabled = false;
+              }
+          });
+
+          safeFetchPage();
+      }
 
       const refreshBtn = document.getElementById('refresh-schema-btn');
       refreshBtn.addEventListener('click', refreshSchema);
@@ -412,13 +855,21 @@ WHERE customer_id = {{customer_id}}
       async function refreshSchema() {
           refreshBtn.style.animation = "spin 1s linear infinite";
           try {
-              const resp = await fetch('/sql/' + connectionNickname + '/schema-json');
-              if (resp.ok) {
-                  dbSchema = await resp.json();
-                  renderTableList();
+              const [schemaResp, functionsResp] = await Promise.all([
+                  fetch('/sql/' + connectionNickname + '/schema-json'),
+                  fetch('/sql/' + connectionNickname + '/functions-json'),
+              ]);
+              if (schemaResp.ok) {
+                  dbSchema = await schemaResp.json();
               } else {
                   console.error("Failed to refresh schema");
               }
+              if (functionsResp.ok) {
+                  dbFunctions = await functionsResp.json();
+              } else {
+                  console.error("Failed to refresh functions");
+              }
+              renderActiveSchemaList();
           } catch(e) {
               console.error(e);
           } finally {
@@ -681,31 +1132,126 @@ WHERE customer_id = {{customer_id}}
       const columnMenuPanel = document.getElementById('column-menu-panel');
       const exportMenuBtn = document.getElementById('export-menu-btn');
       const exportMenuPanel = document.getElementById('export-menu-panel');
-      const outputHistoryStorageKey = "sql_output_history_" + connectionNickname;
+      const clearOutputBtn = document.getElementById('clear-output-btn');
       const maxOutputHistoryEntries = 8;
       const maxOutputHistoryEntryChars = 500000;
       const maxOutputHistoryTotalChars = 1500000;
+      let outputHistoryCache = [];
       let activeSqlJobId = '';
       let sqlJobPollTimer = null;
 
-      function loadOutputHistory() {
-          try {
-              const history = JSON.parse(localStorage.getItem(outputHistoryStorageKey) || '[]');
-              if (!Array.isArray(history)) return [];
+      function currentRowCountText() {
+          return document.getElementById('row-count')?.innerText || '';
+      }
 
-              return history.map((entry, index) => ({
-                  ...entry,
-                  id: entry.id || `${entry.createdAt || 'history'}-${index}`
+      function serializableOutputHtml() {
+          const clone = output.cloneNode(true);
+          clone.querySelectorAll('colgroup, .column-sort-indicator, .column-resize-handle').forEach((element) => {
+              element.remove();
+          });
+          clone.querySelectorAll('.selected-row').forEach((row) => {
+              row.classList.remove('selected-row');
+          });
+          return clone.innerHTML;
+      }
+
+      function saveSqlWorkspaceState() {
+          if (isRestoringWorkspace || !connectionNickname) return;
+
+          try {
+              localStorage.setItem(sqlWorkspaceStorageKey, JSON.stringify({
+                  sql: editor.value,
+                  queryName: queryNameInput.value,
+                  queryFolder: queryFolderInput ? queryFolderInput.value : '',
+                  outputHtml: serializableOutputHtml(),
+                  rowCountText: currentRowCountText(),
+                  outputHistoryId: outputHistorySelect ? outputHistorySelect.value : '',
+                  updatedAt: new Date().toISOString(),
               }));
-          } catch (e) {
-              console.error('Failed to load SQL output history', e);
-              return [];
+              if (typeof window.renderSqlConnectionTabs === 'function') {
+                  window.renderSqlConnectionTabs();
+              }
+          } catch (error) {
+              console.error('Failed to save SQL tab workspace', error);
           }
       }
 
-      function saveOutputHistory(history) {
+      function restoreSqlWorkspaceState() {
           try {
-              localStorage.setItem(outputHistoryStorageKey, JSON.stringify(history));
+              const raw = localStorage.getItem(sqlWorkspaceStorageKey);
+              if (!raw) return false;
+
+              const state = JSON.parse(raw);
+              isRestoringWorkspace = true;
+              editor.value = state.sql || '';
+              queryNameInput.value = state.queryName || '';
+              if (queryFolderInput) {
+                  queryFolderInput.value = state.queryFolder || '';
+              }
+              if (state.outputHtml) {
+                  applyOutputHtml(state.outputHtml, state.rowCountText || '');
+              }
+              if (outputHistorySelect && state.outputHistoryId) {
+                  outputHistorySelect.value = state.outputHistoryId;
+              }
+              return true;
+          } catch (error) {
+              console.error('Failed to restore SQL tab workspace', error);
+              return false;
+          } finally {
+              isRestoringWorkspace = false;
+          }
+      }
+
+      function sqlRunHistoryUrl() {
+          return `/sql/run-history/${encodeURIComponent(connectionNickname)}?tab=${encodeURIComponent(activeSqlTabId)}`;
+      }
+
+      async function loadOutputHistory() {
+          try {
+              const resp = await fetch(sqlRunHistoryUrl());
+              if (!resp.ok) throw new Error(await resp.text());
+              const history = await resp.json();
+              if (!Array.isArray(history)) return [];
+              outputHistoryCache = history
+                  .filter((entry) => entry.status === 'completed' && entry.html)
+                  .map((entry, index) => ({
+                      ...entry,
+                      createdAt: entry.created_at || entry.createdAt,
+                      queryName: entry.query_name || entry.queryName || '',
+                      queryFolder: entry.query_folder || entry.queryFolder || '',
+                      rowCountText: entry.row_count_text || entry.rowCountText || '',
+                      id: entry.id || `${entry.created_at || 'history'}-${index}`
+                  }));
+              return outputHistoryCache;
+          } catch (e) {
+              console.error('Failed to load SQL output history', e);
+              return outputHistoryCache;
+          }
+      }
+
+      async function saveOutputHistoryEntry(entry) {
+          try {
+              const resp = await fetch('/sql/run-history', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                      id: entry.id,
+                      connection: connectionNickname,
+                      tab_id: activeSqlTabId,
+                      sql: entry.sql,
+                      query_name: entry.queryName || '',
+                      query_folder: entry.queryFolder || '',
+                      status: entry.status || 'completed',
+                      created_at: entry.createdAt,
+                      completed_at: entry.completedAt || entry.createdAt,
+                      row_count_text: entry.rowCountText || '',
+                      html: entry.html || '',
+                      error: entry.error || null,
+                  }),
+              });
+              if (!resp.ok) throw new Error(await resp.text());
+              saveSqlWorkspaceState();
           } catch (e) {
               console.error('Failed to save SQL output history', e);
           }
@@ -735,6 +1281,7 @@ WHERE customer_id = {{customer_id}}
               countSpan.innerText = rowCountText || getOutputRowCount();
           }
           updateSelectionCount();
+          saveSqlWorkspaceState();
       }
 
       function outputHistoryLabel(entry) {
@@ -749,17 +1296,21 @@ WHERE customer_id = {{customer_id}}
           if (!outputHistorySelect) return;
 
           const nextSelectedId = selectedId || outputHistorySelect.value;
-          const history = loadOutputHistory();
           outputHistorySelect.innerHTML = '<option value="">Output history</option>';
-          history.forEach((entry) => {
+          outputHistoryCache.forEach((entry) => {
               const option = document.createElement('option');
               option.value = entry.id;
               option.textContent = outputHistoryLabel(entry);
               outputHistorySelect.appendChild(option);
           });
-          if (nextSelectedId && history.some((entry) => entry.id === nextSelectedId)) {
+          if (nextSelectedId && outputHistoryCache.some((entry) => entry.id === nextSelectedId)) {
               outputHistorySelect.value = nextSelectedId;
           }
+      }
+
+      async function refreshOutputHistoryOptions(selectedId = '') {
+          await loadOutputHistory();
+          renderOutputHistoryOptions(selectedId);
       }
 
       function pruneOutputHistory(history) {
@@ -772,22 +1323,25 @@ WHERE customer_id = {{customer_id}}
           return pruned;
       }
 
-      function cacheOutputHistory(html, sql) {
+      async function cacheOutputHistory(html, sql, existingId = '', createdAt = '', rowCountText = '') {
           if (!html || html.length > maxOutputHistoryEntryChars) return;
 
           const entry = {
-              id: String(Date.now()) + "-" + Math.random().toString(16).slice(2),
-              createdAt: new Date().toISOString(),
+              id: existingId || String(Date.now()) + "-" + Math.random().toString(16).slice(2),
+              createdAt: createdAt || new Date().toISOString(),
+              completedAt: new Date().toISOString(),
               sql: sql,
               queryName: queryNameInput.value.trim(),
               queryFolder: queryFolderInput ? queryFolderInput.value : '',
-              rowCountText: getOutputRowCount(),
+              rowCountText: rowCountText || currentRowCountText() || getOutputRowCount(),
+              status: 'completed',
               html: html
           };
 
-          const history = loadOutputHistory().filter((existing) => existing.html !== html || existing.sql !== sql);
+          const history = outputHistoryCache.filter((existing) => existing.id !== entry.id && (existing.html !== html || existing.sql !== sql));
           history.unshift(entry);
-          saveOutputHistory(pruneOutputHistory(history));
+          outputHistoryCache = pruneOutputHistory(history);
+          await saveOutputHistoryEntry(entry);
           renderOutputHistoryOptions(entry.id);
       }
 
@@ -830,14 +1384,15 @@ WHERE customer_id = {{customer_id}}
       }
 
       async function applyCompletedSqlJob(job) {
-          if (!job || job.status !== 'completed' || !job.html) return;
-          applyOutputHtml(job.html, job.row_count_text || '');
+          if (!job || job.status !== 'completed') return;
+          const html = job.html || '<pre>Query completed. 0 rows returned.</pre>';
+          applyOutputHtml(html, job.row_count_text || '0 rows');
           editor.value = job.sql || editor.value;
           queryNameInput.value = job.query_name || '';
           if (queryFolderInput) queryFolderInput.value = job.query_folder || '';
           scanForVariables();
           handleInput();
-          cacheOutputHistory(job.html, job.sql || editor.value);
+          await cacheOutputHistory(html, job.sql || editor.value, job.id, job.created_at, job.row_count_text || '');
           await fetch(`/sql/job/${encodeURIComponent(job.id)}/activate`, { method: 'POST' }).catch(() => {});
       }
 
@@ -883,10 +1438,10 @@ WHERE customer_id = {{customer_id}}
           const selectedId = id || outputHistorySelect?.value || '';
           if (selectedId === '') return null;
 
-          return loadOutputHistory().find((entry) => entry.id === selectedId) || null;
+          return outputHistoryCache.find((entry) => entry.id === selectedId) || null;
       }
 
-      renderOutputHistoryOptions();
+      refreshOutputHistoryOptions();
 
       function restoreSelectedOutputHistory() {
           const entry = getSelectedOutputHistoryEntry();
@@ -908,21 +1463,31 @@ WHERE customer_id = {{customer_id}}
       }
 
       if (deleteOutputHistoryBtn) {
-          deleteOutputHistoryBtn.addEventListener('click', () => {
+          deleteOutputHistoryBtn.addEventListener('click', async () => {
               if (!outputHistorySelect || outputHistorySelect.value === '') return;
               if (!window.confirm('Delete the selected SQL output history entry?')) return;
 
-              const nextHistory = loadOutputHistory().filter((entry) => entry.id !== outputHistorySelect.value);
-              saveOutputHistory(nextHistory);
+              const selectedId = outputHistorySelect.value;
+              const resp = await fetch(`/sql/run-history/${encodeURIComponent(selectedId)}`, { method: 'DELETE' });
+              if (!resp.ok) {
+                  console.error('Failed to delete SQL history', await resp.text());
+                  return;
+              }
+              outputHistoryCache = outputHistoryCache.filter((entry) => entry.id !== selectedId);
               renderOutputHistoryOptions();
           });
       }
 
       if (clearOutputHistoryBtn) {
-          clearOutputHistoryBtn.addEventListener('click', () => {
+          clearOutputHistoryBtn.addEventListener('click', async () => {
               if (!window.confirm('Clear all cached SQL output history for this connection?')) return;
 
-              saveOutputHistory([]);
+              const resp = await fetch(`/sql/run-history/connection/${encodeURIComponent(connectionNickname)}?tab=${encodeURIComponent(activeSqlTabId)}`, { method: 'DELETE' });
+              if (!resp.ok) {
+                  console.error('Failed to clear SQL history', await resp.text());
+                  return;
+              }
+              outputHistoryCache = [];
               renderOutputHistoryOptions();
           });
       }
@@ -1148,6 +1713,13 @@ WHERE customer_id = {{customer_id}}
           });
       }
 
+      if (clearOutputBtn) {
+          clearOutputBtn.addEventListener('click', () => {
+              resetSqlOutputPane();
+              saveSqlWorkspaceState();
+          });
+      }
+
       function makeTableInteractable(table) {
         const ths = table.querySelectorAll('th');
         const tbody = table.querySelector('tbody');
@@ -1175,7 +1747,7 @@ WHERE customer_id = {{customer_id}}
         tbody.addEventListener('click', (e) => {
             const tr = e.target.closest('tr');
             if (!tr) return;
-            if (e.target.closest('button, input, textarea, select, a')) return;
+            if (e.target.closest('button, input, textarea, select, a, [contenteditable="true"]')) return;
             if (window.getSelection && window.getSelection().toString().trim() !== '') return;
 
             tr.classList.toggle('selected-row');
@@ -1398,8 +1970,8 @@ WHERE customer_id = {{customer_id}}
           div.appendChild(input);
           div.appendChild(closeBtn); 
           
-          const btn = variablesSection.querySelector('.add-var-btn');
-          variablesSection.insertBefore(div, btn);
+          const btn = variablesLeft.querySelector('.add-var-btn');
+          variablesLeft.insertBefore(div, btn);
       }
       window.addVariable = addVariable;
 
@@ -1413,11 +1985,11 @@ WHERE customer_id = {{customer_id}}
               foundVars.add(match[1]);
           }
           
-          const currentInputs = Array.from(variablesSection.querySelectorAll('input'));
+          const currentInputs = Array.from(variablesLeft.querySelectorAll('input'));
           const currentValues = {};
           currentInputs.forEach(i => { if(i.name) currentValues[i.name] = i.value; });
           
-          const existingGroups = variablesSection.querySelectorAll('.var-input-group');
+          const existingGroups = variablesLeft.querySelectorAll('.var-input-group');
           existingGroups.forEach(g => g.remove());
           
           foundVars.forEach(v => {
@@ -1469,6 +2041,7 @@ WHERE customer_id = {{customer_id}}
           const text = editor.value;
           highlights.innerHTML = applyHighlights(text);
           scanForVariables();
+          saveSqlWorkspaceState();
       };
 
       const syncScroll = () => {
@@ -1478,6 +2051,12 @@ WHERE customer_id = {{customer_id}}
 
       editor.addEventListener('input', handleInput);
       editor.addEventListener('scroll', syncScroll);
+      queryNameInput.addEventListener('input', saveSqlWorkspaceState);
+      if (queryFolderInput) {
+          queryFolderInput.addEventListener('change', saveSqlWorkspaceState);
+      }
+
+      const restoredWorkspace = restoreSqlWorkspaceState();
       if (editor.value) handleInput();
 
 
@@ -1680,4 +2259,4 @@ WHERE customer_id = {{customer_id}}
           handleInput();
       }
 
-      if (editor.value === "") { editor.value = "SELECT 1;"; handleInput(); }
+      if (!restoredWorkspace && editor.value === "") { editor.value = "SELECT 1;"; handleInput(); }

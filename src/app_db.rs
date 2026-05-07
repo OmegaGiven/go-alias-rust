@@ -1,7 +1,7 @@
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Map, Value, json};
 use sqlx::{Row, SqlitePool, sqlite::SqliteConnectOptions};
-use std::{path::Path, str::FromStr, sync::OnceLock};
+use std::{collections::HashMap, path::Path, str::FromStr, sync::OnceLock};
 
 const DEFAULT_DB_PATH: &str = "go_service.db";
 const DEFAULT_USER_ID: &str = "default";
@@ -67,8 +67,24 @@ async fn create_schema(pool: &SqlitePool) -> Result<(), sqlx::Error> {
             scope TEXT NOT NULL,
             shortcut_key TEXT NOT NULL,
             url TEXT NOT NULL,
+            group_name TEXT NOT NULL DEFAULT '',
             updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
             PRIMARY KEY (scope, shortcut_key)
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    ensure_shortcuts_group_column(pool).await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS shortcut_groups (
+            scope TEXT NOT NULL,
+            name TEXT NOT NULL,
+            updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+            PRIMARY KEY (scope, name)
         )
         "#,
     )
@@ -99,6 +115,34 @@ async fn create_schema(pool: &SqlitePool) -> Result<(), sqlx::Error> {
             PRIMARY KEY (connection, name)
         )
         "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS sql_run_history (
+            id TEXT NOT NULL PRIMARY KEY,
+            connection TEXT NOT NULL,
+            tab_id TEXT NOT NULL DEFAULT '',
+            sql TEXT NOT NULL,
+            query_name TEXT NOT NULL DEFAULT '',
+            query_folder TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            completed_at TEXT,
+            row_count_text TEXT,
+            html TEXT,
+            error TEXT,
+            updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_sql_run_history_connection_tab ON sql_run_history(connection, tab_id, updated_at DESC)",
     )
     .execute(pool)
     .await?;
@@ -205,6 +249,25 @@ async fn create_schema(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     Ok(())
 }
 
+async fn ensure_shortcuts_group_column(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    let columns = sqlx::query("PRAGMA table_info(shortcuts)")
+        .fetch_all(pool)
+        .await?;
+    let has_group_column = columns.iter().any(|row| {
+        row.try_get::<String, _>("name")
+            .map(|name| name == "group_name")
+            .unwrap_or(false)
+    });
+
+    if !has_group_column {
+        sqlx::query("ALTER TABLE shortcuts ADD COLUMN group_name TEXT NOT NULL DEFAULT ''")
+            .execute(pool)
+            .await?;
+    }
+
+    Ok(())
+}
+
 fn pool() -> Option<&'static SqlitePool> {
     APP_DB.get()
 }
@@ -252,6 +315,185 @@ where
         }
     });
     Ok(())
+}
+
+#[derive(Serialize, Deserialize, Clone, Default)]
+pub struct SqlRunHistoryRecord {
+    pub id: String,
+    pub connection: String,
+    pub tab_id: String,
+    pub sql: String,
+    pub query_name: String,
+    pub query_folder: String,
+    pub status: String,
+    pub created_at: String,
+    pub completed_at: Option<String>,
+    pub row_count_text: Option<String>,
+    pub html: Option<String>,
+    pub error: Option<String>,
+}
+
+pub async fn upsert_sql_run_history(record: &SqlRunHistoryRecord) -> Result<(), sqlx::Error> {
+    let Some(pool) = pool() else {
+        return Ok(());
+    };
+
+    sqlx::query(
+        r#"
+        INSERT INTO sql_run_history (
+            id, connection, tab_id, sql, query_name, query_folder, status, created_at,
+            completed_at, row_count_text, html, error, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())
+        ON CONFLICT(id) DO UPDATE SET
+            connection = excluded.connection,
+            tab_id = excluded.tab_id,
+            sql = excluded.sql,
+            query_name = excluded.query_name,
+            query_folder = excluded.query_folder,
+            status = excluded.status,
+            created_at = excluded.created_at,
+            completed_at = excluded.completed_at,
+            row_count_text = excluded.row_count_text,
+            html = excluded.html,
+            error = excluded.error,
+            updated_at = excluded.updated_at
+        "#,
+    )
+    .bind(&record.id)
+    .bind(&record.connection)
+    .bind(&record.tab_id)
+    .bind(&record.sql)
+    .bind(&record.query_name)
+    .bind(&record.query_folder)
+    .bind(&record.status)
+    .bind(&record.created_at)
+    .bind(&record.completed_at)
+    .bind(&record.row_count_text)
+    .bind(&record.html)
+    .bind(&record.error)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn get_sql_run_history(
+    connection: &str,
+    tab_id: Option<&str>,
+    limit: i64,
+) -> Vec<SqlRunHistoryRecord> {
+    let Some(pool) = pool() else {
+        return Vec::new();
+    };
+
+    let rows = if let Some(tab_id) = tab_id {
+        sqlx::query(
+            r#"
+            SELECT id, connection, tab_id, sql, query_name, query_folder, status, created_at,
+                   completed_at, row_count_text, html, error
+            FROM sql_run_history
+            WHERE connection = ? AND tab_id = ?
+            ORDER BY updated_at DESC, created_at DESC
+            LIMIT ?
+            "#,
+        )
+        .bind(connection)
+        .bind(tab_id)
+        .bind(limit)
+        .fetch_all(pool)
+        .await
+    } else {
+        sqlx::query(
+            r#"
+            SELECT id, connection, tab_id, sql, query_name, query_folder, status, created_at,
+                   completed_at, row_count_text, html, error
+            FROM sql_run_history
+            WHERE connection = ?
+            ORDER BY updated_at DESC, created_at DESC
+            LIMIT ?
+            "#,
+        )
+        .bind(connection)
+        .bind(limit)
+        .fetch_all(pool)
+        .await
+    };
+
+    rows.unwrap_or_default()
+        .into_iter()
+        .filter_map(sql_run_history_record_from_row)
+        .collect()
+}
+
+pub async fn get_sql_run_history_by_id(id: &str) -> Option<SqlRunHistoryRecord> {
+    let pool = pool()?;
+    let row = sqlx::query(
+        r#"
+        SELECT id, connection, tab_id, sql, query_name, query_folder, status, created_at,
+               completed_at, row_count_text, html, error
+        FROM sql_run_history
+        WHERE id = ?
+        "#,
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .ok()??;
+
+    sql_run_history_record_from_row(row)
+}
+
+pub async fn delete_sql_run_history(id: &str) -> Result<(), sqlx::Error> {
+    let Some(pool) = pool() else {
+        return Ok(());
+    };
+
+    sqlx::query("DELETE FROM sql_run_history WHERE id = ?")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn clear_sql_run_history(
+    connection: &str,
+    tab_id: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    let Some(pool) = pool() else {
+        return Ok(());
+    };
+
+    if let Some(tab_id) = tab_id {
+        sqlx::query("DELETE FROM sql_run_history WHERE connection = ? AND tab_id = ?")
+            .bind(connection)
+            .bind(tab_id)
+            .execute(pool)
+            .await?;
+    } else {
+        sqlx::query("DELETE FROM sql_run_history WHERE connection = ?")
+            .bind(connection)
+            .execute(pool)
+            .await?;
+    }
+    Ok(())
+}
+
+fn sql_run_history_record_from_row(row: sqlx::sqlite::SqliteRow) -> Option<SqlRunHistoryRecord> {
+    Some(SqlRunHistoryRecord {
+        id: row.try_get("id").ok()?,
+        connection: row.try_get("connection").ok()?,
+        tab_id: row.try_get("tab_id").ok()?,
+        sql: row.try_get("sql").ok()?,
+        query_name: row.try_get("query_name").ok()?,
+        query_folder: row.try_get("query_folder").ok()?,
+        status: row.try_get("status").ok()?,
+        created_at: row.try_get("created_at").ok()?,
+        completed_at: row.try_get("completed_at").ok(),
+        row_count_text: row.try_get("row_count_text").ok(),
+        html: row.try_get("html").ok(),
+        error: row.try_get("error").ok(),
+    })
 }
 
 pub async fn migrate_json_file<T>(collection: &str, key: &str, path: &str)
@@ -522,7 +764,131 @@ async fn get_shortcuts(pool: &SqlitePool, scope: &str) -> Option<Value> {
     Some(Value::Object(map))
 }
 
+pub async fn get_shortcut_groups(scope: &str) -> Vec<String> {
+    let Some(pool) = pool() else {
+        return Vec::new();
+    };
+
+    sqlx::query("SELECT name FROM shortcut_groups WHERE scope = ? ORDER BY lower(name)")
+        .bind(scope)
+        .fetch_all(pool)
+        .await
+        .map(|rows| {
+            rows.into_iter()
+                .filter_map(|row| row.try_get::<String, _>("name").ok())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+pub async fn get_shortcut_group_map(scope: &str) -> HashMap<String, String> {
+    let Some(pool) = pool() else {
+        return HashMap::new();
+    };
+
+    sqlx::query(
+        "SELECT shortcut_key, group_name FROM shortcuts WHERE scope = ? AND group_name <> ''",
+    )
+    .bind(scope)
+    .fetch_all(pool)
+    .await
+    .map(|rows| {
+        rows.into_iter()
+            .filter_map(|row| {
+                Some((
+                    row.try_get::<String, _>("shortcut_key").ok()?,
+                    row.try_get::<String, _>("group_name").ok()?,
+                ))
+            })
+            .collect()
+    })
+    .unwrap_or_default()
+}
+
+pub async fn create_shortcut_group(scope: &str, name: &str) -> Result<(), sqlx::Error> {
+    let Some(pool) = pool() else {
+        return Ok(());
+    };
+    let scope = normalize_shortcut_scope(scope);
+    let name = name.trim();
+    if name.is_empty() {
+        return Ok(());
+    }
+
+    sqlx::query(
+        r#"
+        INSERT INTO shortcut_groups (scope, name, updated_at)
+        VALUES (?, ?, unixepoch())
+        ON CONFLICT(scope, name) DO UPDATE SET updated_at = excluded.updated_at
+        "#,
+    )
+    .bind(scope)
+    .bind(name)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn set_shortcut_group(
+    scope: &str,
+    shortcut_key: &str,
+    group_name: &str,
+) -> Result<(), sqlx::Error> {
+    let Some(pool) = pool() else {
+        return Ok(());
+    };
+    let scope = normalize_shortcut_scope(scope);
+    let shortcut_key = shortcut_key.trim();
+    let group_name = group_name.trim();
+    if shortcut_key.is_empty() {
+        return Ok(());
+    }
+
+    if !group_name.is_empty() {
+        create_shortcut_group(scope, group_name).await?;
+    }
+
+    sqlx::query(
+        r#"
+        UPDATE shortcuts
+        SET group_name = ?, updated_at = unixepoch()
+        WHERE scope = ? AND shortcut_key = ?
+        "#,
+    )
+    .bind(group_name)
+    .bind(scope)
+    .bind(shortcut_key)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+fn normalize_shortcut_scope(scope: &str) -> &str {
+    match scope {
+        "hidden" | "hidden_global" => "hidden",
+        "work" => "work",
+        _ => "visible",
+    }
+}
+
 async fn put_shortcuts(pool: &SqlitePool, scope: &str, value: &Value) -> Result<(), sqlx::Error> {
+    let existing_groups: HashMap<String, String> = sqlx::query(
+        "SELECT shortcut_key, group_name FROM shortcuts WHERE scope = ? AND group_name <> ''",
+    )
+    .bind(scope)
+    .fetch_all(pool)
+    .await?
+    .into_iter()
+    .filter_map(|row| {
+        Some((
+            row.try_get::<String, _>("shortcut_key").ok()?,
+            row.try_get::<String, _>("group_name").ok()?,
+        ))
+    })
+    .collect();
+
     sqlx::query("DELETE FROM shortcuts WHERE scope = ?")
         .bind(scope)
         .execute(pool)
@@ -530,17 +896,36 @@ async fn put_shortcuts(pool: &SqlitePool, scope: &str, value: &Value) -> Result<
 
     if let Some(map) = value.as_object() {
         for (shortcut_key, url) in map {
+            let group_name = existing_groups
+                .get(shortcut_key)
+                .map(String::as_str)
+                .unwrap_or("");
             sqlx::query(
                 r#"
-                INSERT INTO shortcuts (scope, shortcut_key, url, updated_at)
-                VALUES (?, ?, ?, unixepoch())
+                INSERT INTO shortcuts (scope, shortcut_key, url, group_name, updated_at)
+                VALUES (?, ?, ?, ?, unixepoch())
                 "#,
             )
             .bind(scope)
             .bind(shortcut_key)
             .bind(value_as_string(url))
+            .bind(group_name)
             .execute(pool)
             .await?;
+
+            if !group_name.is_empty() {
+                sqlx::query(
+                    r#"
+                    INSERT INTO shortcut_groups (scope, name, updated_at)
+                    VALUES (?, ?, unixepoch())
+                    ON CONFLICT(scope, name) DO NOTHING
+                    "#,
+                )
+                .bind(scope)
+                .bind(group_name)
+                .execute(pool)
+                .await?;
+            }
         }
     }
     Ok(())

@@ -58,19 +58,27 @@
         .inspector-file-btn,
         .inspector-page #prettify-btn,
         .inspector-location-strip button {
+            appearance: none;
+            box-sizing: border-box;
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            min-height: 24px;
             height: 24px;
+            min-height: 24px;
+            min-width: 78px;
+            margin: 0;
             padding: 2px 8px;
             border: 1px solid var(--border-color);
             border-radius: 4px;
             background: var(--tertiary-bg);
             color: var(--text-color);
             cursor: pointer;
+            font-family: inherit;
             font-size: var(--font-size-small);
+            font-weight: 600;
             line-height: 1;
+            text-align: center;
+            vertical-align: middle;
         }
 
         .inspector-file-btn:hover,
@@ -112,7 +120,6 @@
         }
 
         .inspector-page .inspector-file-btn {
-            font-size: var(--font-size-small);
             font-weight: 600;
         }
 

@@ -19,6 +19,40 @@
     margin: 0 0 8px 0;
 }
 
+.shortcut-section-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0 0 10px 0;
+}
+
+.shortcut-create-group-form {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin: 0;
+}
+
+.shortcut-create-group-form input {
+    min-width: 160px;
+    height: 30px;
+    box-sizing: border-box;
+    padding: 4px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--primary-bg);
+    color: var(--text-color);
+    font-size: var(--font-size-small);
+}
+
+.shortcut-create-group-form .form-submit-btn {
+    height: 30px;
+    margin: 0;
+    padding: 0 8px;
+    white-space: nowrap;
+}
+
 .shortcut-home-intro {
     display: flex;
     align-items: center;
@@ -37,6 +71,52 @@
 .shortcut-grid {
     width: 100%;
     margin: 0;
+}
+
+.shortcut-group-board {
+    display: grid;
+    gap: 8px;
+}
+
+.shortcut-group-card {
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--primary-bg);
+    overflow: hidden;
+}
+
+.shortcut-group-card.drop-target {
+    border-color: var(--accent-color);
+    box-shadow: inset 0 0 0 1px var(--accent-color);
+}
+
+.shortcut-group-card h3 {
+    margin: 0;
+    padding: 5px 8px;
+    background: var(--tertiary-bg);
+    border-bottom: 1px solid var(--border-color);
+    font-size: var(--font-size-small);
+    line-height: 1.2;
+}
+
+.shortcut-alias-row {
+    cursor: grab;
+}
+
+.shortcut-alias-row.dragging {
+    opacity: 0.45;
+}
+
+.shortcut-group-name {
+    color: #aaa;
+    font-size: var(--font-size-small);
+    white-space: nowrap;
+}
+
+.shortcut-actions {
+    text-align: right;
+    white-space: nowrap;
+    width: 1%;
 }
 
 .shortcut-key-chip {
@@ -120,8 +200,19 @@
 }
 
 @media (max-width: 640px) {
-    .shortcut-home-intro {
+    .shortcut-home-intro,
+    .shortcut-section-heading {
         align-items: stretch;
         flex-direction: column;
+    }
+
+    .shortcut-create-group-form {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .shortcut-create-group-form input,
+    .shortcut-create-group-form .form-submit-btn {
+        width: 100%;
     }
 }

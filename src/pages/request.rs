@@ -1522,13 +1522,14 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
                     <div class="tab" onclick="openTab('tab-auth')">Auth</div>
                     <div class="tab" onclick="openTab('tab-headers')">Headers</div>
                     <div class="tab" onclick="openTab('tab-body')">Body</div>
+                    <div class="tab" onclick="openTab('tab-curl')">Curl</div>
                 </div>
 
                 <!-- Wrapper for Input Section to control height -->
                 <div class="input-container">
                 <!-- Params Tab -->
                 <div id="tab-params" class="tab-content active">
-                    <p style="font-size:var(--font-size-small); color:#888; margin: calc(var(--element-margin) / 2) var(--element-margin);">Query Parameters</p>
+                    <p class="request-details-label">Query Parameters</p>
                     <div id="params-container">
                         <!-- Dynamic Rows -->
                     </div>
@@ -1537,7 +1538,7 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
 
                 <!-- Path Tab -->
                 <div id="tab-path" class="tab-content">
-                    <p style="font-size:var(--font-size-small); color:#888; margin: calc(var(--element-margin) / 2) var(--element-margin);">Path Variables (Auto-detected from URL like {{id}})</p>
+                    <p class="request-details-label">Path Variables (Auto-detected from URL like {{id}})</p>
                     <div id="path-container"></div>
                 </div>
 
@@ -1560,7 +1561,7 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
                 
                 <!-- Headers Tab -->
                 <div id="tab-headers" class="tab-content">
-                    <p style="font-size:var(--font-size-small); color:#888; margin: calc(var(--element-margin) / 2) var(--element-margin);">HTTP Headers</p>
+                    <p class="request-details-label">HTTP Headers</p>
                     <div id="headers-container"></div>
                     <button class="save-btn btn-small" onclick="addKvRow('headers-container')">+ Add Header</button>
                 </div>
@@ -1572,18 +1573,29 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
                         <label class="title">Type:</label>
                         <label><input type="radio" name="body-type" value="raw" checked onchange="toggleBodyType()"> Raw (JSON)</label>
                         <label><input type="radio" name="body-type" value="form" onchange="toggleBodyType()"> Form URL Encoded</label>
+                        <button type="button" id="format-json-btn" class="save-btn btn-small">Format JSON</button>
                     </div>
 
                     <!-- Raw Editor -->
-                    <div id="body-raw-container" style="display:flex; flex-direction:column; flex-grow:1;">
+                    <div id="body-raw-container">
                         <textarea id="body-input" class="code-editor" placeholder="{{ \"key\": \"value\" }}"></textarea>
-                        <button type="button" id="format-json-btn" class="save-btn btn-small" style="width: auto; align-self: flex-start; margin: calc(var(--element-margin) / 2) var(--element-margin);">Format JSON</button>
                     </div>
 
                     <!-- Form URL Encoded Editor -->
-                    <div id="body-form-container" style="display:none; flex-direction:column;">
+                    <div id="body-form-container" hidden>
                         <div id="form-body-rows"></div>
                         <button class="save-btn btn-small" onclick="addKvRow('form-body-rows')">+ Add Field</button>
+                    </div>
+                </div>
+
+                <!-- Curl Import Tab -->
+                <div id="tab-curl" class="tab-content">
+                    <div class="curl-import-panel">
+                        <textarea id="curl-import-input" class="curl-import-input" placeholder="Paste a curl command..."></textarea>
+                        <div class="curl-import-actions">
+                            <button type="button" id="curl-import-apply-btn" class="save-btn btn-small">Import Curl</button>
+                            <span id="curl-import-status" class="curl-import-status"></span>
+                        </div>
                     </div>
                 </div>
 
@@ -1602,14 +1614,16 @@ fn render_request_page(current_theme: &Theme, saved_themes: &HashMap<String, The
                         <span id="res-size">Size: -</span>
                     </div>
                     <div class="response-actions">
+                        <button id="open-inspector-btn" class="save-btn btn-small" type="button" disabled>Open in Inspector</button>
+                        <button id="view-curl-btn" class="save-btn btn-small" type="button" disabled>View Curl</button>
+                        <button id="download-res-btn" class="save-btn btn-small" type="button">JSON</button>
+                    </div>
+                    <div class="response-history-actions">
                         <select id="request-history-select" class="request-history-select" title="Request history">
                             <option value="">Request history</option>
                         </select>
                         <button id="delete-request-history-btn" class="save-btn btn-small" type="button">Delete</button>
                         <button id="clear-request-history-btn" class="save-btn btn-small" type="button">Clear History</button>
-                        <button id="open-inspector-btn" class="save-btn btn-small" type="button" disabled>Open in Inspector</button>
-                        <button id="view-curl-btn" class="save-btn btn-small" type="button" disabled>View Curl</button>
-                        <button id="download-res-btn" class="save-btn btn-small" type="button">JSON</button>
                     </div>
                 </div>
                 

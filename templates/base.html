@@ -10,15 +10,16 @@
   <body>
     <div class="modern-nav">
       <div class="nav-left">
-        <a href="/" class="nav-link-item">Aliases</a>
         <a href="/sql" class="nav-link-item">SQL</a>
         <a href="/requests" class="nav-link-item">Requests</a>
         <a href="/inspector" class="nav-link-item">Inspector</a>
       </div>
       <div class="nav-right">
+        <button class="nav-link-item documentation-button" title="Documentation" aria-label="Documentation" onclick="toggleDocumentation()">?</button>
         <div class="tools-dropdown">
           <button class="nav-link-item tools-menu-button" title="Tools" aria-label="Tools">&#9776;</button>
           <div class="tools-dropdown-menu">
+            <a class="tools-dropdown-item" href="/">Web Aliases</a>
             <button class="tools-dropdown-item" onclick="toggleSettings()">Appearance</button>
             <button class="tools-dropdown-item" onclick="toggleCalculator()">Calculator</button>
             <button class="tools-dropdown-item" onclick="toggleJwtDecoder()">JWT Decoder</button>
@@ -29,6 +30,70 @@
     </div>
 
     {{ body_content|safe }}
+
+    <div id="floating-documentation">
+      <div class="floating-window-header documentation-header" id="documentation-drag-handle">
+        <span>Documentation</span>
+        <button class="floating-window-close documentation-close-btn" onclick="toggleDocumentation()">&times;</button>
+      </div>
+      <div class="documentation-body">
+        <input type="search" id="documentation-search" class="documentation-search" placeholder="Search documentation..." aria-label="Search documentation">
+        <div id="documentation-empty" class="documentation-empty" hidden>No matching documentation entries.</div>
+        <div class="documentation-sections">
+          <section class="documentation-entry" data-doc-section="aliases">
+            <h3>Aliases</h3>
+            <p>Use Aliases to create short browser routes. Type an alias into the URL bar, like <code>/gh</code>, to open the saved destination.</p>
+            <p>The Add Shortcut button on the Aliases page can save local browser aliases or global server aliases.</p>
+          </section>
+          <section class="documentation-entry" data-doc-section="sql">
+            <h3>SQL Manager</h3>
+            <p>Use SQL to save database connections, open one or more connection tabs, browse tables, inspect functions, run queries, and keep output history per connection tab.</p>
+            <p>Click a table to open a live paginated table browser. Use filters to narrow rows and save common table filters.</p>
+            <p>Click a function in the Functions tab to load its definition into the editor for inspection.</p>
+            <p>Use <code>Cmd+Enter</code> or <code>Ctrl+Enter</code> to run the current SQL query.</p>
+          </section>
+          <section class="documentation-entry" data-doc-section="sql-variables">
+            <h3>SQL Variables</h3>
+            <p>Use variables when a query needs values you may change each run.</p>
+            <p>Type a placeholder using double braces, like <code>&#123;&#123;customer_id&#125;&#125;</code>. The variable bar creates an input automatically.</p>
+            <p>Use <strong>+ Var</strong> to add a manual variable input, then use that same name in the query.</p>
+            <pre>SELECT *
+FROM orders
+WHERE customer_id = &#123;&#123;customer_id&#125;&#125;
+  AND status = '&#123;&#123;status&#125;&#125;';</pre>
+          </section>
+          <section class="documentation-entry" data-doc-section="requests">
+            <h3>Requests</h3>
+            <p>Use Requests to build and send HTTP requests, save requests into folders, import Postman collections, manage variable sets, and inspect response history.</p>
+            <p>Use the Curl tab to paste a curl command and populate the request builder. Use View Curl to see the equivalent command for the current request.</p>
+            <p>Open in Inspector sends the latest response body to the Inspector page for deeper JSON analysis.</p>
+            <p>Use <code>Cmd+Enter</code> or <code>Ctrl+Enter</code> to send the current request.</p>
+          </section>
+          <section class="documentation-entry" data-doc-section="inspector">
+            <h3>Inspector</h3>
+            <p>Use Inspector to paste, load, prettify, validate, and inspect JSON or text payloads.</p>
+            <p>Search and select nodes to understand nested objects, arrays, paths, and large response structures.</p>
+          </section>
+          <section class="documentation-entry" data-doc-section="tools">
+            <h3>Floating Tools</h3>
+            <p>The hamburger menu opens Appearance, Calculator, JWT Decoder, and Scratch Pad.</p>
+            <p>Floating windows can stay open while you work. Drag their header to move them, or double-click an outer edge to center supported windows.</p>
+          </section>
+          <section class="documentation-entry" data-doc-section="appearance">
+            <h3>Appearance</h3>
+            <p>Use Appearance to switch light, dark, or custom themes and adjust font sizes, font family, accent color, nav height, and global element margin.</p>
+          </section>
+          <section class="documentation-entry" data-doc-section="jwt">
+            <h3>JWT Decoder</h3>
+            <p>Paste a JWT or API token to decode header and payload values. Date-like claims are shown in a readable format when possible.</p>
+          </section>
+          <section class="documentation-entry" data-doc-section="scratchpad">
+            <h3>Scratch Pad</h3>
+            <p>Use Scratch Pad for temporary notes, queries, and snippets. Entries are saved automatically and can be switched with compact tabs.</p>
+          </section>
+        </div>
+      </div>
+    </div>
 
     <div id="floating-calculator">
       <div class="floating-window-header calc-header" id="calc-drag-handle">

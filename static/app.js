@@ -2,6 +2,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const path = window.location.pathname;
     const links = document.querySelectorAll('.nav-link-item');
     const SQL_CONNECTION_TABS_KEY = 'go_service_sql_connection_tabs';
+    const SQL_CONNECTION_GROUPS_COLLAPSED_KEY = 'go_service_sql_connection_groups_collapsed';
+    const SQL_CONNECTION_GROUP_ORDER_KEY = 'go_service_sql_connection_group_order';
+    const TOP_NAV_ORDER_KEY = 'go_service_top_nav_order';
+    let draggedSqlConnectionGroupName = '';
+    let draggedTopNavItemName = '';
     const sqlConnectionColors = [
         '#3b82f6',
         '#22c55e',
@@ -32,7 +37,12 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const tabs = JSON.parse(localStorage.getItem(SQL_CONNECTION_TABS_KEY) || '[]');
             return Array.isArray(tabs)
-                ? tabs.filter((tab) => tab && typeof tab.nickname === 'string' && tab.nickname.trim() !== '')
+                ? tabs
+                    .filter((tab) => tab && typeof tab.nickname === 'string' && tab.nickname.trim() !== '')
+                    .map((tab) => ({
+                        ...tab,
+                        id: tab.id || makeSqlConnectionTabId(tab.nickname),
+                    }))
                 : [];
         } catch (_) {
             return [];
@@ -43,7 +53,230 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem(SQL_CONNECTION_TABS_KEY, JSON.stringify(tabs));
     }
 
+    function readCollapsedSqlConnectionGroups() {
+        try {
+            const values = JSON.parse(localStorage.getItem(SQL_CONNECTION_GROUPS_COLLAPSED_KEY) || '[]');
+            return new Set(Array.isArray(values) ? values : []);
+        } catch (_) {
+            return new Set();
+        }
+    }
+
+    function writeCollapsedSqlConnectionGroups(groups) {
+        localStorage.setItem(SQL_CONNECTION_GROUPS_COLLAPSED_KEY, JSON.stringify(Array.from(groups)));
+    }
+
+    function readSqlConnectionGroupOrder() {
+        try {
+            const values = JSON.parse(localStorage.getItem(SQL_CONNECTION_GROUP_ORDER_KEY) || '[]');
+            return Array.isArray(values) ? values.filter((value) => typeof value === 'string') : [];
+        } catch (_) {
+            return [];
+        }
+    }
+
+    function writeSqlConnectionGroupOrder(order) {
+        localStorage.setItem(SQL_CONNECTION_GROUP_ORDER_KEY, JSON.stringify(order));
+    }
+
+    function orderedSqlConnectionGroups(groups) {
+        const order = readSqlConnectionGroupOrder();
+        const byName = new Map(groups.map((group) => [group.nickname, group]));
+        const ordered = order.map((name) => byName.get(name)).filter(Boolean);
+        const remaining = groups.filter((group) => !order.includes(group.nickname));
+        return [...ordered, ...remaining];
+    }
+
+    function clearSqlConnectionGroupDropClasses(container) {
+        container?.querySelectorAll('.sql-connection-group.drop-before, .sql-connection-group.drop-after, .sql-connection-group.dragging, .sql-connection-group.dragging-target').forEach((group) => {
+            group.classList.remove('drop-before', 'drop-after', 'dragging', 'dragging-target');
+        });
+    }
+
+    function moveSqlConnectionGroup(draggedName, targetName, placeAfter, groups) {
+        if (!draggedName || !targetName || draggedName === targetName) return false;
+        const visibleNames = orderedSqlConnectionGroups(groups).map((item) => item.nickname);
+        const nextOrder = visibleNames.filter((name) => name !== draggedName);
+        const targetIndex = nextOrder.indexOf(targetName);
+        if (targetIndex < 0) return false;
+
+        nextOrder.splice(targetIndex + (placeAfter ? 1 : 0), 0, draggedName);
+        writeSqlConnectionGroupOrder(nextOrder);
+        return true;
+    }
+
+    function readTopNavOrder() {
+        try {
+            const values = JSON.parse(localStorage.getItem(TOP_NAV_ORDER_KEY) || '[]');
+            return Array.isArray(values) ? values.filter((value) => typeof value === 'string') : [];
+        } catch (_) {
+            return [];
+        }
+    }
+
+    function writeTopNavOrder(order) {
+        localStorage.setItem(TOP_NAV_ORDER_KEY, JSON.stringify(order));
+    }
+
+    function topNavItems() {
+        const navLeft = document.querySelector('.nav-left');
+        if (!navLeft) return [];
+        return Array.from(navLeft.querySelectorAll(':scope > [data-top-nav-item]'));
+    }
+
+    function clearTopNavDropClasses() {
+        topNavItems().forEach((item) => {
+            item.classList.remove('top-nav-dragging', 'top-nav-drop-before', 'top-nav-drop-after');
+        });
+    }
+
+    function orderedTopNavItems(items) {
+        const order = readTopNavOrder();
+        const byName = new Map(items.map((item) => [item.dataset.topNavItem, item]));
+        const ordered = order.map((name) => byName.get(name)).filter(Boolean);
+        const remaining = items.filter((item) => !order.includes(item.dataset.topNavItem));
+        return [...ordered, ...remaining];
+    }
+
+    function applyTopNavOrder() {
+        const navLeft = document.querySelector('.nav-left');
+        if (!navLeft) return;
+        orderedTopNavItems(topNavItems()).forEach((item) => navLeft.appendChild(item));
+    }
+
+    function moveTopNavItem(draggedName, targetName, placeAfter) {
+        if (!draggedName || !targetName || draggedName === targetName) return false;
+        const names = orderedTopNavItems(topNavItems()).map((item) => item.dataset.topNavItem);
+        const nextOrder = names.filter((name) => name !== draggedName);
+        const targetIndex = nextOrder.indexOf(targetName);
+        if (targetIndex < 0) return false;
+        nextOrder.splice(targetIndex + (placeAfter ? 1 : 0), 0, draggedName);
+        writeTopNavOrder(nextOrder);
+        return true;
+    }
+
+    function setupTopNavDraggableItem(item) {
+        if (!item || item.dataset.topNavDragReady === 'true') return;
+        item.dataset.topNavDragReady = 'true';
+        item.draggable = true;
+
+        item.addEventListener('dragstart', (event) => {
+            if (event.target.closest('.sql-connection-group')) return;
+            draggedTopNavItemName = item.dataset.topNavItem || '';
+            if (!draggedTopNavItemName) return;
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', draggedTopNavItemName);
+            item.classList.add('top-nav-dragging');
+        });
+
+        item.addEventListener('dragend', () => {
+            clearTopNavDropClasses();
+            draggedTopNavItemName = '';
+        });
+
+        item.addEventListener('dragover', (event) => {
+            if (!draggedTopNavItemName || draggedTopNavItemName === item.dataset.topNavItem) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+            const rect = item.getBoundingClientRect();
+            const placeAfter = event.clientX > rect.left + rect.width / 2;
+            clearTopNavDropClasses();
+            item.classList.toggle('top-nav-drop-before', !placeAfter);
+            item.classList.toggle('top-nav-drop-after', placeAfter);
+        });
+
+        item.addEventListener('dragleave', (event) => {
+            if (item.contains(event.relatedTarget)) return;
+            item.classList.remove('top-nav-drop-before', 'top-nav-drop-after');
+        });
+
+        item.addEventListener('drop', (event) => {
+            if (!draggedTopNavItemName || draggedTopNavItemName === item.dataset.topNavItem) return;
+            event.preventDefault();
+            event.stopPropagation();
+            const rect = item.getBoundingClientRect();
+            const placeAfter = event.clientX > rect.left + rect.width / 2;
+            if (moveTopNavItem(draggedTopNavItemName, item.dataset.topNavItem, placeAfter)) {
+                clearTopNavDropClasses();
+                draggedTopNavItemName = '';
+                applyTopNavOrder();
+            }
+        });
+    }
+
+    function ensureSqlNavCluster() {
+        const navLeft = document.querySelector('.nav-left');
+        const sqlLink = document.querySelector('.nav-left a[href="/sql"]');
+        if (!navLeft || !sqlLink) return null;
+
+        let cluster = document.getElementById('sql-nav-cluster');
+        if (!cluster) {
+            cluster = document.createElement('div');
+            cluster.id = 'sql-nav-cluster';
+            cluster.className = 'sql-nav-cluster';
+            cluster.dataset.topNavItem = 'sql';
+            navLeft.insertBefore(cluster, sqlLink);
+            cluster.appendChild(sqlLink);
+        }
+
+        sqlLink.classList.add('sql-nav-main-link');
+        return { navLeft, sqlLink, cluster };
+    }
+
+    function setupTopNavDragging() {
+        const navLeft = document.querySelector('.nav-left');
+        const sqlCluster = ensureSqlNavCluster()?.cluster;
+        const requestsLink = document.querySelector('.nav-left a[href="/requests"]');
+        const inspectorLink = document.querySelector('.nav-left a[href="/inspector"]');
+        if (requestsLink) requestsLink.dataset.topNavItem = 'requests';
+        if (inspectorLink) inspectorLink.dataset.topNavItem = 'inspector';
+
+        [sqlCluster, requestsLink, inspectorLink].forEach(setupTopNavDraggableItem);
+        applyTopNavOrder();
+
+        if (navLeft && navLeft.dataset.topNavDropReady !== 'true') {
+            navLeft.dataset.topNavDropReady = 'true';
+            navLeft.addEventListener('dragover', (event) => {
+                if (!draggedTopNavItemName) return;
+                event.preventDefault();
+                event.dataTransfer.dropEffect = 'move';
+            });
+            navLeft.addEventListener('drop', (event) => {
+                if (!draggedTopNavItemName) return;
+                const target = event.target.closest('[data-top-nav-item]');
+                if (target) return;
+                const items = topNavItems();
+                const last = items[items.length - 1];
+                if (last && moveTopNavItem(draggedTopNavItemName, last.dataset.topNavItem, true)) {
+                    event.preventDefault();
+                    clearTopNavDropClasses();
+                    draggedTopNavItemName = '';
+                    applyTopNavOrder();
+                }
+            });
+        }
+    }
+
+    function sqlWorkspaceStorageKey(nickname, tabId) {
+        return `sql_workspace_${nickname}_${tabId || 'default'}`;
+    }
+
+    function readSqlTabWorkspace(nickname, tabId) {
+        try {
+            return JSON.parse(localStorage.getItem(sqlWorkspaceStorageKey(nickname, tabId)) || '{}');
+        } catch (_) {
+            return {};
+        }
+    }
+
+    function makeSqlConnectionTabId(nickname) {
+        return `${String(nickname || '').trim()}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    }
+
     function colorForSqlConnection(tabs, nickname) {
+        const existingConnectionColor = tabs.find((tab) => tab.nickname === nickname && tab.color)?.color;
+        if (existingConnectionColor) return existingConnectionColor;
+
         const usedColors = new Set(tabs.map((tab) => tab.color).filter(Boolean));
         const availableColor = sqlConnectionColors.find((color) => !usedColors.has(color));
         if (availableColor) return availableColor;
@@ -55,12 +288,14 @@ document.addEventListener('DOMContentLoaded', () => {
         return sqlConnectionColors[Math.abs(hash) % sqlConnectionColors.length];
     }
 
-    function upsertSqlConnectionTab(nickname) {
+    function upsertSqlConnectionTab(nickname, preferredId = '') {
         const cleanNickname = String(nickname || '').trim();
         if (!cleanNickname) return readSqlConnectionTabs();
 
         const tabs = readSqlConnectionTabs();
-        const existing = tabs.find((tab) => tab.nickname === cleanNickname);
+        const existing = preferredId
+            ? tabs.find((tab) => tab.id === preferredId)
+            : tabs.find((tab) => tab.nickname === cleanNickname);
         if (existing) {
             existing.lastOpenedAt = Date.now();
             writeSqlConnectionTabs(tabs);
@@ -68,6 +303,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         tabs.push({
+            id: preferredId || makeSqlConnectionTabId(cleanNickname),
             nickname: cleanNickname,
             color: colorForSqlConnection(tabs, cleanNickname),
             lastOpenedAt: Date.now(),
@@ -76,54 +312,211 @@ document.addEventListener('DOMContentLoaded', () => {
         return tabs;
     }
 
-    async function closeSqlConnectionTab(nickname) {
+    function createSqlConnectionTab(nickname) {
         const cleanNickname = String(nickname || '').trim();
+        if (!cleanNickname) return null;
+
+        const id = makeSqlConnectionTabId(cleanNickname);
+        const tabs = readSqlConnectionTabs();
+        tabs.push({
+            id,
+            nickname: cleanNickname,
+            color: colorForSqlConnection(tabs, cleanNickname),
+            lastOpenedAt: Date.now(),
+        });
+        writeSqlConnectionTabs(tabs);
+        return tabs[tabs.length - 1];
+    }
+
+    async function closeSqlConnectionTab(tabIdOrNickname) {
+        const tabsBeforeClose = readSqlConnectionTabs();
+        const closingTab = tabsBeforeClose.find((tab) => tab.id === tabIdOrNickname)
+            || tabsBeforeClose.find((tab) => tab.nickname === tabIdOrNickname);
+        const cleanNickname = String(closingTab?.nickname || tabIdOrNickname || '').trim();
         if (!cleanNickname) return;
 
-        const tabs = readSqlConnectionTabs().filter((tab) => tab.nickname !== cleanNickname);
+        const tabs = tabsBeforeClose.filter((tab) => {
+            if (closingTab) return tab.id !== closingTab.id;
+            return tab.nickname !== cleanNickname;
+        });
         writeSqlConnectionTabs(tabs);
 
-        try {
-            await fetch(`/sql/disconnect/${encodeURIComponent(cleanNickname)}`, { method: 'POST' });
-        } catch (error) {
-            console.error('Failed to disconnect SQL connection', error);
+        const remainingSameConnection = tabs.filter((tab) => tab.nickname === cleanNickname);
+        if (remainingSameConnection.length === 0) {
+            try {
+                await fetch(`/sql/disconnect/${encodeURIComponent(cleanNickname)}`, { method: 'POST' });
+            } catch (error) {
+                console.error('Failed to disconnect SQL connection', error);
+            }
         }
 
         renderSqlConnectionTabs();
-        if (decodeURIComponent(window.location.pathname.replace(/^\/sql\/?/, '')) === cleanNickname) {
-            window.location.href = '/sql';
+        const activeConnection = decodeURIComponent(window.location.pathname.replace(/^\/sql\/?/, ''));
+        const activeTabId = new URLSearchParams(window.location.search).get('tab') || '';
+        const closedActiveTab = closingTab
+            ? activeTabId === closingTab.id || (!activeTabId && activeConnection === closingTab.nickname)
+            : activeConnection === cleanNickname;
+
+        if (closedActiveTab) {
+            const nextTab = remainingSameConnection[0];
+            window.location.href = nextTab
+                ? `/sql/${encodeURIComponent(nextTab.nickname)}?tab=${encodeURIComponent(nextTab.id)}`
+                : '/sql';
         }
     }
 
     function renderSqlConnectionTabs() {
-        const sqlLink = document.querySelector('.nav-left a[href="/sql"]');
-        if (!sqlLink) return;
+        const sqlNav = ensureSqlNavCluster();
+        if (!sqlNav) return;
+        const { cluster } = sqlNav;
 
         let tabList = document.getElementById('sql-connection-tabs');
         if (!tabList) {
             tabList = document.createElement('div');
             tabList.id = 'sql-connection-tabs';
             tabList.className = 'sql-connection-tabs';
-            sqlLink.insertAdjacentElement('afterend', tabList);
+            cluster.appendChild(tabList);
         }
 
         const tabs = readSqlConnectionTabs();
         const activeConnection = document.getElementById('sql-active-connection')?.dataset.connection || '';
+        const activeTabId = new URLSearchParams(window.location.search).get('tab') || '';
+        const collapsedGroups = readCollapsedSqlConnectionGroups();
+        let activatedFallbackTab = false;
         tabList.innerHTML = '';
+        cluster.classList.toggle('active', path.startsWith('/sql'));
 
+        const groups = [];
         tabs.forEach((tab) => {
+            let group = groups.find((candidate) => candidate.nickname === tab.nickname);
+            if (!group) {
+                group = {
+                    nickname: tab.nickname,
+                    color: tab.color || colorForSqlConnection(tabs, tab.nickname),
+                    tabs: [],
+                };
+                groups.push(group);
+            }
+            group.tabs.push(tab);
+        });
+
+        tabList.ondragover = (event) => {
+            if (!draggedSqlConnectionGroupName) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+        };
+        tabList.ondrop = (event) => {
+            if (!draggedSqlConnectionGroupName) return;
+            event.preventDefault();
+            const groupsInDom = Array.from(tabList.querySelectorAll('.sql-connection-group'));
+            const targetGroup = event.target.closest('.sql-connection-group');
+            if (!targetGroup) {
+                const lastGroup = groupsInDom[groupsInDom.length - 1];
+                const targetName = lastGroup?.dataset.connectionGroup || '';
+                if (moveSqlConnectionGroup(draggedSqlConnectionGroupName, targetName, true, groups)) {
+                    clearSqlConnectionGroupDropClasses(tabList);
+                    draggedSqlConnectionGroupName = '';
+                    renderSqlConnectionTabs();
+                }
+            }
+        };
+
+        orderedSqlConnectionGroups(groups).forEach((group) => {
+            const isCollapsed = collapsedGroups.has(group.nickname);
+            const groupEl = document.createElement('div');
+            groupEl.className = 'sql-connection-group';
+            groupEl.draggable = true;
+            groupEl.dataset.connectionGroup = group.nickname;
+            groupEl.classList.toggle('active', group.nickname === activeConnection);
+            groupEl.classList.toggle('collapsed', isCollapsed);
+            groupEl.style.setProperty('--sql-tab-accent', group.color || 'var(--accent-color)');
+
+            groupEl.addEventListener('dragstart', (event) => {
+                draggedSqlConnectionGroupName = group.nickname;
+                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.setData('text/plain', group.nickname);
+                event.dataTransfer.setData('application/x-go-sql-connection-group', group.nickname);
+                groupEl.classList.add('dragging');
+            });
+            groupEl.addEventListener('dragend', () => {
+                clearSqlConnectionGroupDropClasses(tabList);
+                draggedSqlConnectionGroupName = '';
+            });
+            groupEl.addEventListener('dragover', (event) => {
+                const draggedName = draggedSqlConnectionGroupName;
+                if (!draggedName || draggedName === group.nickname) return;
+                event.preventDefault();
+                event.dataTransfer.dropEffect = 'move';
+                const rect = groupEl.getBoundingClientRect();
+                const placeAfter = event.clientX > rect.left + rect.width / 2;
+                clearSqlConnectionGroupDropClasses(tabList);
+                groupEl.classList.add('dragging-target');
+                groupEl.classList.toggle('drop-before', !placeAfter);
+                groupEl.classList.toggle('drop-after', placeAfter);
+            });
+            groupEl.addEventListener('dragleave', (event) => {
+                if (groupEl.contains(event.relatedTarget)) return;
+                groupEl.classList.remove('drop-before', 'drop-after', 'dragging-target');
+            });
+            groupEl.addEventListener('drop', (event) => {
+                const draggedName = draggedSqlConnectionGroupName;
+                if (!draggedName || draggedName === group.nickname) return;
+                event.preventDefault();
+                event.stopPropagation();
+                const rect = groupEl.getBoundingClientRect();
+                const placeAfter = event.clientX > rect.left + rect.width / 2;
+                if (moveSqlConnectionGroup(draggedName, group.nickname, placeAfter, groups)) {
+                    clearSqlConnectionGroupDropClasses(tabList);
+                    draggedSqlConnectionGroupName = '';
+                    renderSqlConnectionTabs();
+                }
+            });
+
+            const groupButton = document.createElement('button');
+            groupButton.type = 'button';
+            groupButton.className = 'sql-connection-group-label';
+            groupButton.title = `${isCollapsed ? 'Expand' : 'Collapse'} ${group.nickname} SQL tabs`;
+            groupButton.setAttribute('aria-expanded', String(!isCollapsed));
+            groupButton.innerHTML = `
+                <span class="sql-connection-group-caret">${isCollapsed ? '▸' : '▾'}</span>
+                <span class="sql-connection-group-name"></span>
+                <span class="sql-connection-group-count">${group.tabs.length}</span>
+            `;
+            groupButton.querySelector('.sql-connection-group-name').textContent = group.nickname;
+            groupButton.addEventListener('click', () => {
+                const nextCollapsed = readCollapsedSqlConnectionGroups();
+                if (nextCollapsed.has(group.nickname)) {
+                    nextCollapsed.delete(group.nickname);
+                } else {
+                    nextCollapsed.add(group.nickname);
+                }
+                writeCollapsedSqlConnectionGroups(nextCollapsed);
+                renderSqlConnectionTabs();
+            });
+            groupEl.appendChild(groupButton);
+
+            const groupTabsEl = document.createElement('div');
+            groupTabsEl.className = 'sql-connection-group-tabs';
+            groupTabsEl.hidden = isCollapsed;
+
+            group.tabs.forEach((tab) => {
+            const sameConnectionTabCount = group.tabs.length;
+            const workspace = readSqlTabWorkspace(tab.nickname, tab.id);
+            const tabNumber = group.tabs.findIndex((candidate) => candidate.id === tab.id) + 1;
+            const tabLabel = String(workspace.queryName || '').trim() || `Unnamed ${tabNumber}`;
             const tabEl = document.createElement('a');
-            tabEl.href = `/sql/${encodeURIComponent(tab.nickname)}`;
+            tabEl.href = `/sql/${encodeURIComponent(tab.nickname)}?tab=${encodeURIComponent(tab.id)}`;
             tabEl.className = 'nav-link-item sql-connection-tab';
             tabEl.style.setProperty('--sql-tab-accent', tab.color || 'var(--accent-color)');
             tabEl.title = `SQL connection: ${tab.nickname}`;
-            if (tab.nickname === activeConnection) {
+            if (tab.id === activeTabId || (!activeTabId && tab.nickname === activeConnection && !activatedFallbackTab)) {
                 tabEl.classList.add('active');
+                activatedFallbackTab = true;
             }
 
             const label = document.createElement('span');
             label.className = 'sql-connection-tab-label';
-            label.textContent = tab.nickname;
+            label.textContent = tabLabel;
 
             const openButton = document.createElement('button');
             openButton.type = 'button';
@@ -138,14 +531,21 @@ document.addEventListener('DOMContentLoaded', () => {
             openButton.addEventListener('click', (event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                window.open(`/sql/${encodeURIComponent(tab.nickname)}`, '_blank', 'noopener');
+                const newTab = createSqlConnectionTab(tab.nickname);
+                if (newTab) {
+                    renderSqlConnectionTabs();
+                    window.location.href = `/sql/${encodeURIComponent(newTab.nickname)}?tab=${encodeURIComponent(newTab.id)}`;
+                }
             });
 
             const closeButton = document.createElement('button');
             closeButton.type = 'button';
             closeButton.className = 'sql-connection-tab-action sql-connection-tab-close';
-            closeButton.setAttribute('aria-label', `Close ${tab.nickname} SQL tab`);
-            closeButton.title = `Close ${tab.nickname}`;
+            const closeLabel = sameConnectionTabCount > 1
+                ? `Close ${tab.nickname} SQL tab`
+                : `Disconnect ${tab.nickname}`;
+            closeButton.setAttribute('aria-label', closeLabel);
+            closeButton.title = closeLabel;
             closeButton.innerHTML = `
                 <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
                     <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
@@ -154,23 +554,151 @@ document.addEventListener('DOMContentLoaded', () => {
             closeButton.addEventListener('click', (event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                closeSqlConnectionTab(tab.nickname);
+                closeSqlConnectionTab(tab.id);
             });
 
             tabEl.appendChild(label);
             tabEl.appendChild(openButton);
             tabEl.appendChild(closeButton);
-            tabList.appendChild(tabEl);
+            groupTabsEl.appendChild(tabEl);
+            });
+
+            groupEl.appendChild(groupTabsEl);
+            tabList.appendChild(groupEl);
         });
     }
 
     const activeSqlConnectionEl = document.getElementById('sql-active-connection');
     if (activeSqlConnectionEl?.dataset.connection) {
-        upsertSqlConnectionTab(activeSqlConnectionEl.dataset.connection);
+        upsertSqlConnectionTab(
+            activeSqlConnectionEl.dataset.connection,
+            new URLSearchParams(window.location.search).get('tab') || ''
+        );
     }
+    setupTopNavDragging();
     renderSqlConnectionTabs();
 
     window.closeSqlConnectionTab = closeSqlConnectionTab;
+    window.renderSqlConnectionTabs = renderSqlConnectionTabs;
+
+    const documentationWindow = document.getElementById('floating-documentation');
+    const documentationHandle = document.getElementById('documentation-drag-handle');
+    const documentationSearch = document.getElementById('documentation-search');
+    const documentationEmpty = document.getElementById('documentation-empty');
+    const documentationEntries = Array.from(document.querySelectorAll('.documentation-entry'));
+
+    function documentationSectionForPath() {
+        if (path.startsWith('/sql')) return 'sql';
+        if (path.startsWith('/requests')) return 'requests';
+        if (path.startsWith('/inspector')) return 'inspector';
+        return 'aliases';
+    }
+
+    function filterDocumentation() {
+        const query = String(documentationSearch?.value || '').trim().toLowerCase();
+        let visibleCount = 0;
+
+        documentationEntries.forEach((entry) => {
+            const haystack = entry.textContent.toLowerCase();
+            const visible = !query || haystack.includes(query);
+            entry.hidden = !visible;
+            if (visible) visibleCount += 1;
+        });
+
+        if (documentationEmpty) {
+            documentationEmpty.hidden = visibleCount > 0;
+        }
+    }
+
+    function focusDocumentationSection(sectionName) {
+        documentationEntries.forEach((entry) => entry.classList.remove('documentation-entry-focused'));
+        const section = document.querySelector(`.documentation-entry[data-doc-section="${sectionName}"]`);
+        if (!section || section.hidden) return;
+
+        section.classList.add('documentation-entry-focused');
+        section.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    }
+
+    function centerDocumentationWindow() {
+        if (!documentationWindow) return;
+        const rect = documentationWindow.getBoundingClientRect();
+        documentationWindow.style.left = `${Math.max(10, (window.innerWidth - rect.width) / 2)}px`;
+        documentationWindow.style.top = `${Math.max(10, (window.innerHeight - rect.height) / 2)}px`;
+        documentationWindow.style.right = 'auto';
+    }
+
+    function bringDocumentationToFront() {
+        if (!documentationWindow) return;
+        documentationWindow.style.zIndex = '10030';
+    }
+
+    window.toggleDocumentation = function () {
+        if (!documentationWindow) return;
+        const isOpen = documentationWindow.style.display === 'flex';
+
+        if (isOpen) {
+            documentationWindow.style.display = 'none';
+            return;
+        }
+
+        documentationWindow.style.display = 'flex';
+        bringDocumentationToFront();
+        if (documentationSearch) {
+            documentationSearch.value = '';
+            filterDocumentation();
+            documentationSearch.focus();
+        }
+        requestAnimationFrame(() => focusDocumentationSection(documentationSectionForPath()));
+    };
+
+    if (documentationSearch) {
+        documentationSearch.addEventListener('input', filterDocumentation);
+    }
+
+    if (documentationWindow && documentationHandle) {
+        let isDraggingDocumentation = false;
+        let dragOffsetX = 0;
+        let dragOffsetY = 0;
+
+        documentationHandle.addEventListener('mousedown', (event) => {
+            if (event.button !== 0) return;
+            const rect = documentationWindow.getBoundingClientRect();
+            isDraggingDocumentation = true;
+            dragOffsetX = event.clientX - rect.left;
+            dragOffsetY = event.clientY - rect.top;
+            documentationWindow.style.left = `${rect.left}px`;
+            documentationWindow.style.top = `${rect.top}px`;
+            documentationWindow.style.right = 'auto';
+            bringDocumentationToFront();
+            document.body.style.userSelect = 'none';
+        });
+
+        document.addEventListener('mousemove', (event) => {
+            if (!isDraggingDocumentation) return;
+            const width = documentationWindow.offsetWidth;
+            const height = documentationWindow.offsetHeight;
+            const nextLeft = Math.min(Math.max(0, event.clientX - dragOffsetX), window.innerWidth - width);
+            const nextTop = Math.min(Math.max(0, event.clientY - dragOffsetY), window.innerHeight - height);
+            documentationWindow.style.left = `${nextLeft}px`;
+            documentationWindow.style.top = `${nextTop}px`;
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (!isDraggingDocumentation) return;
+            isDraggingDocumentation = false;
+            document.body.style.userSelect = '';
+        });
+
+        documentationWindow.addEventListener('dblclick', (event) => {
+            const rect = documentationWindow.getBoundingClientRect();
+            const edgeSize = 12;
+            const onEdge = event.clientX - rect.left <= edgeSize
+                || rect.right - event.clientX <= edgeSize
+                || event.clientY - rect.top <= edgeSize
+                || rect.bottom - event.clientY <= edgeSize;
+            if (onEdge) centerDocumentationWindow();
+        });
+    }
 
     const LOCAL_SHORTCUTS_KEY = 'go_service_local_shortcuts';
     const LOCAL_HIDDEN_SHORTCUTS_KEY = 'go_service_local_hidden_shortcuts';

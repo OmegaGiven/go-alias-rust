@@ -855,6 +855,62 @@ ul li a:hover {
     border-bottom-color: var(--accent-color);
 }
 
+.sql-nav-cluster {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: calc(100% - 4px);
+    min-width: 0;
+    padding: 1px 4px;
+    border: 1px solid color-mix(in srgb, var(--accent-color) 26%, transparent);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--accent-color) 6%, transparent);
+    box-sizing: border-box;
+    position: relative;
+    align-self: center;
+}
+
+.sql-nav-cluster.active {
+    border-color: color-mix(in srgb, var(--accent-color) 58%, var(--border-color));
+    background: color-mix(in srgb, var(--accent-color) 10%, var(--secondary-bg));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-color) 18%, transparent);
+}
+
+.modern-nav .sql-nav-cluster .sql-nav-main-link {
+    height: 100%;
+    border-radius: 5px;
+    padding-left: 10px;
+    padding-right: 10px;
+}
+
+.top-nav-dragging {
+    opacity: 0.45;
+}
+
+[data-top-nav-item] {
+    position: relative;
+}
+
+[data-top-nav-item].top-nav-drop-before::before,
+[data-top-nav-item].top-nav-drop-after::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    bottom: 2px;
+    width: 3px;
+    border-radius: 999px;
+    background: var(--accent-color);
+    z-index: 5;
+}
+
+[data-top-nav-item].top-nav-drop-before::before {
+    left: -5px;
+}
+
+[data-top-nav-item].top-nav-drop-after::after {
+    right: -5px;
+}
+
 .sql-connection-tabs {
     display: inline-flex;
     align-items: center;
@@ -863,13 +919,126 @@ ul li a:hover {
     min-width: 0;
 }
 
+.sql-connection-group {
+    --sql-tab-accent: var(--accent-color);
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    height: calc(100% - 4px);
+    min-width: 0;
+    padding: 1px 3px;
+    border: 1px solid color-mix(in srgb, var(--sql-tab-accent) 30%, transparent);
+    border-radius: 7px;
+    background: color-mix(in srgb, var(--sql-tab-accent) 7%, transparent);
+    box-sizing: border-box;
+    align-self: center;
+    position: relative;
+}
+
+.sql-connection-group.active {
+    border-color: color-mix(in srgb, var(--sql-tab-accent) 65%, var(--border-color));
+    background: color-mix(in srgb, var(--sql-tab-accent) 13%, var(--tertiary-bg));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sql-tab-accent) 22%, transparent);
+}
+
+.sql-connection-group.collapsed {
+    padding-right: 3px;
+}
+
+.sql-connection-group.dragging {
+    opacity: 0.45;
+}
+
+.sql-connection-group.drop-before::before,
+.sql-connection-group.drop-after::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    bottom: 2px;
+    width: 3px;
+    border-radius: 999px;
+    background: var(--accent-color);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-color) 35%, transparent);
+}
+
+.sql-connection-group.drop-before::before {
+    left: -4px;
+}
+
+.sql-connection-group.drop-after::after {
+    right: -4px;
+}
+
+.sql-connection-group-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 100%;
+    max-width: 160px;
+    min-width: 72px;
+    margin: 0 !important;
+    padding: 0 8px;
+    border: 1px solid color-mix(in srgb, var(--sql-tab-accent) 45%, var(--border-color));
+    border-radius: 5px;
+    background: color-mix(in srgb, var(--sql-tab-accent) 18%, var(--secondary-bg));
+    color: var(--text-color);
+    cursor: pointer;
+    font: inherit;
+    font-size: var(--font-size-small);
+    font-weight: 700;
+    line-height: 1;
+    opacity: 0.95;
+}
+
+.sql-connection-group-label:hover {
+    background: color-mix(in srgb, var(--sql-tab-accent) 28%, var(--tertiary-bg));
+    opacity: 1;
+}
+
+.sql-connection-group-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sql-connection-group-caret {
+    flex: 0 0 auto;
+    opacity: 0.8;
+}
+
+.sql-connection-group-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--sql-tab-accent) 24%, var(--primary-bg));
+    font-size: calc(var(--font-size-small) * 0.85);
+}
+
+.sql-connection-group-tabs {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    height: 100%;
+    min-width: 0;
+}
+
+.sql-connection-group-tabs[hidden] {
+    display: none;
+}
+
 .modern-nav .sql-connection-tab {
     --sql-tab-accent: var(--accent-color);
     position: relative;
     gap: 6px;
     max-width: 180px;
     min-width: 84px;
-    height: calc(100% - 6px);
+    height: 100%;
     padding: 0 6px 0 10px;
     border: 1px solid color-mix(in srgb, var(--sql-tab-accent) 35%, var(--border-color));
     border-radius: 5px;
@@ -969,6 +1138,8 @@ ul li a:hover {
 }
 
 .tools-dropdown-item {
+    display: block;
+    box-sizing: border-box;
     width: 100%;
     text-align: left;
     padding: 8px 12px;
@@ -978,7 +1149,11 @@ ul li a:hover {
     background: transparent;
     color: var(--text-color);
     font-size: var(--font-size-small);
+    font-family: inherit;
+    line-height: 1.2;
     cursor: pointer;
+    text-decoration: none !important;
+    appearance: none;
 }
 
 .tools-dropdown-item:last-child {
@@ -993,6 +1168,12 @@ ul li a:hover {
     font-size: 1.2rem !important;
     padding: 0 12px !important;
     min-width: 42px;
+}
+
+.documentation-button {
+    font-weight: bold;
+    min-width: 34px;
+    padding: 0 10px !important;
 }
 
 .shortcut-scope-note {
@@ -1016,6 +1197,114 @@ ul li a:hover {
     display: flex;
     flex-direction: column;
     overflow: hidden;
+}
+
+#floating-documentation {
+    position: fixed;
+    top: 70px;
+    right: 64px;
+    width: 520px;
+    height: 560px;
+    max-width: calc(100vw - 40px);
+    max-height: calc(100vh - 80px);
+    background-color: var(--secondary-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+    z-index: 1001;
+    display: none;
+    flex-direction: column;
+    user-select: none;
+    overflow: hidden;
+    box-sizing: border-box;
+}
+
+.documentation-body {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+    padding: 8px;
+    background: var(--secondary-bg);
+    box-sizing: border-box;
+}
+
+.documentation-search {
+    flex: 0 0 auto;
+    width: 100%;
+    margin: 0 0 8px 0;
+    padding: 6px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--primary-bg);
+    color: var(--text-color);
+    font-size: var(--font-size-small);
+    box-sizing: border-box;
+}
+
+.documentation-sections {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    padding-right: 2px;
+}
+
+.documentation-entry {
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    margin: 0 0 8px 0;
+    padding: 8px;
+    background: var(--primary-bg);
+    color: var(--text-color);
+    font-size: var(--font-size-small);
+    line-height: 1.4;
+}
+
+.documentation-entry-focused {
+    border-color: var(--accent-color);
+    box-shadow: inset 3px 0 0 var(--accent-color);
+}
+
+.documentation-entry h3 {
+    margin: 0 0 5px 0 !important;
+    font-size: var(--font-size-medium);
+}
+
+.documentation-entry p {
+    margin: 0 0 6px 0;
+}
+
+.documentation-entry p:last-child {
+    margin-bottom: 0;
+}
+
+.documentation-entry code,
+.documentation-entry pre {
+    background: var(--secondary-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+}
+
+.documentation-entry code {
+    padding: 1px 4px;
+}
+
+.documentation-entry pre {
+    margin: 6px 0 0 0;
+    padding: 8px;
+    overflow: auto;
+    white-space: pre-wrap;
+}
+
+.documentation-empty {
+    margin: 0 0 8px 0;
+    padding: 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--primary-bg);
+    color: var(--text-color);
+    font-size: var(--font-size-small);
+    opacity: 0.75;
 }
 
 .floating-window-header {

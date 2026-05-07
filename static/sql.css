@@ -35,6 +35,33 @@
         overflow: hidden;
         padding: 0;
     }
+    .sql-schema-tabs {
+        display: inline-flex;
+        align-items: center;
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+    .sql-schema-tab {
+        background: transparent;
+        border: 0;
+        border-bottom: 2px solid transparent;
+        color: var(--text-color);
+        cursor: pointer;
+        font-size: var(--sql-workspace-font-size);
+        font-weight: bold;
+        line-height: 1.2;
+        margin: 0;
+        opacity: 0.7;
+        padding: 2px 5px;
+    }
+    .sql-schema-tab:hover {
+        color: var(--link-hover);
+        opacity: 1;
+    }
+    .sql-schema-tab.active {
+        border-bottom-color: var(--link-hover);
+        opacity: 1;
+    }
     .sql-sidebar-refresh {
         display: inline-flex;
         align-items: center;
@@ -170,7 +197,9 @@
     .delete-btn:hover { color: #ff3b3b; background: rgba(255,0,0,0.1); border-radius: 3px; }
     
     
-    #table-list .table-list-item {
+    #table-list .table-list-item,
+    #function-list .function-list-item,
+    .schema-list-empty {
         display: block;
         color: var(--text-color);
         font-size: var(--sql-workspace-font-size);
@@ -178,7 +207,12 @@
         padding: 0 5px;
         text-decoration: none;
     }
-    #table-list .table-list-item:hover {
+    .schema-list-empty {
+        cursor: default;
+        opacity: 0.65;
+    }
+    #table-list .table-list-item:hover,
+    #function-list .function-list-item:hover {
         background-color: var(--tertiary-bg);
         color: var(--link-hover);
     }
@@ -199,54 +233,17 @@
     #main { flex: 1; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
     #sql-form { display: flex; flex-direction: column; flex-grow: 1; height: 100%; }
     
-    .variables-section { padding: 5px; background: var(--secondary-bg); border-bottom: 1px solid var(--border-color); display: flex; flex-wrap: wrap; gap: 5px; align-items: center; flex-shrink: 0; }
+    .variables-section { padding: 5px; background: var(--secondary-bg); border-bottom: 1px solid var(--border-color); display: flex; gap: 6px; align-items: flex-start; justify-content: space-between; flex-shrink: 0; }
+    .variables-left,
+    .variables-actions { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; min-width: 0; }
+    .variables-left { flex: 1 1 auto; justify-content: flex-start; }
+    .variables-actions { flex: 0 0 auto; justify-content: flex-end; margin-left: auto; }
+    .variables-actions button { margin: 0 !important; font-weight: bold; }
     .var-input-group { display: flex; align-items: center; gap: 5px; background: var(--tertiary-bg); padding: 0 5px; height: 26px; border-radius: 4px; border: 1px solid var(--border-color); box-sizing: border-box; }
     .var-input-group label { font-size: 0.8em; color: var(--text-color); font-weight: bold; white-space: nowrap; }
     .var-input-group input { padding: 2px 4px; border: 1px solid var(--border-color); background: var(--primary-bg); color: var(--text-color); border-radius: 2px; font-size: var(--sql-workspace-font-size); width: 100px; height: 20px; box-sizing: border-box; }
     .add-var-btn { padding: 0 8px; height: 26px; font-size: 0.8em; cursor: pointer; background: var(--tertiary-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px; line-height: 24px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; margin: calc(var(--element-margin) / 2) var(--element-margin); }
     .add-var-btn:hover { background: var(--link-hover); color: white; border-color: var(--link-hover); }
-    .sql-var-help-btn {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 22px;
-        height: 22px;
-        margin: 0 0 0 auto;
-        border: 1px solid var(--border-color);
-        border-radius: 50%;
-        background: var(--tertiary-bg);
-        color: var(--text-color);
-        cursor: pointer;
-        font-size: var(--sql-workspace-font-size);
-        font-weight: bold;
-        line-height: 1;
-    }
-    .sql-var-help-btn:hover {
-        background: var(--link-hover);
-        border-color: var(--link-hover);
-        color: #fff;
-    }
-    .sql-disconnect-btn {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        height: 22px;
-        margin: 0;
-        padding: 0 8px;
-        border: 1px solid var(--border-color);
-        border-radius: 4px;
-        background: var(--tertiary-bg);
-        color: var(--text-color);
-        cursor: pointer;
-        font-size: var(--sql-workspace-font-size);
-        line-height: 1;
-    }
-    .sql-disconnect-btn:hover {
-        background: var(--link-hover);
-        border-color: var(--link-hover);
-        color: #fff;
-    }
-    
     .var-del-btn { cursor: pointer; color: #888; font-weight: bold; margin: calc(var(--element-margin) / 2) var(--element-margin); font-size: 1.1em; line-height: 1; }
     .var-del-btn:hover { color: #ff6b6b; }
 
@@ -300,8 +297,10 @@
     .hl-number { color: #bd93f9; }
     .hl-comment { color: #6272a4; }
     
-    .action-bar { padding: 2px 5px; background: var(--secondary-bg); border-top: 1px solid var(--border-color); display: flex; gap: 10px; flex-shrink: 0; align-items: center; }
-    .action-bar button { margin: calc(var(--element-margin) / 2) var(--element-margin); font-weight: bold; }
+    @media (max-width: 900px) {
+        .variables-section { flex-direction: column; }
+        .variables-actions { justify-content: flex-start; margin-left: 0; }
+    }
 
     .sql-dialog-backdrop {
         position: fixed;
@@ -363,41 +362,21 @@
         border-color: var(--link-hover);
         color: #fff;
     }
-    .sql-help-dialog {
-        width: min(480px, calc(100vw - 32px));
-    }
-    .sql-help-dialog-body {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        font-size: var(--sql-workspace-font-size);
-        line-height: 1.4;
-    }
-    .sql-help-dialog-body p {
-        margin: 0;
-    }
-    .sql-help-dialog-body code,
-    .sql-help-dialog-body pre {
-        border: 1px solid var(--border-color);
-        border-radius: 4px;
-        background: var(--primary-bg);
-        color: var(--text-color);
-    }
-    .sql-help-dialog-body code {
-        padding: 1px 4px;
-    }
-    .sql-help-dialog-body pre {
-        margin: 0;
-        padding: 8px;
-        overflow: auto;
-        white-space: pre-wrap;
-    }
-    
     /* Result Tools (Filter/Export) */
-    .result-tools { padding: 4px 5px; background: var(--secondary-bg); border-bottom: none; display: flex; gap: 4px; align-items: center; flex-shrink: 0; }
-    .result-tools > input { padding: 3px 6px; border: 1px solid var(--border-color); background: var(--primary-bg); color: var(--text-color); border-radius: 3px; font-size: var(--sql-workspace-font-size); flex-grow: 1; max-width: 300px;}
-    .result-tools > select { padding: 3px 6px; border: 1px solid var(--border-color); background: var(--primary-bg); color: var(--text-color); border-radius: 3px; font-size: var(--sql-workspace-font-size); max-width: 220px; }
+    .result-tools { padding: 4px 5px; background: var(--secondary-bg); border-bottom: none; display: flex; gap: 6px; align-items: center; justify-content: space-between; flex-shrink: 0; }
+    .result-tools-left,
+    .result-tools-right { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; min-width: 0; }
+    .result-tools-left { flex: 1 1 auto; justify-content: flex-start; }
+    .result-tools-right { flex: 0 0 auto; justify-content: flex-end; margin-left: auto; }
+    .result-tools input { padding: 3px 6px; border: 1px solid var(--border-color); background: var(--primary-bg); color: var(--text-color); border-radius: 3px; font-size: var(--sql-workspace-font-size); }
+    .result-tools select { padding: 3px 6px; border: 1px solid var(--border-color); background: var(--primary-bg); color: var(--text-color); border-radius: 3px; font-size: var(--sql-workspace-font-size); max-width: 220px; }
+    .result-tools-left #output-filter { flex: 1 1 180px; max-width: 300px; }
+    .result-tools .add-var-btn { margin: 0; }
     .result-tools label { font-size: 0.85em; color: var(--text-color); display: flex; align-items: center; gap: 3px; cursor: pointer; }
+    @media (max-width: 900px) {
+        .result-tools { align-items: flex-start; flex-direction: column; }
+        .result-tools-right { justify-content: flex-start; margin-left: 0; }
+    }
     .sql-result-menu {
         position: relative;
         display: inline-flex;
@@ -473,8 +452,93 @@
     .output td,
     .output table.grid th,
     .output table.grid td { border: 1px solid var(--border-color); padding: 4px 8px; text-align: left; white-space: nowrap; font-size: var(--sql-workspace-font-size); line-height: 1.5; overflow: hidden; text-overflow: ellipsis; }
+
+    .table-browser {
+        display: flex;
+        flex-direction: column;
+        min-height: 100%;
+        gap: 4px;
+        background: var(--primary-bg);
+        color: var(--text-color);
+    }
+    .table-browser-toolbar,
+    .table-browser-filters {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 4px;
+        padding: 4px 6px;
+        border-bottom: 1px solid var(--border-color);
+        background: var(--secondary-bg);
+    }
+    .table-browser-toolbar strong {
+        margin-right: 8px;
+        font-size: var(--sql-workspace-font-size);
+    }
+    .table-browser-change-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        margin-left: auto;
+    }
+    .table-browser-change-actions[hidden] {
+        display: none;
+    }
+    .table-browser-filter-row {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        margin: 0;
+    }
+    .table-browser-filter-row select,
+    .table-browser-filter-row input,
+    .table-browser-saved-filters {
+        height: 26px;
+        padding: 2px 6px;
+        border: 1px solid var(--border-color);
+        border-radius: 3px;
+        background: var(--primary-bg);
+        color: var(--text-color);
+        font-size: var(--sql-workspace-font-size);
+        box-sizing: border-box;
+    }
+    .table-filter-value {
+        width: 150px;
+    }
+    .table-browser-status {
+        padding: 3px 6px;
+        color: #aaa;
+        font-size: var(--sql-workspace-font-size);
+        border-bottom: 1px solid var(--border-color);
+    }
+    .sql-function-display {
+        color: var(--text-color);
+        font-size: var(--sql-workspace-font-size);
+        padding: 8px;
+    }
+    .sql-function-display-note {
+        margin-top: 6px;
+        opacity: 0.75;
+    }
+    .table-browser-results {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: auto;
+    }
     .output td,
     .output table.grid td { user-select: text; }
+    .output table.grid td.table-browser-editable-cell {
+        cursor: text;
+    }
+    .output table.grid td.table-browser-editable-cell:focus {
+        outline: 2px solid var(--accent-color);
+        outline-offset: -2px;
+        background: color-mix(in srgb, var(--accent-color) 14%, var(--primary-bg));
+    }
+    .output table.grid td.table-browser-cell-edited {
+        background: color-mix(in srgb, var(--accent-color) 22%, var(--primary-bg));
+        box-shadow: inset 0 0 0 1px var(--accent-color);
+    }
     .output th,
     .output table.grid th { user-select: none; }
     .output .sql-column-hidden { display: none; }

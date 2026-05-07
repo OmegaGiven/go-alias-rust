@@ -11,7 +11,7 @@ pub fn html_escape(s: &str) -> String {
 // MODIFIED: Function signature updated to accept ordered headers and Vec<Vec<String>> data
 pub fn render_table(headers: &[String], results: &[Vec<String>]) -> String {
     if results.is_empty() || headers.is_empty() {
-        return "<pre>No output yet.</pre>".to_string();
+        return "<pre>Query completed. 0 rows returned.</pre>".to_string();
     }
 
     // Use the provided headers (already sorted by DB order)

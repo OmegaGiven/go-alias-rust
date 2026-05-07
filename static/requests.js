@@ -55,6 +55,9 @@
         const saveRequestFolderSelect = document.getElementById('save-request-folder-select');
         const confirmSaveRequestBtn = document.getElementById('confirm-save-request-btn');
         const cancelSaveRequestBtn = document.getElementById('cancel-save-request-btn');
+        const curlImportInput = document.getElementById('curl-import-input');
+        const curlImportApplyBtn = document.getElementById('curl-import-apply-btn');
+        const curlImportStatus = document.getElementById('curl-import-status');
         const REQUEST_DETAILS_HEIGHT_KEY = 'request-details-height';
         const RESPONSE_HEADERS_HEIGHT_KEY = 'request-response-headers-height';
         const REQUEST_HISTORY_KEY = 'request_run_history';
@@ -483,12 +486,14 @@
         // --- Body Type Toggle ---
         function toggleBodyType() {
             const type = document.querySelector('input[name="body-type"]:checked').value;
-            if (type === 'raw') {
-                document.getElementById('body-raw-container').style.display = 'flex';
-                document.getElementById('body-form-container').style.display = 'none';
-            } else {
-                document.getElementById('body-raw-container').style.display = 'none';
-                document.getElementById('body-form-container').style.display = 'flex';
+            const rawContainer = document.getElementById('body-raw-container');
+            const formContainer = document.getElementById('body-form-container');
+            const formatJsonBtn = document.getElementById('format-json-btn');
+            const isRaw = type === 'raw';
+            if (rawContainer) rawContainer.hidden = !isRaw;
+            if (formContainer) formContainer.hidden = isRaw;
+            if (formatJsonBtn) formatJsonBtn.hidden = !isRaw;
+            if (!isRaw) {
                 if(document.getElementById('form-body-rows').children.length === 0) {
                      addKvRow('form-body-rows');
                 }
@@ -678,6 +683,196 @@
             copyText.select();
             copyText.setSelectionRange(0, 99999);
             document.execCommand("copy");
+        }
+
+        function tokenizeCurlCommand(command) {
+            const normalized = String(command || '').replace(/\\\r?\n/g, ' ');
+            const tokens = [];
+            let current = '';
+            let quote = null;
+            let escaped = false;
+
+            for (const char of normalized) {
+                if (escaped) {
+                    current += char;
+                    escaped = false;
+                    continue;
+                }
+                if (char === '\\') {
+                    escaped = true;
+                    continue;
+                }
+                if (quote) {
+                    if (char === quote) {
+                        quote = null;
+                    } else {
+                        current += char;
+                    }
+                    continue;
+                }
+                if (char === '"' || char === "'") {
+                    quote = char;
+                    continue;
+                }
+                if (/\s/.test(char)) {
+                    if (current) {
+                        tokens.push(current);
+                        current = '';
+                    }
+                    continue;
+                }
+                current += char;
+            }
+
+            if (current) tokens.push(current);
+            return tokens;
+        }
+
+        function parseCurlHeader(rawHeader) {
+            const index = String(rawHeader || '').indexOf(':');
+            if (index < 0) return null;
+            const key = rawHeader.slice(0, index).trim();
+            const value = rawHeader.slice(index + 1).trim();
+            return key ? [key, value] : null;
+        }
+
+        function parseCurlCommand(command) {
+            const tokens = tokenizeCurlCommand(command);
+            if (tokens.length === 0 || tokens[0] !== 'curl') {
+                throw new Error('Paste a command that starts with curl.');
+            }
+
+            const parsed = { method: '', url: '', headers: [], bodyParts: [], basicAuth: null, useGetParams: false };
+            const takesValue = new Set([
+                '-X', '--request', '-H', '--header', '-d', '--data', '--data-raw', '--data-binary',
+                '--data-ascii', '--data-urlencode', '-u', '--user', '--url',
+            ]);
+            const ignoredValueOptions = new Set(['--connect-timeout', '--max-time', '--proxy', '--resolve']);
+
+            for (let index = 1; index < tokens.length; index += 1) {
+                const token = tokens[index];
+                const next = () => {
+                    index += 1;
+                    if (index >= tokens.length) throw new Error(`Missing value after ${token}.`);
+                    return tokens[index];
+                };
+
+                if (token === '-X' || token === '--request') {
+                    parsed.method = next().toUpperCase();
+                    continue;
+                }
+                if (token.startsWith('--request=')) {
+                    parsed.method = token.slice('--request='.length).toUpperCase();
+                    continue;
+                }
+                if (token.startsWith('-X') && token.length > 2) {
+                    parsed.method = token.slice(2).toUpperCase();
+                    continue;
+                }
+                if (token === '-H' || token === '--header') {
+                    const header = parseCurlHeader(next());
+                    if (header) parsed.headers.push(header);
+                    continue;
+                }
+                if (token.startsWith('--header=')) {
+                    const header = parseCurlHeader(token.slice('--header='.length));
+                    if (header) parsed.headers.push(header);
+                    continue;
+                }
+                if (token === '-d' || token === '--data' || token === '--data-raw' || token === '--data-binary' || token === '--data-ascii' || token === '--data-urlencode') {
+                    parsed.bodyParts.push(next());
+                    continue;
+                }
+                if (token.startsWith('--data=') || token.startsWith('--data-raw=') || token.startsWith('--data-binary=') || token.startsWith('--data-ascii=') || token.startsWith('--data-urlencode=')) {
+                    parsed.bodyParts.push(token.slice(token.indexOf('=') + 1));
+                    continue;
+                }
+                if (token.startsWith('-d') && token.length > 2) {
+                    parsed.bodyParts.push(token.slice(2));
+                    continue;
+                }
+                if (token === '-u' || token === '--user') {
+                    parsed.basicAuth = next();
+                    continue;
+                }
+                if (token.startsWith('--user=')) {
+                    parsed.basicAuth = token.slice('--user='.length);
+                    continue;
+                }
+                if (token === '-G' || token === '--get') {
+                    parsed.useGetParams = true;
+                    continue;
+                }
+                if (token === '--url') {
+                    parsed.url = next();
+                    continue;
+                }
+                if (token.startsWith('--url=')) {
+                    parsed.url = token.slice('--url='.length);
+                    continue;
+                }
+                if (ignoredValueOptions.has(token)) {
+                    next();
+                    continue;
+                }
+                if (token.startsWith('http://') || token.startsWith('https://') || token.startsWith('/')) {
+                    parsed.url = token;
+                    continue;
+                }
+                if (token.startsWith('-') && takesValue.has(token)) {
+                    next();
+                }
+            }
+
+            if (!parsed.url) throw new Error('Could not find a URL in the curl command.');
+            if (!parsed.method) parsed.method = parsed.bodyParts.length > 0 && !parsed.useGetParams ? 'POST' : 'GET';
+            return parsed;
+        }
+
+        function populateFromCurlCommand(command) {
+            const parsed = parseCurlCommand(command);
+            const supportedMethods = Array.from(methodSelect.options).map((option) => option.value);
+            methodSelect.value = supportedMethods.includes(parsed.method) ? parsed.method : 'GET';
+
+            let nextUrl = parsed.url;
+            const body = parsed.bodyParts.join('&');
+            if (parsed.useGetParams && body) {
+                nextUrl += (nextUrl.includes('?') ? '&' : '?') + body;
+            }
+            urlInput.value = nextUrl;
+
+            document.querySelectorAll('.saved-req-item').forEach((item) => item.classList.remove('selected'));
+            reqNameInput.value = '';
+            if (reqFolderInput) reqFolderInput.value = '';
+
+            const headersContainer = document.getElementById('headers-container');
+            headersContainer.innerHTML = '';
+            parsed.headers.forEach(([key, value]) => addKvRow('headers-container', key, value));
+            addKvRow('headers-container');
+
+            const rawBodyOption = document.querySelector('input[name="body-type"][value="raw"]');
+            if (rawBodyOption) rawBodyOption.checked = true;
+            toggleBodyType();
+            bodyInput.value = parsed.useGetParams ? '' : body;
+
+            if (parsed.basicAuth) {
+                authTypeSelect.value = 'basic';
+                renderAuthInputs();
+                const splitAt = parsed.basicAuth.indexOf(':');
+                const user = splitAt >= 0 ? parsed.basicAuth.slice(0, splitAt) : parsed.basicAuth;
+                const pass = splitAt >= 0 ? parsed.basicAuth.slice(splitAt + 1) : '';
+                document.getElementById('auth-basic-user').value = user;
+                document.getElementById('auth-basic-pass').value = pass;
+            } else {
+                let importedAuthType = inferAuthTypeFromHeaders();
+                authTypeSelect.value = importedAuthType;
+                renderAuthInputs();
+                applyAuthDefaultsFromHeaders(importedAuthType);
+            }
+
+            parseUrlToParams();
+            detectPathVariables();
+            return parsed;
         }
 
         function constructHeaders() {
@@ -1475,6 +1670,17 @@
 
         if (closeCurlViewBtn && curlViewModal) {
             closeCurlViewBtn.addEventListener('click', () => curlViewModal.close());
+        }
+
+        if (curlImportApplyBtn && curlImportInput) {
+            curlImportApplyBtn.addEventListener('click', () => {
+                try {
+                    const parsed = populateFromCurlCommand(curlImportInput.value);
+                    if (curlImportStatus) curlImportStatus.textContent = `Imported ${parsed.method} ${parsed.url}`;
+                } catch (error) {
+                    if (curlImportStatus) curlImportStatus.textContent = error.message;
+                }
+            });
         }
 
         if (openInspectorBtn) {

@@ -20,7 +20,7 @@ use std::{
 use app_state::AppState;
 
 use pages::inspector::inspector_get;
-use pages::not_found::{go, render_home_shortcuts_content};
+use pages::not_found::{go, load_visible_shortcut_groups, render_home_shortcuts_content};
 use pages::request::{
     request_cancel, request_create_folder, request_delete, request_delete_folder, request_get,
     request_history_get, request_history_save, request_import_postman, request_move,
@@ -33,7 +33,9 @@ use pages::sql;
 
 use base_page::render_base_page_with_options;
 use elements::calculator::calculator_get;
-use elements::shortcut::{add_shortcut, delete_shortcut};
+use elements::shortcut::{
+    add_shortcut, create_shortcut_group, delete_shortcut, move_shortcut_to_group,
+};
 use elements::theme::save_theme;
 
 static SHORTCUTS_FILE: &str = "shortcuts.json";
@@ -89,7 +91,9 @@ async fn index(state: Data<Arc<AppState>>) -> impl Responder {
     let mut combined_shortcuts = shortcuts;
     combined_shortcuts.extend(work_shortcuts);
 
-    let full_page_content = render_home_shortcuts_content(&combined_shortcuts);
+    let (shortcut_groups, group_names) = load_visible_shortcut_groups().await;
+    let full_page_content =
+        render_home_shortcuts_content(&combined_shortcuts, &shortcut_groups, &group_names);
     let final_html = render_base_page_with_options(
         "Aliases",
         &full_page_content,
@@ -206,7 +210,13 @@ async fn main() -> std::io::Result<()> {
             .service(sql::sql_get)
             .service(sql::sql_add)
             .service(sql::sql_run)
+            .service(sql::sql_table_data)
+            .service(sql::sql_table_update)
             .service(sql::sql_run_background)
+            .service(sql::sql_run_history_get)
+            .service(sql::sql_run_history_save)
+            .service(sql::sql_run_history_delete)
+            .service(sql::sql_run_history_clear)
             .service(sql::sql_jobs)
             .service(sql::sql_job)
             .service(sql::sql_job_activate)
@@ -224,10 +234,14 @@ async fn main() -> std::io::Result<()> {
             .service(sql::sql_disconnect)
             .service(sql::sql_disconnect_connection)
             .service(sql::sql_delete_connection)
+            .service(sql::sql_update_connection)
             .service(sql::sql_schema_json)
+            .service(sql::sql_functions_json)
             .service(Files::new("/static", "./static").prefer_utf8(true))
             .service(add_shortcut)
             .service(delete_shortcut)
+            .service(create_shortcut_group)
+            .service(move_shortcut_to_group)
             .service(save_theme)
             .service(go)
     })

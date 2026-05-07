@@ -1,6 +1,9 @@
 (() => {
                 const LOCAL_SHORTCUTS_KEY = 'go_service_local_shortcuts';
                 const LOCAL_HIDDEN_SHORTCUTS_KEY = 'go_service_local_hidden_shortcuts';
+                const LOCAL_SHORTCUT_GROUPS_KEY = 'go_service_local_shortcut_groups';
+                const LOCAL_SHORTCUT_GROUP_NAMES_KEY = 'go_service_local_shortcut_group_names';
+                let draggedShortcut = null;
 
                 function readShortcutBucket(key) {
                     try {
@@ -14,21 +17,42 @@
                     localStorage.setItem(key, JSON.stringify(value));
                 }
 
+                function readShortcutGroupNames() {
+                    try {
+                        const names = JSON.parse(localStorage.getItem(LOCAL_SHORTCUT_GROUP_NAMES_KEY) || '[]');
+                        return Array.isArray(names) ? names.filter(Boolean) : [];
+                    } catch (_) {
+                        return [];
+                    }
+                }
+
+                function writeShortcutGroupNames(names) {
+                    const cleanNames = Array.from(new Set(names.map((name) => name.trim()).filter(Boolean)));
+                    cleanNames.sort((a, b) => a.localeCompare(b));
+                    localStorage.setItem(LOCAL_SHORTCUT_GROUP_NAMES_KEY, JSON.stringify(cleanNames));
+                }
+
                 function buildShortcutPath(key) {
                     return '/' + encodeURIComponent(key).replace(/%2F/g, '/');
                 }
 
-                function groupByUrl(shortcuts) {
-                    const grouped = new Map();
+                function groupShortcuts(shortcuts, shortcutGroups, groupNames) {
+                    const grouped = new Map([['Ungrouped', []]]);
+                    groupNames.forEach((group) => {
+                        if (group && !grouped.has(group)) grouped.set(group, []);
+                    });
                     Object.entries(shortcuts)
                         .sort((a, b) => a[0].localeCompare(b[0]))
                         .forEach(([key, url]) => {
-                            if (!grouped.has(url)) {
-                                grouped.set(url, []);
-                            }
-                            grouped.get(url).push(key);
+                            const group = shortcutGroups[key] || 'Ungrouped';
+                            if (!grouped.has(group)) grouped.set(group, []);
+                            grouped.get(group).push([key, url]);
                         });
-                    return Array.from(grouped.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+                    return Array.from(grouped.entries()).sort((a, b) => {
+                        if (a[0] === 'Ungrouped') return -1;
+                        if (b[0] === 'Ungrouped') return 1;
+                        return a[0].localeCompare(b[0]);
+                    });
                 }
 
                 function escapeHtml(value) {
@@ -46,6 +70,9 @@
                     const bucket = readShortcutBucket(storageKey);
                     delete bucket[shortcutKey];
                     writeShortcutBucket(storageKey, bucket);
+                    const shortcutGroups = readShortcutBucket(LOCAL_SHORTCUT_GROUPS_KEY);
+                    delete shortcutGroups[shortcutKey];
+                    writeShortcutBucket(LOCAL_SHORTCUT_GROUPS_KEY, shortcutGroups);
                     renderLocalShortcutSections();
                 }
 
@@ -54,21 +81,30 @@
                     if (!container) return;
 
                     const shortcuts = readShortcutBucket(storageKey);
-                    const grouped = groupByUrl(shortcuts);
+                    const shortcutGroups = readShortcutBucket(LOCAL_SHORTCUT_GROUPS_KEY);
+                    const grouped = groupShortcuts(shortcuts, shortcutGroups, readShortcutGroupNames());
 
-                    if (grouped.length === 0) {
+                    if (Object.keys(shortcuts).length === 0 && grouped.length <= 1) {
                         container.innerHTML = `<p class="shortcut-empty">${escapeHtml(emptyMessage)}</p>`;
                         return;
                     }
 
-                    const rows = grouped.map(([url, keys]) => {
-                        const keyLinks = keys.map((key) => {
+                    container.innerHTML = `
+                        <div class="shortcut-group-board">
+                            ${grouped.map(([group, entries]) => {
+                                const groupAttr = escapeHtml(group === 'Ungrouped' ? '' : group);
+                                const rows = entries.length === 0
+                                    ? '<tr><td colspan="4" class="shortcut-empty">Drop aliases here.</td></tr>'
+                                    : entries.map(([key, url]) => {
                             const escapedKey = escapeHtml(key);
                             const escapedUrl = escapeHtml(url);
                             const storageAttr = escapeHtml(storageKey);
                             return `
-                                <span class="shortcut-key-chip">
-                                    <a href="${escapedUrl}" title="Open ${escapedKey}">${escapedKey}</a>
+                                            <tr class="shortcut-alias-row" draggable="true" data-shortcut-scope="local" data-storage-key="${storageAttr}" data-shortcut-key="${escapedKey}">
+                                                <td class="keys"><a href="${buildShortcutPath(key)}" title="Open ${escapedKey}">${escapedKey}</a></td>
+                                                <td class="url"><a href="${escapedUrl}" title="${escapedUrl}">${escapedUrl}</a></td>
+                                                <td class="shortcut-group-name">${group === 'Ungrouped' ? '' : escapeHtml(group)}</td>
+                                                <td class="shortcut-actions">
                                     <button
                                         type="button"
                                         class="local-shortcut-delete"
@@ -76,20 +112,23 @@
                                         data-shortcut-key="${escapedKey}"
                                         title="Delete local shortcut ${escapedKey}"
                                     >Delete</button>
-                                </span>
+                                                </td>
+                                            </tr>
                             `;
-                        }).join(' ');
-
-                        return `<tr><td class="keys">${keyLinks}</td><td class="url">${escapeHtml(url)}</td></tr>`;
-                    }).join('');
-
-                    container.innerHTML = `
-                        <table class="grid shortcut-grid">
-                            <thead>
-                                <tr><th>Shortcut Keys</th><th>Destination URL</th></tr>
-                            </thead>
-                            <tbody>${rows}</tbody>
-                        </table>
+                                        }).join('');
+                                return `
+                                    <section class="shortcut-group-card" data-shortcut-scope="local" data-shortcut-group="${groupAttr}">
+                                        <h3>${escapeHtml(group)}</h3>
+                                        <table class="grid shortcut-grid">
+                                            <thead>
+                                                <tr><th>Alias</th><th>Destination URL</th><th>Group</th><th></th></tr>
+                                            </thead>
+                                            <tbody>${rows}</tbody>
+                                        </table>
+                                    </section>
+                                `;
+                            }).join('')}
+                        </div>
                     `;
                 }
 
@@ -98,6 +137,97 @@
 
                     document.querySelectorAll('.local-shortcut-delete').forEach((button) => {
                         button.onclick = () => removeLocalShortcut(button.dataset.storageKey, button.dataset.shortcutKey);
+                    });
+                    bindShortcutDragAndDrop();
+                }
+
+                async function moveGlobalShortcutToGroup(key, group) {
+                    const body = new URLSearchParams();
+                    body.set('scope', 'visible');
+                    body.set('key', key);
+                    body.set('group_name', group);
+                    const response = await fetch('/shortcut_group/move', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body
+                    });
+                    if (!response.ok) throw new Error(await response.text());
+                    window.location.reload();
+                }
+
+                function moveLocalShortcutToGroup(key, group) {
+                    const shortcutGroups = readShortcutBucket(LOCAL_SHORTCUT_GROUPS_KEY);
+                    if (group) {
+                        shortcutGroups[key] = group;
+                    } else {
+                        delete shortcutGroups[key];
+                    }
+                    writeShortcutBucket(LOCAL_SHORTCUT_GROUPS_KEY, shortcutGroups);
+                    renderLocalShortcutSections();
+                }
+
+                function bindShortcutDragAndDrop() {
+                    document.querySelectorAll('.shortcut-alias-row').forEach((row) => {
+                        if (row.dataset.shortcutDndBound === 'true') return;
+                        row.dataset.shortcutDndBound = 'true';
+                        row.addEventListener('dragstart', (event) => {
+                            draggedShortcut = {
+                                scope: row.dataset.shortcutScope,
+                                key: row.dataset.shortcutKey,
+                            };
+                            row.classList.add('dragging');
+                            event.dataTransfer.effectAllowed = 'move';
+                            event.dataTransfer.setData('text/plain', row.dataset.shortcutKey || '');
+                        });
+                        row.addEventListener('dragend', () => {
+                            row.classList.remove('dragging');
+                            document.querySelectorAll('.shortcut-group-card.drop-target').forEach((card) => card.classList.remove('drop-target'));
+                            draggedShortcut = null;
+                        });
+                    });
+
+                    document.querySelectorAll('.shortcut-group-card').forEach((card) => {
+                        if (card.dataset.shortcutDndBound === 'true') return;
+                        card.dataset.shortcutDndBound = 'true';
+                        card.addEventListener('dragover', (event) => {
+                            if (!draggedShortcut || draggedShortcut.scope !== card.dataset.shortcutScope) return;
+                            event.preventDefault();
+                            card.classList.add('drop-target');
+                        });
+                        card.addEventListener('dragleave', () => {
+                            card.classList.remove('drop-target');
+                        });
+                        card.addEventListener('drop', async (event) => {
+                            if (!draggedShortcut || draggedShortcut.scope !== card.dataset.shortcutScope) return;
+                            event.preventDefault();
+                            card.classList.remove('drop-target');
+                            const group = card.dataset.shortcutGroup || '';
+                            try {
+                                if (draggedShortcut.scope === 'local') {
+                                    moveLocalShortcutToGroup(draggedShortcut.key, group);
+                                } else {
+                                    await moveGlobalShortcutToGroup(draggedShortcut.key, group);
+                                }
+                            } catch (error) {
+                                window.alert(`Could not move alias: ${error.message}`);
+                            }
+                        });
+                    });
+                }
+
+                function bindLocalGroupForm() {
+                    const form = document.querySelector('[data-local-shortcut-group-form]');
+                    if (!form) return;
+                    form.addEventListener('submit', (event) => {
+                        event.preventDefault();
+                        const input = form.querySelector('input[name="group_name"]');
+                        const groupName = input ? input.value.trim() : '';
+                        if (!groupName) return;
+                        const names = readShortcutGroupNames();
+                        names.push(groupName);
+                        writeShortcutGroupNames(names);
+                        input.value = '';
+                        renderLocalShortcutSections();
                     });
                 }
 
@@ -124,7 +254,10 @@
                     return baseUrl.endsWith('/') ? `${baseUrl}${remainder}` : `${baseUrl}/${remainder}`;
                 };
 
-                document.addEventListener('DOMContentLoaded', renderLocalShortcutSections);
+                document.addEventListener('DOMContentLoaded', () => {
+                    bindLocalGroupForm();
+                    renderLocalShortcutSections();
+                });
             })();
 
 document.addEventListener('DOMContentLoaded', () => {

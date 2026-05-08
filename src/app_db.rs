@@ -248,6 +248,26 @@ async fn create_schema(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     .execute(pool)
     .await?;
 
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS ai_provider_settings (
+            id TEXT NOT NULL PRIMARY KEY,
+            name TEXT NOT NULL DEFAULT '',
+            provider TEXT NOT NULL,
+            model TEXT NOT NULL,
+            base_url TEXT NOT NULL DEFAULT '',
+            encrypted_api_key TEXT NOT NULL DEFAULT '',
+            is_active INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    ensure_ai_provider_settings_columns(pool).await?;
+    ensure_ai_provider_active_profile(pool).await?;
+
     Ok(())
 }
 
@@ -266,6 +286,78 @@ async fn ensure_shortcuts_group_column(pool: &SqlitePool) -> Result<(), sqlx::Er
             .execute(pool)
             .await?;
     }
+
+    Ok(())
+}
+
+async fn ensure_ai_provider_settings_columns(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    let columns = sqlx::query("PRAGMA table_info(ai_provider_settings)")
+        .fetch_all(pool)
+        .await?;
+    let has_column = |name: &str| {
+        columns.iter().any(|row| {
+            row.try_get::<String, _>("name")
+                .map(|column_name| column_name == name)
+                .unwrap_or(false)
+        })
+    };
+
+    if !has_column("name") {
+        sqlx::query("ALTER TABLE ai_provider_settings ADD COLUMN name TEXT NOT NULL DEFAULT ''")
+            .execute(pool)
+            .await?;
+    }
+
+    if !has_column("is_active") {
+        sqlx::query(
+            "ALTER TABLE ai_provider_settings ADD COLUMN is_active INTEGER NOT NULL DEFAULT 0",
+        )
+        .execute(pool)
+        .await?;
+    }
+
+    sqlx::query(
+        r#"
+        UPDATE ai_provider_settings
+        SET name = CASE
+            WHEN trim(name) = '' THEN CASE
+                WHEN id = 'default' THEN 'Default'
+                ELSE id
+            END
+            ELSE name
+        END
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+async fn ensure_ai_provider_active_profile(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    let active_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM ai_provider_settings WHERE is_active = 1")
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0);
+    if active_count > 0 {
+        return Ok(());
+    }
+
+    sqlx::query(
+        r#"
+        UPDATE ai_provider_settings
+        SET is_active = 1
+        WHERE id = (
+            SELECT id
+            FROM ai_provider_settings
+            ORDER BY CASE WHEN id = 'default' THEN 0 ELSE 1 END, updated_at DESC
+            LIMIT 1
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
 
     Ok(())
 }
@@ -296,6 +388,145 @@ where
     let value =
         serde_json::to_value(value).map_err(|err| sqlx::Error::Protocol(err.to_string()))?;
     put_json_value(pool, collection, key, value).await
+}
+
+#[derive(Serialize, Deserialize, Clone, Default)]
+pub struct AiProviderSettingsRecord {
+    pub id: String,
+    pub name: String,
+    pub provider: String,
+    pub model: String,
+    pub base_url: String,
+    pub encrypted_api_key: String,
+    pub is_active: bool,
+}
+
+pub async fn get_ai_provider_settings() -> Option<AiProviderSettingsRecord> {
+    let pool = pool()?;
+    let row = sqlx::query(
+        r#"
+        SELECT id, name, provider, model, base_url, encrypted_api_key, is_active
+        FROM ai_provider_settings
+        ORDER BY is_active DESC, CASE WHEN id = 'default' THEN 0 ELSE 1 END, updated_at DESC
+        LIMIT 1
+        "#,
+    )
+    .fetch_optional(pool)
+    .await
+    .ok()??;
+
+    ai_provider_settings_from_row(&row)
+}
+
+pub async fn get_ai_provider_settings_by_id(id: &str) -> Option<AiProviderSettingsRecord> {
+    let pool = pool()?;
+    let row = sqlx::query(
+        r#"
+        SELECT id, name, provider, model, base_url, encrypted_api_key, is_active
+        FROM ai_provider_settings
+        WHERE id = ?
+        "#,
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .ok()??;
+
+    ai_provider_settings_from_row(&row)
+}
+
+pub async fn list_ai_provider_settings() -> Vec<AiProviderSettingsRecord> {
+    let Some(pool) = pool() else {
+        return Vec::new();
+    };
+    let rows = sqlx::query(
+        r#"
+        SELECT id, name, provider, model, base_url, encrypted_api_key, is_active
+        FROM ai_provider_settings
+        ORDER BY is_active DESC, name COLLATE NOCASE ASC, updated_at DESC
+        "#,
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    rows.iter()
+        .filter_map(ai_provider_settings_from_row)
+        .collect()
+}
+
+fn ai_provider_settings_from_row(
+    row: &sqlx::sqlite::SqliteRow,
+) -> Option<AiProviderSettingsRecord> {
+    Some(AiProviderSettingsRecord {
+        id: row.try_get("id").ok()?,
+        name: row.try_get("name").unwrap_or_default(),
+        provider: row.try_get("provider").ok()?,
+        model: row.try_get("model").ok()?,
+        base_url: row.try_get("base_url").unwrap_or_default(),
+        encrypted_api_key: row.try_get("encrypted_api_key").unwrap_or_default(),
+        is_active: row.try_get::<i64, _>("is_active").unwrap_or(0) == 1,
+    })
+}
+
+pub async fn save_ai_provider_settings(
+    settings: &AiProviderSettingsRecord,
+) -> Result<(), sqlx::Error> {
+    let Some(pool) = pool() else {
+        return Ok(());
+    };
+
+    if settings.is_active {
+        sqlx::query("UPDATE ai_provider_settings SET is_active = 0")
+            .execute(pool)
+            .await?;
+    }
+
+    sqlx::query(
+        r#"
+        INSERT INTO ai_provider_settings (
+            id, name, provider, model, base_url, encrypted_api_key, is_active, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, unixepoch())
+        ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            provider = excluded.provider,
+            model = excluded.model,
+            base_url = excluded.base_url,
+            encrypted_api_key = excluded.encrypted_api_key,
+            is_active = excluded.is_active,
+            updated_at = excluded.updated_at
+        "#,
+    )
+    .bind(&settings.id)
+    .bind(&settings.name)
+    .bind(&settings.provider)
+    .bind(&settings.model)
+    .bind(&settings.base_url)
+    .bind(&settings.encrypted_api_key)
+    .bind(if settings.is_active { 1 } else { 0 })
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn set_active_ai_provider_settings(id: &str) -> Result<(), sqlx::Error> {
+    let Some(pool) = pool() else {
+        return Ok(());
+    };
+
+    sqlx::query("UPDATE ai_provider_settings SET is_active = 0")
+        .execute(pool)
+        .await?;
+    sqlx::query(
+        "UPDATE ai_provider_settings SET is_active = 1, updated_at = unixepoch() WHERE id = ?",
+    )
+    .bind(id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
 }
 
 pub fn put_json_blocking<T>(collection: &str, key: &str, value: &T) -> Result<(), sqlx::Error>

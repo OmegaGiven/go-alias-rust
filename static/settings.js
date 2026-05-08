@@ -60,6 +60,7 @@
         function syncModeFields() {
             const mode = selectedMode();
             const accent = document.getElementById('accent_color')?.value || '#4da6ff';
+            const hoverWindowAccent = document.getElementById('hover_window_accent')?.value || accent;
             if (customColorControls) {
                 customColorControls.classList.toggle('is-hidden', mode !== 'custom');
             }
@@ -71,6 +72,7 @@
                 Object.keys(palette).forEach((key) => setInputValue(key, palette[key]));
                 setInputValue('link_color', accent);
                 setInputValue('link_hover', accent);
+                setInputValue('hover_window_accent', hoverWindowAccent);
             }
         }
 

@@ -21,6 +21,7 @@ pub fn default_dark_theme() -> Theme {
         tertiary_bg: "#3a3a3a".to_string(),
         text_color: "#eeeeee".to_string(),
         accent_color: "#4da6ff".to_string(),
+        hover_window_accent: "#4da6ff".to_string(),
         link_color: "#4da6ff".to_string(),
         link_visited: "#b366ff".to_string(),
         link_hover: "#66ccff".to_string(),
@@ -75,6 +76,7 @@ pub struct ThemeForm {
     pub tertiary_bg: String,
     pub text_color: String,
     pub accent_color: String,
+    pub hover_window_accent: String,
     pub link_color: String,
     pub link_visited: String,
     pub link_hover: String,
@@ -117,6 +119,7 @@ fn theme_from_form(form: &ThemeForm) -> Theme {
             tertiary_bg: "#eef1f5".to_string(),
             text_color: "#1f2933".to_string(),
             accent_color: form.accent_color.clone(),
+            hover_window_accent: form.hover_window_accent.clone(),
             link_color: form.accent_color.clone(),
             link_visited: "#7c3aed".to_string(),
             link_hover: form.accent_color.clone(),
@@ -136,6 +139,7 @@ fn theme_from_form(form: &ThemeForm) -> Theme {
             tertiary_bg: "#292929".to_string(),
             text_color: "#ffffff".to_string(),
             accent_color: form.accent_color.clone(),
+            hover_window_accent: form.hover_window_accent.clone(),
             link_color: form.accent_color.clone(),
             link_visited: "#b366ff".to_string(),
             link_hover: form.accent_color.clone(),
@@ -155,6 +159,7 @@ fn theme_from_form(form: &ThemeForm) -> Theme {
             tertiary_bg: form.tertiary_bg.clone(),
             text_color: form.text_color.clone(),
             accent_color: form.accent_color.clone(),
+            hover_window_accent: form.hover_window_accent.clone(),
             link_color: form.link_color.clone(),
             link_visited: form.link_visited.clone(),
             link_hover: form.link_hover.clone(),
@@ -170,6 +175,9 @@ fn theme_from_form(form: &ThemeForm) -> Theme {
 
     if theme.accent_color.trim().is_empty() {
         theme.accent_color = "#4da6ff".to_string();
+    }
+    if theme.hover_window_accent.trim().is_empty() {
+        theme.hover_window_accent = theme.accent_color.clone();
     }
     theme
 }

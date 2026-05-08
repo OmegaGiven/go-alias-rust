@@ -459,7 +459,7 @@
         background: var(--primary-bg);
         left: 0;
         overflow: hidden;
-        pointer-events: none;
+        pointer-events: auto;
         position: sticky;
         top: 0;
         z-index: 40;
@@ -472,7 +472,7 @@
         margin: 0 !important;
     }
     .sql-sticky-header-clone th {
-        cursor: default;
+        cursor: pointer;
     }
     .output th,
     .output td,

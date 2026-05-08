@@ -20,6 +20,33 @@ document.addEventListener('DOMContentLoaded', () => {
         '#84cc16',
         '#06b6d4',
     ];
+    const FLOATING_WINDOW_SELECTOR = [
+        '#floating-settings',
+        '#floating-documentation',
+        '#floating-calculator',
+        '#floating-jwt-decoder',
+        '#floating-scratch-pad',
+        '#floating-ai-assistant',
+        '#floating-ai-settings',
+    ].join(',');
+    let floatingWindowZIndex = 10050;
+
+    function bringFloatingWindowToFront(windowEl) {
+        if (!windowEl) return;
+        floatingWindowZIndex += 1;
+        windowEl.style.zIndex = String(floatingWindowZIndex);
+    }
+
+    function setupFloatingWindowLayering() {
+        document.querySelectorAll(FLOATING_WINDOW_SELECTOR).forEach((windowEl) => {
+            if (windowEl.dataset.floatLayerReady === 'true') return;
+            windowEl.dataset.floatLayerReady = 'true';
+            windowEl.addEventListener('pointerdown', () => bringFloatingWindowToFront(windowEl), true);
+            windowEl.addEventListener('focusin', () => bringFloatingWindowToFront(windowEl), true);
+        });
+    }
+
+    window.bringFloatingWindowToFront = bringFloatingWindowToFront;
 
     links.forEach((link) => {
         const href = link.getAttribute('href');
@@ -794,7 +821,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function bringDocumentationToFront() {
         if (!documentationWindow) return;
-        documentationWindow.style.zIndex = '10030';
+        bringFloatingWindowToFront(documentationWindow);
     }
 
     window.toggleDocumentation = function () {
@@ -947,4 +974,6 @@ document.addEventListener('DOMContentLoaded', () => {
             window.location.reload();
         });
     }
+
+    setupFloatingWindowLayering();
 });

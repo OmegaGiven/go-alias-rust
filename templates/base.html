@@ -23,6 +23,7 @@
             <button class="tools-dropdown-item" onclick="toggleSettings()">Appearance</button>
             <button class="tools-dropdown-item" onclick="toggleCalculator()">Calculator</button>
             <button class="tools-dropdown-item" onclick="toggleJwtDecoder()">JWT Decoder</button>
+            <button class="tools-dropdown-item" onclick="toggleAiAssistant()">AI Assistant</button>
             <button class="tools-dropdown-item" onclick="toggleScratchPad()">Scratch Pad</button>
           </div>
         </div>
@@ -76,8 +77,13 @@ WHERE customer_id = &#123;&#123;customer_id&#125;&#125;
           </section>
           <section class="documentation-entry" data-doc-section="tools">
             <h3>Floating Tools</h3>
-            <p>The hamburger menu opens Appearance, Calculator, JWT Decoder, and Scratch Pad.</p>
+            <p>The hamburger menu opens Appearance, AI Assistant, Calculator, JWT Decoder, and Scratch Pad.</p>
             <p>Floating windows can stay open while you work. Drag their header to move them, or double-click an outer edge to center supported windows.</p>
+          </section>
+          <section class="documentation-entry" data-doc-section="ai">
+            <h3>AI Assistant</h3>
+            <p>Use AI Assistant as a read-only helper for SQL, request building, response analysis, and app guidance.</p>
+            <p>Provider keys are saved through the backend. Context is summarized before sending and sensitive fields such as authorization headers, cookies, tokens, and passwords are redacted.</p>
           </section>
           <section class="documentation-entry" data-doc-section="appearance">
             <h3>Appearance</h3>
@@ -208,6 +214,89 @@ WHERE customer_id = &#123;&#123;customer_id&#125;&#125;
       </div>
     </div>
 
+    <div id="floating-ai-assistant">
+      <div class="floating-window-header ai-assistant-header" id="ai-assistant-drag-handle">
+        <span>AI Assistant</span>
+        <button class="floating-window-close ai-assistant-close-btn" onclick="toggleAiAssistant()">&times;</button>
+      </div>
+      <div class="ai-assistant-body">
+        <div id="ai-assistant-messages" class="ai-assistant-messages" aria-live="polite"></div>
+        <form id="ai-assistant-chat-form" class="ai-assistant-chat-form">
+          <textarea id="ai-assistant-input" placeholder="Ask for SQL help, request setup, response debugging..." rows="1"></textarea>
+          <div class="ai-assistant-chat-actions">
+            <span id="ai-assistant-provider-status" class="ai-assistant-active-provider">No provider configured</span>
+            <div class="ai-context-menu-wrap">
+              <button type="button" id="ai-context-toggle" class="ai-assistant-small-btn">Context</button>
+              <div id="ai-context-menu" class="ai-context-menu" hidden>
+                <div class="ai-context-title">Context Included</div>
+                <div class="ai-context-options">
+                  <label><input type="checkbox" id="ai-include-page" checked> <span data-context-label="page">Page fields</span></label>
+                  <label><input type="checkbox" id="ai-include-schema" checked> <span data-context-label="schema">Schema/list metadata</span></label>
+                  <label><input type="checkbox" id="ai-include-sql-tables" checked> <span data-context-label="sql-tables">SQL tables/columns</span></label>
+                  <label><input type="checkbox" id="ai-include-sql-functions" checked> <span data-context-label="sql-functions">SQL functions</span></label>
+                  <label><input type="checkbox" id="ai-include-editor" checked> <span data-context-label="editor">Editor/body text</span></label>
+                  <label><input type="checkbox" id="ai-include-response"> <span data-context-label="response">Request response body</span></label>
+                  <label><input type="checkbox" id="ai-include-sql-output"> <span data-context-label="sql-output">SQL output</span></label>
+                  <label><input type="checkbox" id="ai-include-headers"> <span data-context-label="headers">Headers</span></label>
+                </div>
+                <div id="ai-context-summary" class="ai-context-summary">Open a SQL or Requests page to include page context.</div>
+              </div>
+            </div>
+            <button type="button" id="ai-assistant-settings-toggle" class="ai-assistant-small-btn">Settings</button>
+            <button type="submit" id="ai-assistant-send">Send</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div id="floating-ai-settings" style="display: none;">
+      <div class="floating-window-header ai-settings-header" id="ai-settings-drag-handle">
+        <span>AI Settings</span>
+        <button class="floating-window-close ai-settings-close-btn" onclick="toggleAiSettingsWindow()">&times;</button>
+      </div>
+      <form id="ai-assistant-settings" class="ai-assistant-settings">
+        <label>
+          AI Agent
+          <select id="ai-agent">
+            <option value="default">Default</option>
+          </select>
+        </label>
+        <label>
+          Agent Name
+          <input id="ai-agent-name" type="text" placeholder="Work OpenAI, Personal Gemini...">
+        </label>
+        <label>
+          Provider
+          <select id="ai-provider">
+            <option value="openai">OpenAI / GPT</option>
+            <option value="gemini">Google Gemini</option>
+            <option value="ollama">Ollama Local</option>
+            <option value="custom_openai_compatible">OpenAI-Compatible</option>
+          </select>
+        </label>
+        <label>
+          Model
+          <select id="ai-model">
+            <option value="gpt-4.1-mini">gpt-4.1-mini</option>
+          </select>
+        </label>
+        <label id="ai-base-url-field">
+          Base URL
+          <input id="ai-base-url" type="url" placeholder="Optional for custom providers">
+        </label>
+        <label id="ai-api-key-field">
+          API Key
+          <input id="ai-api-key" type="password" placeholder="Leave blank to keep saved key">
+        </label>
+        <div class="ai-assistant-settings-actions">
+          <button type="button" id="ai-test-provider" class="ai-assistant-small-btn">Test</button>
+          <button type="button" id="ai-load-models" class="ai-assistant-small-btn">Load Models</button>
+          <button type="button" id="ai-new-agent" class="ai-assistant-small-btn">New AI Agent</button>
+          <span id="ai-settings-status"></span>
+        </div>
+      </form>
+    </div>
+
     <div id="floating-settings" style="display: none;">
       <div class="floating-window-header settings-header" id="settings-drag-handle">
         <h3>Theme Settings</h3>
@@ -246,6 +335,10 @@ WHERE customer_id = &#123;&#123;customer_id&#125;&#125;
               <div class="appearance-control-row">
                 <label for="accent_color">Accent Color:</label>
                 <input type="color" id="accent_color" name="accent_color" value="{{ current_theme.accent_color }}">
+              </div>
+              <div class="appearance-control-row">
+                <label for="hover_window_accent">Window Accent:</label>
+                <input type="color" id="hover_window_accent" name="hover_window_accent" value="{{ current_theme.hover_window_accent }}">
               </div>
               <div class="appearance-control-row">
                 <label for="font_size_small">Small:</label>
@@ -359,6 +452,7 @@ WHERE customer_id = &#123;&#123;customer_id&#125;&#125;
     <script src="/static/calculator.js?v={{ asset_version }}" defer></script>
     <script src="/static/jwt_decoder.js?v={{ asset_version }}" defer></script>
     <script src="/static/scratchpad.js?v={{ asset_version }}" defer></script>
+    <script src="/static/ai_assistant.js?v={{ asset_version }}" defer></script>
     <script src="/static/sidebar.js?v={{ asset_version }}" defer></script>
   </body>
 </html>

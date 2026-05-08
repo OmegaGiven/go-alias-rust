@@ -16,6 +16,10 @@ pub fn default_accent_color() -> String {
     "#4da6ff".to_string()
 }
 
+pub fn default_hover_window_accent() -> String {
+    "#4da6ff".to_string()
+}
+
 pub fn default_element_margin() -> u32 {
     10
 }
@@ -36,6 +40,8 @@ pub struct Theme {
     pub text_color: String,   // e.g., #eee (Main text color)
     #[serde(default = "default_accent_color")]
     pub accent_color: String, // e.g., #4da6ff (Primary UI accent color)
+    #[serde(default = "default_hover_window_accent")]
+    pub hover_window_accent: String, // e.g., #4da6ff (Floating tool edge accent)
     pub link_color: String,   // e.g., #4da6ff (Default link color)
     pub link_visited: String, // e.g., #b366ff (Visited link color)
     pub link_hover: String,   // e.g., #66ccff (Hover link color)

@@ -830,7 +830,7 @@
     #request-debug-info { margin: calc(var(--element-margin) / 2) var(--element-margin); color: #888; font-family: monospace; font-size: var(--font-size-small); white-space: pre-wrap; overflow-x: auto; display: none; background: var(--primary-bg); padding: 5px; border-bottom: 1px solid var(--border-color); flex-shrink: 0;}
 
     #response-body { flex: 1 1 auto; white-space: pre-wrap; overflow: auto; font-family: monospace; font-size: var(--font-size-small); background: var(--primary-bg); padding: 10px; border: none; min-height: 0; color: var(--text-color); }
-    #response-headers { height: 160px; overflow: auto; white-space: pre-wrap; font-family: monospace; font-size: var(--font-size-small); background: var(--primary-bg); padding: 10px; border-bottom: 1px solid var(--border-color); margin: calc(var(--element-margin) / 2) var(--element-margin); color: var(--text-color); min-height: 50px; }
+    #response-headers { height: 160px; overflow: auto; white-space: pre-wrap; font-family: monospace; font-size: var(--font-size-small); background: var(--primary-bg); padding: 10px; border-bottom: 1px solid var(--border-color); margin: 0; color: var(--text-color); min-height: 50px; }
     #headers-body-resizer { height: 6px; background: var(--tertiary-bg); border-top: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color); cursor: row-resize; flex-shrink: 0; }
     #headers-body-resizer.resizing { background: var(--link-color); }
 

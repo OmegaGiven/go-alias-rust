@@ -77,6 +77,65 @@
         let requestHistoryCache = [];
         let requestHistorySavePromise = Promise.resolve();
 
+        function redactAssistantPairs(pairs) {
+            return pairs.map(([key, value]) => {
+                const lowered = String(key || '').toLowerCase();
+                const sensitive = lowered.includes('authorization')
+                    || lowered.includes('cookie')
+                    || lowered.includes('token')
+                    || lowered.includes('secret')
+                    || lowered.includes('password')
+                    || lowered.includes('api-key')
+                    || lowered.includes('apikey')
+                    || lowered.includes('x-api-key');
+                return [key, sensitive ? '[redacted]' : value];
+            });
+        }
+
+        window.getRequestsAssistantContext = function(flags = {}) {
+            const includePage = flags.includePage !== false;
+            const includeEditor = flags.includeEditor !== false;
+            const includeResponse = Boolean(flags.includeResponse);
+            const includeHeaders = Boolean(flags.includeHeaders);
+            const context = {
+                page: 'requests',
+                tabId: activeRequestTabId || 'default',
+            };
+
+            if (includePage) {
+                context.name = reqNameInput?.value || '';
+                context.folder = reqFolderInput?.value || '';
+                context.method = methodSelect?.value || 'GET';
+                context.url = urlInput?.value || '';
+                context.params = getKvPairs('params-container');
+                context.pathVariables = getKvPairs('path-container');
+                context.authType = authTypeSelect?.value || 'none';
+                context.responseMeta = {
+                    status: resStatus?.innerText || '',
+                    time: resTime?.innerText || '',
+                    size: resSize?.innerText || '',
+                };
+            }
+
+            if (includeHeaders) {
+                context.headers = redactAssistantPairs(getKvPairs('headers-container'));
+                context.responseHeaders = responseHeaders?.innerText || '';
+            } else {
+                context.headers = '[not included]';
+            }
+
+            if (includeEditor) {
+                context.body = bodyInput?.value || '';
+                context.bodyType = document.querySelector('input[name="body-type"]:checked')?.value || 'raw';
+            }
+
+            if (includeResponse) {
+                context.responseBody = responseBody?.innerText || '';
+            }
+
+            return context;
+        };
+
         function makeRequestWorkspaceTabId() {
             return `request-${Date.now()}-${Math.random().toString(16).slice(2)}`;
         }

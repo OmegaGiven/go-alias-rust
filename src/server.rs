@@ -8,6 +8,9 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use crate::ai::{
+    ai_chat, ai_models_get, ai_settings_active, ai_settings_get, ai_settings_save, ai_test,
+};
 use crate::app_state::AppState;
 use crate::base_page::render_base_page_with_options;
 use crate::elements::calculator::calculator_get;
@@ -218,6 +221,12 @@ pub async fn run_server(config: ServerConfig) -> std::io::Result<()> {
             .service(request_cancel)
             .service(scratchpads_get)
             .service(scratchpads_save)
+            .service(ai_settings_get)
+            .service(ai_settings_save)
+            .service(ai_settings_active)
+            .service(ai_models_get)
+            .service(ai_test)
+            .service(ai_chat)
             .service(inspector_get)
             .service(calculator_get)
             .service(sql::sql_get)

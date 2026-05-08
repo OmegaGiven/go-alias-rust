@@ -25,6 +25,7 @@
 # Local SQL connection secrets/state
 /connections.json.enc
 /connections.key
+/ai_settings.key
 
 # Local SQLite databases
 /*.db

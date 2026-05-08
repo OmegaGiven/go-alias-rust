@@ -57,6 +57,7 @@ fn render_theme_variables(theme: &Theme) -> String {
     --link-visited: {};
     --link-hover: {};
     --accent-color: {};
+    --hover-window-accent: {};
     --border-color: {};
     --font-size-small: {}px;
     --font-size-medium: {}px;
@@ -76,6 +77,7 @@ fn render_theme_variables(theme: &Theme) -> String {
         theme.link_visited,
         theme.link_hover,
         theme.accent_color,
+        theme.hover_window_accent,
         theme.border_color,
         theme.font_size_small,
         theme.font_size_medium,

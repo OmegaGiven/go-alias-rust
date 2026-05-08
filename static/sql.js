@@ -41,6 +41,86 @@ const mainContent = document.getElementById('main');
       let collapsedSqlFolders = readCollapsedSqlFolders();
       let isRestoringWorkspace = false;
 
+      function currentSqlEditorText() {
+          const candidates = [
+              editor?.value || '',
+              document.querySelector('textarea[name="sql"]')?.value || '',
+              document.getElementById('query-sql')?.value || '',
+          ];
+
+          try {
+              const saved = JSON.parse(localStorage.getItem(sqlWorkspaceStorageKey) || '{}');
+              if (saved && typeof saved.sql === 'string') {
+                  candidates.push(saved.sql);
+              }
+          } catch (_) {}
+
+          return candidates.reduce((longest, value) => (
+              String(value || '').length > String(longest || '').length ? value : longest
+          ), '');
+      }
+
+      window.getSqlAssistantContext = function(flags = {}) {
+          const includeTables = flags.includeSqlTables !== false;
+          const includeFunctions = flags.includeSqlFunctions !== false;
+          const includeEditor = flags.includeEditor !== false;
+          const includePage = flags.includePage !== false;
+          const includeSqlOutput = Boolean(flags.includeSqlOutput || flags.includeResponse);
+          const tableNames = Object.keys(dbSchema || {});
+          const functionNames = Array.isArray(dbFunctions)
+              ? dbFunctions.map((fn) => fn.name || fn.signature || '').filter(Boolean)
+              : [];
+          const outputTable = output?.querySelector('table');
+          const outputHeaders = outputTable
+              ? Array.from(outputTable.querySelectorAll('thead th')).map((th) => th.innerText.trim()).filter(Boolean)
+              : [];
+
+          const context = {
+              page: 'sql',
+              connection: connectionNickname,
+              tabId: activeSqlTabId,
+          };
+
+          if (includePage) {
+              context.queryName = queryNameInput?.value || '';
+              context.queryFolder = queryFolderInput?.value || '';
+              context.rowCount = document.getElementById('row-count')?.innerText || '';
+              context.outputColumns = outputHeaders;
+          }
+
+          if (includeEditor) {
+              const sqlEditor = currentSqlEditorText();
+              context.sqlEditor = sqlEditor;
+              context.sqlEditorLength = sqlEditor.length;
+              context.sqlEditorSource = sqlEditor === (editor?.value || '') ? 'textarea' : 'workspace fallback';
+          }
+
+          if (includeTables) {
+              context.databaseSchema = {
+                  tables: tableNames.map((name) => ({
+                      name,
+                      columns: Array.isArray(dbSchema[name]) ? dbSchema[name] : [],
+                  })),
+              };
+          }
+
+          if (includeFunctions) {
+              context.databaseFunctions = Array.isArray(dbFunctions)
+                  ? dbFunctions.map((fn) => ({
+                      name: fn.name || '',
+                      signature: fn.signature || '',
+                      definition: fn.definition || '',
+                  }))
+                  : functionNames.map((name) => ({ name }));
+          }
+
+          if (includeSqlOutput) {
+              context.sqlOutput = (output?.innerText || '').slice(0, 12000);
+          }
+
+          return context;
+      };
+
       function resetSqlOutputPane() {
           output.innerHTML = "<pre>Click a table name or enter a query and press 'Run Query'.</pre>";
           if (outputFilterInput) {
@@ -1146,7 +1226,7 @@ const mainContent = document.getElementById('main');
 
       function serializableOutputHtml() {
           const clone = output.cloneNode(true);
-          clone.querySelectorAll('colgroup, .column-sort-indicator, .column-resize-handle').forEach((element) => {
+          clone.querySelectorAll('.sql-sticky-header-clone, colgroup, .column-sort-indicator, .column-resize-handle').forEach((element) => {
               element.remove();
           });
           clone.querySelectorAll('.selected-row').forEach((row) => {
@@ -1771,12 +1851,34 @@ const mainContent = document.getElementById('main');
               const sourceColgroup = table.querySelector('colgroup');
               const clonedColgroup = sourceColgroup ? sourceColgroup.cloneNode(true) : null;
               const clonedThead = sourceThead.cloneNode(true);
-              clonedThead.querySelectorAll('.column-sort-indicator, .column-resize-handle').forEach((element) => element.remove());
+              const sourceHeaders = Array.from(sourceThead.querySelectorAll('th'));
 
               stickyTable.innerHTML = '';
               if (clonedColgroup) stickyTable.appendChild(clonedColgroup);
               stickyTable.appendChild(clonedThead);
               stickyTable.style.width = table.offsetWidth + 'px';
+              stickyTable.style.transform = scrollRoot.scrollLeft ? `translateX(${-scrollRoot.scrollLeft}px)` : '';
+
+              clonedThead.querySelectorAll('th').forEach((stickyTh, index) => {
+                  const sourceTh = sourceHeaders[index];
+                  if (!sourceTh) return;
+                  stickyTh.dataset.columnIndex = sourceTh.dataset.columnIndex || String(index);
+
+                  const handle = stickyTh.querySelector('.column-resize-handle');
+                  if (handle) {
+                      handle.addEventListener('mousedown', (event) => {
+                          if (typeof table._startColumnResize === 'function') {
+                              table._startColumnResize(index, event, handle);
+                          }
+                      });
+                  }
+
+                  stickyTh.addEventListener('click', (event) => {
+                      if (event.target.closest('.column-resize-handle')) return;
+                      sourceTh.click();
+                      syncStickyHeader();
+                  });
+              });
 
               const tableRect = table.getBoundingClientRect();
               const rootRect = scrollRoot.getBoundingClientRect();
@@ -1842,6 +1944,41 @@ const mainContent = document.getElementById('main');
         let currentSortCol = -1;
         let currentSortDir = 'none'; 
 
+        const startColumnResize = (colIndex, event, activeHandle) => {
+            event.preventDefault();
+            event.stopPropagation();
+
+            const col = colgroup.children[colIndex];
+            const sourceTh = ths[colIndex];
+            const startX = event.clientX;
+            const startWidth = col?.getBoundingClientRect().width || sourceTh?.getBoundingClientRect().width || minColumnWidth;
+            activeHandle.classList.add('resizing');
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+
+            const onMouseMove = (moveEvent) => {
+                const nextWidth = Math.max(minColumnWidth, startWidth + moveEvent.clientX - startX);
+                if (col) {
+                    col.style.width = nextWidth + 'px';
+                }
+                if (table._syncStickyHeader) table._syncStickyHeader();
+            };
+
+            const onMouseUp = () => {
+                activeHandle.classList.remove('resizing');
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+                if (table._syncStickyHeader) table._syncStickyHeader();
+            };
+
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        };
+
+        table._startColumnResize = startColumnResize;
+
         ths.forEach((th, colIndex) => {
             th.dataset.columnIndex = String(colIndex);
             const sortIndicator = document.createElement('span');
@@ -1853,37 +1990,7 @@ const mainContent = document.getElementById('main');
             handle.title = 'Drag to resize column';
             th.appendChild(handle);
 
-            handle.addEventListener('mousedown', (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-
-                const col = colgroup.children[colIndex];
-                const startX = event.clientX;
-                const startWidth = col?.getBoundingClientRect().width || th.getBoundingClientRect().width;
-                handle.classList.add('resizing');
-                document.body.style.cursor = 'col-resize';
-                document.body.style.userSelect = 'none';
-
-                const onMouseMove = (moveEvent) => {
-                    const nextWidth = Math.max(minColumnWidth, startWidth + moveEvent.clientX - startX);
-                    if (col) {
-                        col.style.width = nextWidth + 'px';
-                    }
-                    if (table._syncStickyHeader) table._syncStickyHeader();
-                };
-
-                const onMouseUp = () => {
-                    handle.classList.remove('resizing');
-                    document.body.style.cursor = '';
-                    document.body.style.userSelect = '';
-                    document.removeEventListener('mousemove', onMouseMove);
-                    document.removeEventListener('mouseup', onMouseUp);
-                    if (table._syncStickyHeader) table._syncStickyHeader();
-                };
-
-                document.addEventListener('mousemove', onMouseMove);
-                document.addEventListener('mouseup', onMouseUp);
-            });
+            handle.addEventListener('mousedown', (event) => startColumnResize(colIndex, event, handle));
 
             th.addEventListener('click', () => {
                 if (currentSortCol === colIndex) {

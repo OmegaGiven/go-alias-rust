@@ -1,6 +1,6 @@
 [package]
 name = "go_alias_desktop"
-version = "0.1.6"
+version = "0.1.7"
 description = "Desktop wrapper for Go Alias"
 authors = ["Go Alias contributors"]
 license = ""

@@ -1708,7 +1708,7 @@ checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 
 [[package]]
 name = "go_alias_desktop"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "go_service",
  "tauri",
@@ -1717,7 +1717,7 @@ dependencies = [
 
 [[package]]
 name = "go_service"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "actix-files",
  "actix-web",

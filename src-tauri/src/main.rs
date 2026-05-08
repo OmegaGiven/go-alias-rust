@@ -1,6 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use go_service::server::{ServerConfig, run_server_blocking};
+use ogdevdesk_service::server::{ServerConfig, run_server_blocking};
 use std::{
     fs,
     net::TcpListener,
@@ -17,7 +17,7 @@ fn main() {
             let static_dir = resolve_static_dir(app);
             std::thread::spawn(move || {
                 if let Err(err) = run_server_blocking(ServerConfig::local(port, static_dir)) {
-                    eprintln!("Go Alias desktop server failed: {err}");
+                    eprintln!("OGdevDesk desktop server failed: {err}");
                 }
             });
 
@@ -27,7 +27,7 @@ fn main() {
                 "main",
                 WebviewUrl::External(url.parse().expect("desktop URL should be valid")),
             )
-            .title("Go Alias")
+            .title("OGdevDesk")
             .inner_size(1280.0, 860.0)
             .min_inner_size(900.0, 620.0)
             .build()?;
@@ -35,7 +35,7 @@ fn main() {
             Ok(())
         })
         .run(tauri::generate_context!())
-        .expect("failed to run Go Alias desktop app");
+        .expect("failed to run OGdevDesk desktop app");
 }
 
 fn pick_local_port() -> Option<u16> {
@@ -46,7 +46,8 @@ fn pick_local_port() -> Option<u16> {
 }
 
 fn configure_desktop_environment() {
-    let db_path = std::env::var("GO_ALIAS_DB_PATH")
+    let db_path = std::env::var("OGDEVDESK_DB_PATH")
+        .or_else(|_| std::env::var("GO_ALIAS_DB_PATH"))
         .ok()
         .map(PathBuf::from)
         .unwrap_or_else(default_desktop_db_path);
@@ -57,8 +58,8 @@ fn configure_desktop_environment() {
 
     // Desktop mode is configured before the embedded Actix server starts.
     unsafe {
-        std::env::set_var("GO_ALIAS_MODE", "desktop");
-        std::env::set_var("GO_ALIAS_DB_PATH", db_path);
+        std::env::set_var("OGDEVDESK_MODE", "desktop");
+        std::env::set_var("OGDEVDESK_DB_PATH", db_path);
     }
 }
 
@@ -67,20 +68,20 @@ fn default_desktop_db_path() -> PathBuf {
         std::env::var_os("APPDATA")
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("."))
-            .join("Go Alias")
+            .join("OGdevDesk")
     } else if cfg!(target_os = "macos") {
         home_dir()
             .join("Library")
             .join("Application Support")
-            .join("Go Alias")
+            .join("OGdevDesk")
     } else {
         std::env::var_os("XDG_DATA_HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|| home_dir().join(".local").join("share"))
-            .join("go-alias")
+            .join("ogdevdesk")
     };
 
-    app_dir.join("go_service.db")
+    app_dir.join("ogdevdesk.db")
 }
 
 fn home_dir() -> PathBuf {
@@ -90,7 +91,9 @@ fn home_dir() -> PathBuf {
 }
 
 fn resolve_static_dir(app: &tauri::App) -> String {
-    if let Ok(static_dir) = std::env::var("GO_ALIAS_STATIC_DIR") {
+    if let Ok(static_dir) = std::env::var("OGDEVDESK_STATIC_DIR")
+        .or_else(|_| std::env::var("GO_ALIAS_STATIC_DIR"))
+    {
         return static_dir;
     }
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_NAME="go-alias"
-BIN_NAME="go_service"
+APP_NAME="ogdevdesk"
+BIN_NAME="ogdevdesk_service"
 PORT="${PORT:-80}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -76,7 +76,7 @@ if [[ "$(uname -s)" == "Linux" ]]; then
   echo "Installing systemd service..."
   cat > "${SERVICE_FILE}" <<EOF
 [Unit]
-Description=Go Alias developer tool
+Description=OGdevDesk developer tool
 After=network.target
 
 [Service]

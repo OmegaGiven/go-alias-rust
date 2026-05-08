@@ -979,23 +979,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "go_service"
-version = "0.1.7"
-dependencies = [
- "actix-files",
- "actix-web",
- "aes-gcm",
- "askama",
- "csv",
- "htmlescape",
- "rand 0.8.6",
- "serde",
- "serde_json",
- "sqlx",
- "tokio",
-]
-
-[[package]]
 name = "h2"
 version = "0.3.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1538,6 +1521,23 @@ checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
 dependencies = [
  "autocfg",
  "libm",
+]
+
+[[package]]
+name = "ogdevdesk_service"
+version = "0.1.7"
+dependencies = [
+ "actix-files",
+ "actix-web",
+ "aes-gcm",
+ "askama",
+ "csv",
+ "htmlescape",
+ "rand 0.8.6",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
 ]
 
 [[package]]

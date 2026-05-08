@@ -1,11 +1,11 @@
 document.addEventListener('DOMContentLoaded', () => {
     const path = window.location.pathname;
     const links = document.querySelectorAll('.nav-link-item');
-    const SQL_CONNECTION_TABS_KEY = 'go_service_sql_connection_tabs';
-    const SQL_CONNECTION_GROUPS_COLLAPSED_KEY = 'go_service_sql_connection_groups_collapsed';
-    const SQL_CONNECTION_GROUP_ORDER_KEY = 'go_service_sql_connection_group_order';
-    const REQUEST_WORKSPACE_TABS_KEY = 'go_service_request_workspace_tabs';
-    const TOP_NAV_ORDER_KEY = 'go_service_top_nav_order';
+    const SQL_CONNECTION_TABS_KEY = 'ogdevdesk_sql_connection_tabs';
+    const SQL_CONNECTION_GROUPS_COLLAPSED_KEY = 'ogdevdesk_sql_connection_groups_collapsed';
+    const SQL_CONNECTION_GROUP_ORDER_KEY = 'ogdevdesk_sql_connection_group_order';
+    const REQUEST_WORKSPACE_TABS_KEY = 'ogdevdesk_request_workspace_tabs';
+    const TOP_NAV_ORDER_KEY = 'ogdevdesk_top_nav_order';
     let draggedSqlConnectionGroupName = '';
     let draggedTopNavItemName = '';
     const sqlConnectionColors = [
@@ -865,8 +865,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    const LOCAL_SHORTCUTS_KEY = 'go_service_local_shortcuts';
-    const LOCAL_HIDDEN_SHORTCUTS_KEY = 'go_service_local_hidden_shortcuts';
+    const LOCAL_SHORTCUTS_KEY = 'ogdevdesk_local_shortcuts';
+    const LOCAL_HIDDEN_SHORTCUTS_KEY = 'ogdevdesk_local_hidden_shortcuts';
     const modal = document.getElementById('addShortcutModal');
     const addShortcutTriggers = document.querySelectorAll('[data-add-shortcut-trigger]');
     const closeButton = document.getElementById('closeModalBtn');

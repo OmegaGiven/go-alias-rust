@@ -1,8 +1,8 @@
 (() => {
-                const LOCAL_SHORTCUTS_KEY = 'go_service_local_shortcuts';
-                const LOCAL_HIDDEN_SHORTCUTS_KEY = 'go_service_local_hidden_shortcuts';
-                const LOCAL_SHORTCUT_GROUPS_KEY = 'go_service_local_shortcut_groups';
-                const LOCAL_SHORTCUT_GROUP_NAMES_KEY = 'go_service_local_shortcut_group_names';
+                const LOCAL_SHORTCUTS_KEY = 'ogdevdesk_local_shortcuts';
+                const LOCAL_HIDDEN_SHORTCUTS_KEY = 'ogdevdesk_local_hidden_shortcuts';
+                const LOCAL_SHORTCUT_GROUPS_KEY = 'ogdevdesk_local_shortcut_groups';
+                const LOCAL_SHORTCUT_GROUP_NAMES_KEY = 'ogdevdesk_local_shortcut_group_names';
                 let draggedShortcut = null;
 
                 function readShortcutBucket(key) {

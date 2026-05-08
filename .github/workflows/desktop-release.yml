@@ -68,8 +68,8 @@ jobs:
           mkdir -p "dist/desktop-${{ matrix.name }}"
           if [[ "${{ runner.os }}" == "macOS" ]]; then
             COPYFILE_DISABLE=1 ditto -c -k --keepParent \
-              "src-tauri/target/release/bundle/macos/Go Alias.app" \
-              "dist/desktop-${{ matrix.name }}/go-alias-desktop-${{ matrix.name }}.zip"
+              "src-tauri/target/release/bundle/macos/OGdevDesk.app" \
+              "dist/desktop-${{ matrix.name }}/ogdevdesk-desktop-${{ matrix.name }}.zip"
           else
             find src-tauri/target/release/bundle -type f \
               \( -name "*.msi" -o -name "*.exe" -o -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \) \
@@ -78,7 +78,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: go-alias-desktop-${{ matrix.name }}
+          name: ogdevdesk-desktop-${{ matrix.name }}
           path: dist/desktop-${{ matrix.name }}/*
           if-no-files-found: error
 

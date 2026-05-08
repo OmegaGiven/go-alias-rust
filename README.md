@@ -1,6 +1,10 @@
 <img width="1920" height="1010" alt="image" src="https://github.com/user-attachments/assets/785541c4-0656-474f-82ac-949dc5ee5eb1" />
 
-# Build Instructions
+# OGdevDesk
+
+OGdevDesk is a focused developer desk for API requests, database work, JSON inspection, web aliases, scratch notes, and small utility tools.
+
+## Build Instructions
 
 1. Run the app locally:
 ```sh
@@ -19,8 +23,8 @@ cargo build
 or, if you want port 80, you may need to grant privileges first:
 ```sh
 cargo build
-sudo setcap 'cap_net_bind_service=+ep' target/debug/go_service
-target/debug/go_service
+sudo setcap 'cap_net_bind_service=+ep' target/debug/ogdevdesk_service
+target/debug/ogdevdesk_service
 ```
 
 For a system service, set the same env var before launching the binary, for example:
@@ -50,7 +54,7 @@ or from `src-tauri/`:
 cargo tauri dev
 ```
 
-Desktop mode starts the shared server on `127.0.0.1` using an available local port, then opens a native Tauri window pointed at that server. The desktop database defaults to the operating system app-data directory and can still be overridden with `GO_ALIAS_DB_PATH`.
+Desktop mode starts the shared server on `127.0.0.1` using an available local port, then opens a native Tauri window pointed at that server. The desktop database defaults to the operating system app-data directory and can still be overridden with `OGDEVDESK_DB_PATH`.
 
 ## Making `go/alias` Work
 
@@ -146,11 +150,11 @@ Example:
 
 ```sh
 docker run -d \
-  --name go-alias \
+  --name ogdevdesk \
   --restart unless-stopped \
   -p 80:8080 \
   -e PORT=8080 \
-  go-alias-rust
+  ogdevdesk
 ```
 
 Users still need DNS or a hosts-file entry for `go`.
@@ -174,9 +178,9 @@ This repo includes installer scripts for local-machine installs. They are not si
 For the easiest install, download the one release asset that matches your system:
 
 ```text
-go-alias-installer-linux-x86_64.tar.gz
-go-alias-installer-macos-arm64.tar.gz
-go-alias-installer-windows-x86_64.zip
+ogdevdesk-installer-linux-x86_64.tar.gz
+ogdevdesk-installer-macos-arm64.tar.gz
+ogdevdesk-installer-windows-x86_64.zip
 ```
 
 Each archive contains the prebuilt app, static assets, README, and one installer script at the top level.
@@ -184,24 +188,24 @@ Each archive contains the prebuilt app, static assets, README, and one installer
 Linux:
 
 ```sh
-tar -xzf go-alias-installer-linux-x86_64.tar.gz
-cd go-alias-installer-linux-x86_64
+tar -xzf ogdevdesk-installer-linux-x86_64.tar.gz
+cd ogdevdesk-installer-linux-x86_64
 sudo ./install-linux.sh
 ```
 
 macOS:
 
 ```sh
-tar -xzf go-alias-installer-macos-arm64.tar.gz
-cd go-alias-installer-macos-arm64
+tar -xzf ogdevdesk-installer-macos-arm64.tar.gz
+cd ogdevdesk-installer-macos-arm64
 sudo ./install-macos.sh
 ```
 
 Windows:
 
 ```powershell
-Expand-Archive .\go-alias-installer-windows-x86_64.zip
-cd .\go-alias-installer-windows-x86_64\go-alias-installer-windows-x86_64
+Expand-Archive .\ogdevdesk-installer-windows-x86_64.zip
+cd .\ogdevdesk-installer-windows-x86_64\ogdevdesk-installer-windows-x86_64
 .\install-windows.ps1
 ```
 
@@ -216,15 +220,15 @@ sudo ./scripts/install-local-unix.sh
 Linux installs to:
 
 ```text
-/opt/go-alias
-/etc/systemd/system/go-alias.service
+/opt/ogdevdesk
+/etc/systemd/system/ogdevdesk.service
 ```
 
 macOS installs to:
 
 ```text
-/usr/local/go-alias
-/Library/LaunchDaemons/com.go-alias.plist
+/usr/local/ogdevdesk
+/Library/LaunchDaemons/com.ogdevdesk.plist
 ```
 
 After install:
@@ -245,10 +249,10 @@ Run from an elevated PowerShell prompt:
 Windows installs to:
 
 ```text
-C:\Program Files\GoAlias
+C:\Program Files\OGdevDesk
 ```
 
-and registers a `GoAlias` startup scheduled task. The scheduled task is used instead of a plain Windows service so the app starts with `C:\Program Files\GoAlias` as its working directory and can find its `static/` assets.
+and registers an `OGdevDesk` startup scheduled task. The scheduled task is used instead of a plain Windows service so the app starts with `C:\Program Files\OGdevDesk` as its working directory and can find its `static/` assets.
 
 After install:
 

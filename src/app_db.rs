@@ -3,13 +3,15 @@ use serde_json::{Map, Value, json};
 use sqlx::{Row, SqlitePool, sqlite::SqliteConnectOptions};
 use std::{collections::HashMap, path::Path, str::FromStr, sync::OnceLock};
 
-const DEFAULT_DB_PATH: &str = "go_service.db";
+const DEFAULT_DB_PATH: &str = "ogdevdesk.db";
 const DEFAULT_USER_ID: &str = "default";
 
 static APP_DB: OnceLock<SqlitePool> = OnceLock::new();
 
 pub fn db_path() -> String {
-    std::env::var("GO_ALIAS_DB_PATH").unwrap_or_else(|_| DEFAULT_DB_PATH.to_string())
+    std::env::var("OGDEVDESK_DB_PATH")
+        .or_else(|_| std::env::var("GO_ALIAS_DB_PATH"))
+        .unwrap_or_else(|_| DEFAULT_DB_PATH.to_string())
 }
 
 pub async fn init() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {

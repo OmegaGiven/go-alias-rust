@@ -630,9 +630,9 @@ pub async fn request_run(payload: Json<ProxyRequest>) -> impl Responder {
             payload.method
         );
         let mut header_path = std::env::temp_dir();
-        header_path.push(format!("go_service_headers_{run_id}.txt"));
+        header_path.push(format!("ogdevdesk_headers_{run_id}.txt"));
         let mut body_path = std::env::temp_dir();
-        body_path.push(format!("go_service_body_{run_id}.txt"));
+        body_path.push(format!("ogdevdesk_body_{run_id}.txt"));
 
         cmd.arg("-sS")
             .arg("--connect-timeout")

@@ -11,8 +11,8 @@
         const statusEl = document.getElementById('scratchpad-save-status');
         const dragHandle = document.getElementById('scratchpad-drag-handle');
 
-        const STORAGE_KEY = 'go_service_scratchpads';
-        const ACTIVE_KEY = 'go_service_scratchpad_active';
+        const STORAGE_KEY = 'ogdevdesk_scratchpads';
+        const ACTIVE_KEY = 'ogdevdesk_scratchpad_active';
         const VISIBLE_KEY = 'scratchpad-visible';
         const POS_KEY = 'scratchpad-pos';
 

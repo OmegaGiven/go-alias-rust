@@ -20,20 +20,20 @@ if (Test-Path (Join-Path $ScriptDir "Cargo.toml")) {
     $RepoDir = $null
 }
 
-$InstallDir = Join-Path $env:ProgramFiles "GoAlias"
-$BinaryDest = Join-Path $InstallDir "go_service.exe"
+$InstallDir = Join-Path $env:ProgramFiles "OGdevDesk"
+$BinaryDest = Join-Path $InstallDir "ogdevdesk_service.exe"
 $StaticDest = Join-Path $InstallDir "static"
-$TaskName = "GoAlias"
+$TaskName = "OGdevDesk"
 
 if ($RepoDir) {
-    $BinarySource = Join-Path $RepoDir "target\release\go_service.exe"
+    $BinarySource = Join-Path $RepoDir "target\release\ogdevdesk_service.exe"
     $StaticSource = Join-Path $RepoDir "static"
     Write-Host "Building release binary..."
     Push-Location $RepoDir
     cargo build --release
     Pop-Location
 } else {
-    $BinarySource = Join-Path $ScriptDir "go_service.exe"
+    $BinarySource = Join-Path $ScriptDir "ogdevdesk_service.exe"
     $StaticSource = Join-Path $ScriptDir "static"
     Write-Host "Using bundled release binary..."
 }
@@ -50,7 +50,7 @@ Write-Host "Ensuring local hostname 'go' resolves to this machine..."
 $HostsPath = "$env:SystemRoot\System32\drivers\etc\hosts"
 $HostsContent = Get-Content $HostsPath -Raw
 if ($HostsContent -notmatch "(^|\s)go(\s|$)") {
-    Add-Content -Path $HostsPath -Value "`r`n# GoAlias local browser alias`r`n127.0.0.1 go`r`n::1 go"
+    Add-Content -Path $HostsPath -Value "`r`n# OGdevDesk local browser alias`r`n127.0.0.1 go`r`n::1 go"
 }
 
 Write-Host "Installing Windows startup task..."
@@ -65,9 +65,9 @@ $Trigger = New-ScheduledTaskTrigger -AtStartup
 $Principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -RunLevel Highest
 $Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
 
-Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Principal $Principal -Settings $Settings -Description "Go Alias developer tool" | Out-Null
+Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Principal $Principal -Settings $Settings -Description "OGdevDesk developer tool" | Out-Null
 Start-ScheduledTask -TaskName $TaskName
 
 Write-Host ""
 Write-Host "Installed. Open http://go/ or http://go/<alias> in a browser."
-Write-Host "If port 80 is not available, stop the conflicting service and restart the GoAlias scheduled task."
+Write-Host "If port 80 is not available, stop the conflicting service and restart the OGdevDesk scheduled task."

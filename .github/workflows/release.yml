@@ -21,18 +21,18 @@ jobs:
         include:
           - name: linux-x86_64
             os: ubuntu-latest
-            archive: go-alias-installer-linux-x86_64.tar.gz
-            binary: go_service
+            archive: ogdevdesk-installer-linux-x86_64.tar.gz
+            binary: ogdevdesk_service
             install_script: install-linux.sh
           - name: macos-arm64
             os: macos-latest
-            archive: go-alias-installer-macos-arm64.tar.gz
-            binary: go_service
+            archive: ogdevdesk-installer-macos-arm64.tar.gz
+            binary: ogdevdesk_service
             install_script: install-macos.sh
           - name: windows-x86_64
             os: windows-latest
-            archive: go-alias-installer-windows-x86_64.zip
-            binary: go_service.exe
+            archive: ogdevdesk-installer-windows-x86_64.zip
+            binary: ogdevdesk_service.exe
             install_script: install-windows.ps1
 
     steps:
@@ -46,15 +46,15 @@ jobs:
       - name: Prepare package
         shell: bash
         run: |
-          mkdir -p "dist/go-alias-installer-${{ matrix.name }}"
-          cp "target/release/${{ matrix.binary }}" "dist/go-alias-installer-${{ matrix.name }}/"
-          cp README.md "dist/go-alias-installer-${{ matrix.name }}/"
-          cp -R static "dist/go-alias-installer-${{ matrix.name }}/static"
+          mkdir -p "dist/ogdevdesk-installer-${{ matrix.name }}"
+          cp "target/release/${{ matrix.binary }}" "dist/ogdevdesk-installer-${{ matrix.name }}/"
+          cp README.md "dist/ogdevdesk-installer-${{ matrix.name }}/"
+          cp -R static "dist/ogdevdesk-installer-${{ matrix.name }}/static"
           if [[ "${{ runner.os }}" == "Windows" ]]; then
-            cp scripts/install-local-windows.ps1 "dist/go-alias-installer-${{ matrix.name }}/${{ matrix.install_script }}"
+            cp scripts/install-local-windows.ps1 "dist/ogdevdesk-installer-${{ matrix.name }}/${{ matrix.install_script }}"
           else
-            cp scripts/install-local-unix.sh "dist/go-alias-installer-${{ matrix.name }}/${{ matrix.install_script }}"
-            chmod +x "dist/go-alias-installer-${{ matrix.name }}/${{ matrix.install_script }}"
+            cp scripts/install-local-unix.sh "dist/ogdevdesk-installer-${{ matrix.name }}/${{ matrix.install_script }}"
+            chmod +x "dist/ogdevdesk-installer-${{ matrix.name }}/${{ matrix.install_script }}"
           fi
 
       - name: Package Unix archive
@@ -62,13 +62,13 @@ jobs:
         shell: bash
         run: |
           cd dist
-          tar -czf "${{ matrix.archive }}" "go-alias-installer-${{ matrix.name }}"
+          tar -czf "${{ matrix.archive }}" "ogdevdesk-installer-${{ matrix.name }}"
 
       - name: Package Windows archive
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          Compress-Archive -Path "dist/go-alias-installer-${{ matrix.name }}" -DestinationPath "dist/${{ matrix.archive }}"
+          Compress-Archive -Path "dist/ogdevdesk-installer-${{ matrix.name }}" -DestinationPath "dist/${{ matrix.archive }}"
 
       - uses: actions/upload-artifact@v4
         with:

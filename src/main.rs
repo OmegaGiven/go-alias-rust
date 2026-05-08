@@ -1,4 +1,4 @@
-use go_service::server::{ServerConfig, run_server};
+use ogdevdesk_service::server::{ServerConfig, run_server};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {

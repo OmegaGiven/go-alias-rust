@@ -63,8 +63,8 @@
         const REQUEST_HISTORY_KEY = 'request_run_history';
         const SAVED_REQUEST_FOLDERS_COLLAPSED_KEY = 'saved-request-folders-collapsed';
         const INSPECTOR_PENDING_PAYLOAD_KEY = 'inspector_pending_payload';
-        const REQUEST_WORKSPACE_TABS_KEY = 'go_service_request_workspace_tabs';
-        const REQUEST_WORKSPACE_PENDING_KEY = 'go_service_pending_request_workspace';
+        const REQUEST_WORKSPACE_TABS_KEY = 'ogdevdesk_request_workspace_tabs';
+        const REQUEST_WORKSPACE_PENDING_KEY = 'ogdevdesk_pending_request_workspace';
         const MAX_REQUEST_HISTORY_ENTRIES = 12;
         const activeRequestTabId = new URLSearchParams(window.location.search).get('tab') || '';
         let pendingPostmanCollection = null;

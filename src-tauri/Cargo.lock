@@ -1707,32 +1707,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 
 [[package]]
-name = "go_alias_desktop"
-version = "0.1.7"
-dependencies = [
- "go_service",
- "tauri",
- "tauri-build",
-]
-
-[[package]]
-name = "go_service"
-version = "0.1.7"
-dependencies = [
- "actix-files",
- "actix-web",
- "aes-gcm",
- "askama",
- "csv",
- "htmlescape",
- "rand 0.8.6",
- "serde",
- "serde_json",
- "sqlx",
- "tokio",
-]
-
-[[package]]
 name = "gobject-sys"
 version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2939,6 +2913,32 @@ dependencies = [
  "objc2-app-kit",
  "objc2-core-foundation",
  "objc2-foundation",
+]
+
+[[package]]
+name = "ogdevdesk_desktop"
+version = "0.1.7"
+dependencies = [
+ "ogdevdesk_service",
+ "tauri",
+ "tauri-build",
+]
+
+[[package]]
+name = "ogdevdesk_service"
+version = "0.1.7"
+dependencies = [
+ "actix-files",
+ "actix-web",
+ "aes-gcm",
+ "askama",
+ "csv",
+ "htmlescape",
+ "rand 0.8.6",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
 ]
 
 [[package]]

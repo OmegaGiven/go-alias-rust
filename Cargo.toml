@@ -1,5 +1,5 @@
 [package]
-name = "go_service"
+name = "ogdevdesk_service"
 version = "0.1.7"
 edition = "2024"
 

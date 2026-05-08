@@ -2,8 +2,8 @@
 name = "ogdevdesk_desktop"
 version = "0.1.7"
 description = "Desktop wrapper for OGdevDesk"
-authors = ["OGdevDesk contributors"]
-license = ""
+authors = ["OmegaGiven"]
+license = "Apache-2.0"
 repository = ""
 edition = "2024"
 

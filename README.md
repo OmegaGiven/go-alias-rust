@@ -4,6 +4,16 @@
 
 OGdevDesk is a focused developer desk for API requests, database work, JSON inspection, web aliases, scratch notes, and small utility tools.
 
+## License
+
+OGdevDesk is licensed under the Apache License, Version 2.0.
+
+```text
+Copyright 2026 OmegaGiven
+```
+
+See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
 ## Build Instructions
 
 1. Run the app locally:

@@ -47,7 +47,6 @@ fn pick_local_port() -> Option<u16> {
 
 fn configure_desktop_environment() {
     let db_path = std::env::var("OGDEVDESK_DB_PATH")
-        .or_else(|_| std::env::var("GO_ALIAS_DB_PATH"))
         .ok()
         .map(PathBuf::from)
         .unwrap_or_else(default_desktop_db_path);
@@ -91,9 +90,7 @@ fn home_dir() -> PathBuf {
 }
 
 fn resolve_static_dir(app: &tauri::App) -> String {
-    if let Ok(static_dir) = std::env::var("OGDEVDESK_STATIC_DIR")
-        .or_else(|_| std::env::var("GO_ALIAS_STATIC_DIR"))
-    {
+    if let Ok(static_dir) = std::env::var("OGDEVDESK_STATIC_DIR") {
         return static_dir;
     }
 

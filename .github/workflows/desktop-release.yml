@@ -69,11 +69,13 @@ jobs:
           if [[ "${{ runner.os }}" == "macOS" ]]; then
             COPYFILE_DISABLE=1 ditto -c -k --keepParent \
               "src-tauri/target/release/bundle/macos/OGdevDesk.app" \
-              "dist/desktop-${{ matrix.name }}/ogdevdesk-desktop-${{ matrix.name }}.zip"
+              "dist/desktop-${{ matrix.name }}/OGdevDesk-desktop-macos-arm64.zip"
+          elif [[ "${{ runner.os }}" == "Windows" ]]; then
+            msi_path="$(find src-tauri/target/release/bundle -type f -name "*.msi" | head -n 1)"
+            cp "${msi_path}" "dist/desktop-${{ matrix.name }}/OGdevDesk-desktop-windows-x64.msi"
           else
-            find src-tauri/target/release/bundle -type f \
-              \( -name "*.msi" -o -name "*.exe" -o -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \) \
-              -exec cp {} "dist/desktop-${{ matrix.name }}/" \;
+            appimage_path="$(find src-tauri/target/release/bundle -type f -name "*.AppImage" | head -n 1)"
+            cp "${appimage_path}" "dist/desktop-${{ matrix.name }}/OGdevDesk-desktop-linux-x64.AppImage"
           fi
 
       - uses: actions/upload-artifact@v4

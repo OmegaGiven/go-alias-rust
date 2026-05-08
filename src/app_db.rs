@@ -10,7 +10,6 @@ static APP_DB: OnceLock<SqlitePool> = OnceLock::new();
 
 pub fn db_path() -> String {
     std::env::var("OGDEVDESK_DB_PATH")
-        .or_else(|_| std::env::var("GO_ALIAS_DB_PATH"))
         .unwrap_or_else(|_| DEFAULT_DB_PATH.to_string())
 }
 

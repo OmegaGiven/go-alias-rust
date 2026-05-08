@@ -186,12 +186,12 @@ This repo includes installer scripts for local-machine installs. They are not si
 
 ### GitHub Release Downloads
 
-For the easiest install, download the one release asset that matches your system:
+For the easiest browser/server install, download the one server release asset that matches your system:
 
 ```text
-ogdevdesk-installer-linux-x86_64.tar.gz
-ogdevdesk-installer-macos-arm64.tar.gz
-ogdevdesk-installer-windows-x86_64.zip
+OGdevDesk-server-linux-x64.tar.gz
+OGdevDesk-server-macos-arm64.tar.gz
+OGdevDesk-server-windows-x64.zip
 ```
 
 Each archive contains the prebuilt app, static assets, README, and one installer script at the top level.
@@ -199,25 +199,33 @@ Each archive contains the prebuilt app, static assets, README, and one installer
 Linux:
 
 ```sh
-tar -xzf ogdevdesk-installer-linux-x86_64.tar.gz
-cd ogdevdesk-installer-linux-x86_64
+tar -xzf OGdevDesk-server-linux-x64.tar.gz
+cd OGdevDesk-server-linux-x64
 sudo ./install-linux.sh
 ```
 
 macOS:
 
 ```sh
-tar -xzf ogdevdesk-installer-macos-arm64.tar.gz
-cd ogdevdesk-installer-macos-arm64
+tar -xzf OGdevDesk-server-macos-arm64.tar.gz
+cd OGdevDesk-server-macos-arm64
 sudo ./install-macos.sh
 ```
 
 Windows:
 
 ```powershell
-Expand-Archive .\ogdevdesk-installer-windows-x86_64.zip
-cd .\ogdevdesk-installer-windows-x86_64\ogdevdesk-installer-windows-x86_64
+Expand-Archive .\OGdevDesk-server-windows-x64.zip
+cd .\OGdevDesk-server-windows-x64\OGdevDesk-server-windows-x64
 .\install-windows.ps1
+```
+
+Desktop app releases are published separately with one obvious file per platform:
+
+```text
+OGdevDesk-desktop-macos-arm64.zip
+OGdevDesk-desktop-windows-x64.msi
+OGdevDesk-desktop-linux-x64.AppImage
 ```
 
 ### macOS and Linux

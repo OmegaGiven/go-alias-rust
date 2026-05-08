@@ -51,6 +51,7 @@
         const saveRequestVariablesBtn = document.getElementById('save-request-variables-btn');
         const requestVariablesStatus = document.getElementById('request-variables-status');
         const saveRequestModal = document.getElementById('save-request-modal');
+        const saveRequestModalForm = saveRequestModal?.querySelector('form');
         const saveRequestNameInput = document.getElementById('save-request-name-input');
         const saveRequestFolderSelect = document.getElementById('save-request-folder-select');
         const confirmSaveRequestBtn = document.getElementById('confirm-save-request-btn');
@@ -2066,6 +2067,14 @@
                 if (event.target === saveRequestModal) {
                     closeSaveRequestModal();
                 }
+            });
+        }
+
+        if (saveRequestModalForm) {
+            saveRequestModalForm.addEventListener('submit', (event) => {
+                event.preventDefault();
+                if (confirmSaveRequestBtn?.disabled) return;
+                confirmSaveRequestBtn?.click();
             });
         }
 

@@ -18,6 +18,9 @@
         const loadThemeNameInput = document.getElementById('theme_name_input');
         const themeNameInput = document.getElementById('theme_name');
         const returnToInput = document.getElementById('theme_return_to');
+        const importThemeBtn = document.getElementById('import-theme-btn');
+        const importThemeFile = document.getElementById('import-theme-file');
+        const exportThemeBtn = document.getElementById('export-theme-btn');
 
         if (returnToInput) {
             returnToInput.value = window.location.pathname + window.location.search;
@@ -55,6 +58,111 @@
         function clearLoadedTheme() {
             if (loadThemeSelect) loadThemeSelect.value = '';
             if (loadThemeNameInput) loadThemeNameInput.value = '';
+        }
+
+        function readThemeValue(id, fallback = '') {
+            const input = document.getElementById(id);
+            return input ? input.value : fallback;
+        }
+
+        function readThemeNumber(id, fallback = 0) {
+            const value = Number.parseInt(readThemeValue(id), 10);
+            return Number.isFinite(value) ? value : fallback;
+        }
+
+        function currentThemePayload() {
+            syncModeFields();
+            return {
+                name: readThemeValue('theme_name', 'OGdevDesk Theme'),
+                mode: selectedMode(),
+                primary_bg: readThemeValue('primary_bg', '#1c1c1c'),
+                secondary_bg: readThemeValue('secondary_bg', '#111111'),
+                tertiary_bg: readThemeValue('tertiary_bg', '#292929'),
+                text_color: readThemeValue('text_color', '#ffffff'),
+                accent_color: readThemeValue('accent_color', '#4da6ff'),
+                hover_window_accent: readThemeValue('hover_window_accent', readThemeValue('accent_color', '#4da6ff')),
+                link_color: readThemeValue('link_color', readThemeValue('accent_color', '#4da6ff')),
+                link_visited: readThemeValue('link_visited', '#b366ff'),
+                link_hover: readThemeValue('link_hover', readThemeValue('accent_color', '#4da6ff')),
+                border_color: readThemeValue('border_color', '#444444'),
+                font_size_small: readThemeNumber('font_size_small', 14),
+                font_size_medium: readThemeNumber('font_size_medium', 16),
+                font_size_large: readThemeNumber('font_size_large', 18),
+                element_margin: readThemeNumber('element_margin', 10),
+                nav_height: readThemeNumber('nav_height', 50),
+                font_family: fontFamilyInput?.value || 'sans-serif',
+            };
+        }
+
+        function slugifyThemeName(name) {
+            return String(name || 'ogdevdesk-theme')
+                .trim()
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-+|-+$/g, '') || 'ogdevdesk-theme';
+        }
+
+        function exportCurrentTheme() {
+            const theme = currentThemePayload();
+            const payload = {
+                type: 'ogdevdesk.appearance.theme',
+                version: 1,
+                exported_at: new Date().toISOString(),
+                theme,
+            };
+            const blob = new Blob([`${JSON.stringify(payload, null, 2)}\n`], { type: 'application/json' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `${slugifyThemeName(theme.name)}.ogdevdesk-theme.json`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(link.href);
+        }
+
+        function applyImportedTheme(theme) {
+            if (!theme || typeof theme !== 'object') {
+                throw new Error('Theme file did not contain a valid theme object.');
+            }
+
+            const importedMode = ['light', 'dark', 'custom'].includes(theme.mode) ? theme.mode : 'custom';
+            const modeInput = form.querySelector(`input[name="theme_mode"][value="${importedMode}"]`);
+            if (modeInput) modeInput.checked = true;
+
+            [
+                'theme_name',
+                'primary_bg',
+                'secondary_bg',
+                'tertiary_bg',
+                'text_color',
+                'accent_color',
+                'hover_window_accent',
+                'link_color',
+                'link_visited',
+                'link_hover',
+                'border_color',
+                'font_size_small',
+                'font_size_medium',
+                'font_size_large',
+                'element_margin',
+                'nav_height',
+                'font_family',
+            ].forEach((id) => {
+                const input = document.getElementById(id);
+                const themeKey = id === 'theme_name' ? 'name' : id;
+                if (!input || theme[themeKey] === undefined || theme[themeKey] === null) return;
+                input.value = theme[themeKey];
+            });
+
+            clearLoadedTheme();
+            applyTheme();
+        }
+
+        async function loadThemeImport(file) {
+            const raw = await file.text();
+            const parsed = JSON.parse(raw);
+            const theme = parsed.theme && typeof parsed.theme === 'object' ? parsed.theme : parsed;
+            applyImportedTheme(theme);
         }
 
         function syncModeFields() {
@@ -140,6 +248,26 @@
 
         if (themeNameInput) {
             themeNameInput.addEventListener('input', clearLoadedTheme);
+        }
+
+        if (exportThemeBtn) {
+            exportThemeBtn.addEventListener('click', exportCurrentTheme);
+        }
+
+        if (importThemeBtn && importThemeFile) {
+            importThemeBtn.addEventListener('click', () => importThemeFile.click());
+            importThemeFile.addEventListener('change', async () => {
+                const file = importThemeFile.files?.[0];
+                if (!file) return;
+
+                try {
+                    await loadThemeImport(file);
+                } catch (error) {
+                    window.alert(`Theme import failed: ${error.message}`);
+                } finally {
+                    importThemeFile.value = '';
+                }
+            });
         }
         applyTheme();
 

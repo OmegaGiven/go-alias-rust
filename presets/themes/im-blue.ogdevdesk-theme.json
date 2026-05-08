@@ -1,0 +1,24 @@
+{
+  "type": "ogdevdesk.appearance.theme",
+  "version": 1,
+  "theme": {
+    "name": "Im Blue",
+    "mode": "custom",
+    "primary_bg": "#000a57",
+    "secondary_bg": "#001d57",
+    "tertiary_bg": "#004880",
+    "text_color": "#ffffff",
+    "accent_color": "#ff0000",
+    "hover_window_accent": "#fff700",
+    "link_color": "#0ab847",
+    "link_visited": "#b366ff",
+    "link_hover": "#0ab847",
+    "border_color": "#666666",
+    "font_size_small": 12,
+    "font_size_medium": 14,
+    "font_size_large": 18,
+    "element_margin": 20,
+    "nav_height": 50,
+    "font_family": "sans-serif"
+  }
+}

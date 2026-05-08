@@ -1,0 +1,24 @@
+{
+  "type": "ogdevdesk.appearance.theme",
+  "version": 1,
+  "theme": {
+    "name": "Helldiver",
+    "mode": "custom",
+    "primary_bg": "#000000",
+    "secondary_bg": "#000000",
+    "tertiary_bg": "#383300",
+    "text_color": "#ffffff",
+    "accent_color": "#a80000",
+    "hover_window_accent": "#fff700",
+    "link_color": "#ffd500",
+    "link_visited": "#b366ff",
+    "link_hover": "#0084ff",
+    "border_color": "#666666",
+    "font_size_small": 12,
+    "font_size_medium": 14,
+    "font_size_large": 18,
+    "element_margin": 20,
+    "nav_height": 50,
+    "font_family": "sans-serif"
+  }
+}

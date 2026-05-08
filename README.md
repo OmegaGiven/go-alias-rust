@@ -56,6 +56,17 @@ cargo tauri dev
 
 Desktop mode starts the shared server on `127.0.0.1` using an available local port, then opens a native Tauri window pointed at that server. The desktop database defaults to the operating system app-data directory and can still be overridden with `OGDEVDESK_DB_PATH`.
 
+## Appearance Themes
+
+Open `Tools -> Appearance` to adjust theme mode, typography, accent colors, window accent color, margins, and nav height. Use `Export` to download the current appearance as an `.ogdevdesk-theme.json` file. Use `Import` to load one of those files back into the Appearance window, then apply or save it.
+
+The repo includes a starter preset based on the current OGdevDesk environment theme:
+
+```text
+presets/themes/im-blue.ogdevdesk-theme.json
+presets/themes/helldiver.ogdevdesk-theme.json
+```
+
 ## Making `go/alias` Work
 
 The app already routes `/alias` paths. To type this in a browser:

@@ -77,6 +77,58 @@ body {
     height: 100vh;
 }
 
+body.desktop-tool-page {
+    display: block;
+    overflow: hidden;
+}
+
+body.desktop-tool-page .modern-nav,
+body.desktop-tool-page > :not([id^="floating-"]):not(script) {
+    display: none !important;
+}
+
+body.desktop-tool-page [id^="floating-"] {
+    display: none !important;
+}
+
+body.desktop-tool-page .desktop-tool-active {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: none !important;
+    max-height: none !important;
+    display: flex !important;
+    transform: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    overflow: hidden !important;
+}
+
+body.desktop-tool-page .floating-window-header {
+    cursor: default;
+}
+
+body.desktop-tool-page #floating-settings .settings-content-wrapper,
+body.desktop-tool-page #floating-documentation .documentation-body,
+body.desktop-tool-page #floating-jwt-decoder .jwt-body,
+body.desktop-tool-page #floating-ai-assistant .ai-assistant-body,
+body.desktop-tool-page #floating-scratch-pad .scratchpad-body {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+body.desktop-tool-page[data-desktop-tool="ai"] #floating-ai-settings[style*="display: flex"] {
+    display: flex !important;
+    position: fixed !important;
+    top: 48px !important;
+    right: 12px !important;
+    width: min(420px, calc(100vw - 24px)) !important;
+    max-height: calc(100vh - 60px) !important;
+    z-index: 200001 !important;
+}
+
 button,
 input,
 select,
@@ -830,6 +882,7 @@ ul li a:hover {
 
 /* Shared navigation */
 .modern-nav {
+    position: relative;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -842,6 +895,7 @@ ul li a:hover {
     user-select: none;
     box-sizing: border-box;
     overflow: visible;
+    z-index: 300000;
 }
 
 .nav-left,
@@ -1281,6 +1335,7 @@ ul li a:hover {
     height: 100%;
     display: flex;
     align-items: stretch;
+    z-index: 300001;
 }
 
 .tools-dropdown-menu {
@@ -1293,7 +1348,7 @@ ul li a:hover {
     border: 1px solid var(--border-color);
     border-radius: 0 0 6px 6px;
     box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
-    z-index: 10020;
+    z-index: 300002;
     overflow: hidden;
 }
 

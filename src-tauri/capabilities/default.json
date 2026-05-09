@@ -1,0 +1,22 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "ogdevdesk-local-server",
+  "description": "Allow OGdevDesk desktop windows served from the embedded local server to call the app's Tauri commands.",
+  "windows": [
+    "main",
+    "tool-*"
+  ],
+  "remote": {
+    "urls": [
+      "http://127.0.0.1:*",
+      "http://127.0.0.1:*/*",
+      "http://127.0.0.1:*/**",
+      "http://localhost:*",
+      "http://localhost:*/*",
+      "http://localhost:*/**"
+    ]
+  },
+  "permissions": [
+    "core:default"
+  ]
+}

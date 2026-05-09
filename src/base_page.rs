@@ -27,6 +27,7 @@ struct BasePageTemplate<'a> {
     saved_theme_options: Vec<ThemeNameOption>,
     font_options: Vec<FontOption>,
     include_add_shortcut_modal: bool,
+    desktop_mode: bool,
 }
 
 fn asset_version() -> String {
@@ -160,6 +161,9 @@ pub fn render_base_page_with_options(
         saved_theme_options,
         font_options: font_options(&current_theme.font_family),
         include_add_shortcut_modal,
+        desktop_mode: std::env::var("OGDEVDESK_MODE")
+            .map(|mode| mode == "desktop")
+            .unwrap_or(false),
     }
     .render()
     .unwrap_or_else(|err| {

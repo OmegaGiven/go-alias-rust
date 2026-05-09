@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>OGdevDesk Tool</title>
+    <style>
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: #111;
+      }
+
+      iframe {
+        display: block;
+        width: 100%;
+        height: 100%;
+        border: 0;
+        background: transparent;
+      }
+
+      .desktop-tool-error {
+        box-sizing: border-box;
+        min-height: 100%;
+        padding: 24px;
+        color: #eee;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #1f1f1f;
+      }
+    </style>
+  </head>
+  <body>
+    <script>
+      const rawParams = window.location.hash.slice(1) || window.location.search.slice(1);
+      const params = new URLSearchParams(rawParams);
+      const port = params.get('port');
+      const tool = params.get('tool');
+      const localOrigin = port ? `http://127.0.0.1:${port}` : '';
+
+      function invokeTauri(command, payload = {}) {
+        const invoke = window.__TAURI__?.core?.invoke;
+        if (!invoke) return Promise.reject(new Error('Tauri invoke API is unavailable.'));
+        return invoke(command, payload);
+      }
+
+      if (!port || !tool) {
+        document.body.innerHTML = '<div class="desktop-tool-error">Missing desktop tool target.</div>';
+      } else {
+        const iframe = document.createElement('iframe');
+        iframe.src = `${localOrigin}/desktop-tool/${encodeURIComponent(tool)}`;
+        iframe.title = 'OGdevDesk Tool';
+        document.body.appendChild(iframe);
+      }
+
+      window.addEventListener('message', (event) => {
+        if (!localOrigin || event.origin !== localOrigin) return;
+        const data = event.data || {};
+        if (data.type !== 'ogdevdesk-close-tool') return;
+
+        invokeTauri('close_current_window').catch((error) => {
+          console.error('Failed to close desktop tool window', error);
+        });
+      });
+    </script>
+  </body>
+</html>

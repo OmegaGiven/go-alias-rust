@@ -30,6 +30,94 @@ document.addEventListener('DOMContentLoaded', () => {
         '#floating-ai-settings',
     ].join(',');
     let floatingWindowZIndex = 10050;
+    const desktopToolIds = {
+        appearance: 'floating-settings',
+        calculator: 'floating-calculator',
+        jwt: 'floating-jwt-decoder',
+        scratchpad: 'floating-scratch-pad',
+        ai: 'floating-ai-assistant',
+        documentation: 'floating-documentation',
+    };
+
+    function tauriInvoke(command, payload = {}) {
+        return window.__TAURI__?.core?.invoke
+            ? window.__TAURI__.core.invoke(command, payload)
+            : null;
+    }
+
+    window.isOgdevdeskDesktop = function () {
+        return Boolean(window.__TAURI__?.core?.invoke) ||
+            (window.OGDEVDESK_DESKTOP_MODE === true && window.parent !== window);
+    };
+
+    function handleDesktopToolOpenError(tool, error, fallback) {
+        console.error(`Failed to open desktop ${tool} window`, error);
+        if (typeof fallback === 'function') fallback();
+    }
+
+    function postDesktopShellMessage(message) {
+        if (window.OGDEVDESK_DESKTOP_MODE !== true) return false;
+        if (window.parent === window) return false;
+        window.parent.postMessage(message, '*');
+        return true;
+    }
+
+    window.openDesktopToolWindow = function (tool, fallback) {
+        if (!window.isOgdevdeskDesktop() || window.OGDEVDESK_DESKTOP_TOOL) return false;
+        const openPromise = tauriInvoke('open_tool_window', { tool });
+        if (!openPromise && postDesktopShellMessage({ type: 'ogdevdesk-open-tool', tool })) {
+            return true;
+        }
+        if (!openPromise) {
+            fetch(`/desktop-open-tool/${encodeURIComponent(tool)}`, { method: 'POST' })
+                .then((response) => {
+                    if (!response.ok) {
+                        return response.text().then((message) => {
+                            throw new Error(message || `Desktop tool open failed with ${response.status}`);
+                        });
+                    }
+                    return response;
+                })
+                .catch((error) => {
+                    handleDesktopToolOpenError(tool, error, fallback);
+                });
+            return true;
+        }
+
+        openPromise.catch((error) => {
+            handleDesktopToolOpenError(tool, error, fallback);
+        });
+        return true;
+    };
+
+    window.closeDesktopToolWindow = function () {
+        if (!window.OGDEVDESK_DESKTOP_TOOL || !window.isOgdevdeskDesktop()) return false;
+        const closePromise = tauriInvoke('close_current_window');
+        if (!closePromise && postDesktopShellMessage({ type: 'ogdevdesk-close-tool' })) {
+            return true;
+        }
+        if (!closePromise) {
+            fetch(`/desktop-close-tool/${encodeURIComponent(window.OGDEVDESK_DESKTOP_TOOL)}`, { method: 'POST' })
+                .then((response) => {
+                    if (!response.ok) {
+                        return response.text().then((message) => {
+                            throw new Error(message || `Desktop tool close failed with ${response.status}`);
+                        });
+                    }
+                    return response;
+                })
+                .catch((error) => {
+                    console.error('Failed to close desktop tool window', error);
+                    window.close();
+                });
+            return true;
+        }
+
+        closePromise.catch((error) => {
+            console.error('Failed to close desktop tool window', error);
+        });
+        return true;
+    };
 
     function bringFloatingWindowToFront(windowEl) {
         if (!windowEl) return;
@@ -44,6 +132,33 @@ document.addEventListener('DOMContentLoaded', () => {
             windowEl.addEventListener('pointerdown', () => bringFloatingWindowToFront(windowEl), true);
             windowEl.addEventListener('focusin', () => bringFloatingWindowToFront(windowEl), true);
         });
+    }
+
+    function activateDesktopToolPage() {
+        const tool = window.OGDEVDESK_DESKTOP_TOOL;
+        const toolId = desktopToolIds[tool];
+        const toolEl = toolId ? document.getElementById(toolId) : null;
+        if (!toolEl) return;
+
+        document.body.classList.add('desktop-tool-page');
+        document.body.dataset.desktopTool = tool;
+        toolEl.classList.add('desktop-tool-active');
+        toolEl.style.display = 'flex';
+        toolEl.style.transform = 'none';
+        toolEl.querySelectorAll('.floating-window-close').forEach((button) => {
+            button.addEventListener('click', (event) => {
+                if (!window.closeDesktopToolWindow()) return;
+                event.preventDefault();
+                event.stopImmediatePropagation();
+            }, true);
+        });
+
+        if (tool === 'documentation') {
+            const documentationSearch = document.getElementById('documentation-search');
+            if (documentationSearch) {
+                setTimeout(() => documentationSearch.focus(), 0);
+            }
+        }
     }
 
     window.bringFloatingWindowToFront = bringFloatingWindowToFront;
@@ -824,7 +939,7 @@ document.addEventListener('DOMContentLoaded', () => {
         bringFloatingWindowToFront(documentationWindow);
     }
 
-    window.toggleDocumentation = function () {
+    function toggleDocumentationInPage() {
         if (!documentationWindow) return;
         const isOpen = documentationWindow.style.display === 'flex';
 
@@ -841,6 +956,11 @@ document.addEventListener('DOMContentLoaded', () => {
             documentationSearch.focus();
         }
         requestAnimationFrame(() => focusDocumentationSection(documentationSectionForPath()));
+    }
+
+    window.toggleDocumentation = function () {
+        if (window.openDesktopToolWindow?.('documentation', toggleDocumentationInPage)) return;
+        toggleDocumentationInPage();
     };
 
     if (documentationSearch) {
@@ -976,4 +1096,5 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     setupFloatingWindowLayering();
+    activateDesktopToolPage();
 });

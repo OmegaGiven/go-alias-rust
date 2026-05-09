@@ -206,10 +206,15 @@
                 });
             }
 
-            window.toggleJwtDecoder = function() {
+            function toggleJwtDecoderInPage() {
                 const isVisible = root.style.display === 'flex';
                 root.style.display = isVisible ? 'none' : 'flex';
                 localStorage.setItem('jwt-visible', (!isVisible).toString());
+            }
+
+            window.toggleJwtDecoder = function() {
+                if (window.openDesktopToolWindow?.('jwt', toggleJwtDecoderInPage)) return;
+                toggleJwtDecoderInPage();
             };
 
             const dragHandle = document.getElementById('jwt-drag-handle');

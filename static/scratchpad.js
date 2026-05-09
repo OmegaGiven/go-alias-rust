@@ -173,11 +173,16 @@
         addBtn.addEventListener('click', addPad);
         deleteBtn.addEventListener('click', deleteActivePad);
 
-        window.toggleScratchPad = function() {
+        function toggleScratchPadInPage() {
             const isVisible = root.style.display === 'flex';
             root.style.display = isVisible ? 'none' : 'flex';
             localStorage.setItem(VISIBLE_KEY, (!isVisible).toString());
             if (!isVisible) editor.focus();
+        }
+
+        window.toggleScratchPad = function() {
+            if (window.openDesktopToolWindow?.('scratchpad', toggleScratchPadInPage)) return;
+            toggleScratchPadInPage();
         };
 
         function restorePosition() {

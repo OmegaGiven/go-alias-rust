@@ -21,6 +21,9 @@
         const importThemeBtn = document.getElementById('import-theme-btn');
         const importThemeFile = document.getElementById('import-theme-file');
         const exportThemeBtn = document.getElementById('export-theme-btn');
+        const themeChannel = typeof BroadcastChannel !== 'undefined'
+            ? new BroadcastChannel('ogdevdesk-theme')
+            : null;
 
         if (returnToInput) {
             returnToInput.value = window.location.pathname + window.location.search;
@@ -184,7 +187,7 @@
             }
         }
 
-        window.toggleSettings = function() {
+        function toggleSettingsInPage() {
             if (settings.style.display === 'none') {
                 settings.style.display = 'flex';
                 localStorage.setItem('settings-visible', 'true');
@@ -192,9 +195,18 @@
                 settings.style.display = 'none';
                 localStorage.setItem('settings-visible', 'false');
             }
+        }
+
+        window.toggleSettings = function() {
+            if (window.openDesktopToolWindow?.('appearance', toggleSettingsInPage)) return;
+            toggleSettingsInPage();
         };
 
-        const applyTheme = () => {
+        function setThemeCss(cssVars) {
+            styleElement.innerHTML = cssVars;
+        }
+
+        const applyTheme = ({ broadcast = true } = {}) => {
             syncModeFields();
             let cssVars = ':root {';
             themeInputs.forEach((input) => {
@@ -215,8 +227,20 @@
             cssVars += `--base-font-size: ${mediumVal}px;`;
             cssVars += `--base-font-family: ${fontFamilyInput.value};`;
             cssVars += '}';
-            styleElement.innerHTML = cssVars;
+            setThemeCss(cssVars);
+            if (broadcast) {
+                themeChannel?.postMessage({
+                    type: 'theme-css',
+                    cssVars,
+                });
+            }
         };
+
+        themeChannel?.addEventListener('message', (event) => {
+            const message = event.data || {};
+            if (message.type !== 'theme-css' || typeof message.cssVars !== 'string') return;
+            setThemeCss(message.cssVars);
+        });
 
         themeInputs.forEach((input) => {
             input.addEventListener('input', () => {

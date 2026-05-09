@@ -5,6 +5,7 @@
     <title>{{ title }}</title>
     <link rel="icon" type="image/x-icon" href="/static/favicon.ico?v={{ asset_version }}">
     {{ theme_vars|safe }}
+    <script>window.OGDEVDESK_DESKTOP_MODE = {{ desktop_mode }};</script>
     <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
   </head>
   <body>
@@ -78,7 +79,7 @@ WHERE customer_id = &#123;&#123;customer_id&#125;&#125;
           <section class="documentation-entry" data-doc-section="tools">
             <h3>Floating Tools</h3>
             <p>The hamburger menu opens Appearance, AI Assistant, Calculator, JWT Decoder, and Scratch Pad.</p>
-            <p>Floating windows can stay open while you work. Drag their header to move them, or double-click an outer edge to center supported windows.</p>
+            <p>In the browser, tools open as floating windows inside the page. In the desktop app, tools open as separate native windows you can move around your desktop.</p>
           </section>
           <section class="documentation-entry" data-doc-section="ai">
             <h3>AI Assistant</h3>

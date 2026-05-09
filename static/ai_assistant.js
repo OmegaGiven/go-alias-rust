@@ -46,6 +46,11 @@ document.addEventListener('DOMContentLoaded', () => {
     let isApplyingProfile = false;
     let isSavingSettings = false;
     let saveAgainAfterCurrent = false;
+    let latestRemoteContext = null;
+    const contextChannel = typeof BroadcastChannel !== 'undefined'
+        ? new BroadcastChannel('ogdevdesk-ai-context')
+        : null;
+    const contextWindowId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
     function setStatus(text) {
         if (settingsStatus) settingsStatus.textContent = text || '';
@@ -198,7 +203,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateContextLabels() {
-        const page = currentPageName();
+        const page = latestRemoteContext?.page || currentPageName();
         const pageLabel = contextPageLabel(page);
         const labels = {
             page: `${pageLabel}: Page fields`,
@@ -286,18 +291,26 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    function collectContext() {
-        const page = currentPageName();
+    async function collectContext() {
         const flags = activeFlags();
-        let context = { page, note: 'No page-specific context collector is available.' };
-        if (page === 'sql' && typeof window.getSqlAssistantContext === 'function') {
-            context = window.getSqlAssistantContext(flags);
-        } else if (page === 'requests' && typeof window.getRequestsAssistantContext === 'function') {
-            context = window.getRequestsAssistantContext(flags);
-        } else if (page === 'inspector' && typeof window.getInspectorAssistantContext === 'function') {
-            context = window.getInspectorAssistantContext(flags);
+        let context = null;
+
+        if (!window.OGDEVDESK_DESKTOP_TOOL && hasLocalContextCollector()) {
+            context = collectLocalContext(flags);
+        } else {
+            context = await requestRemoteContext(flags);
         }
-        context = redacted(context);
+
+        if (!context) {
+            const fallbackPage = latestRemoteContext?.page || currentPageName();
+            context = latestRemoteContext || {
+                page: fallbackPage,
+                note: 'No active SQL, Requests, or Inspector page context is available.',
+            };
+        }
+
+        latestRemoteContext = context;
+        const page = context.page || currentPageName();
         const summary = summarizeContext(context, flags);
         if (contextSummary) contextSummary.textContent = summary;
         return { page, context, summary };
@@ -324,6 +337,71 @@ document.addEventListener('DOMContentLoaded', () => {
         if (flags.includeHeaders) parts.push('Headers included with redaction');
         return parts.join(' | ');
     }
+
+    function collectLocalContext(flags = activeFlags()) {
+        const page = currentPageName();
+        let context = { page, note: 'No page-specific context collector is available.' };
+        if (page === 'sql' && typeof window.getSqlAssistantContext === 'function') {
+            context = window.getSqlAssistantContext(flags);
+        } else if (page === 'requests' && typeof window.getRequestsAssistantContext === 'function') {
+            context = window.getRequestsAssistantContext(flags);
+        } else if (page === 'inspector' && typeof window.getInspectorAssistantContext === 'function') {
+            context = window.getInspectorAssistantContext(flags);
+        }
+        return redacted(context);
+    }
+
+    function hasLocalContextCollector() {
+        const page = currentPageName();
+        return (page === 'sql' && typeof window.getSqlAssistantContext === 'function') ||
+            (page === 'requests' && typeof window.getRequestsAssistantContext === 'function') ||
+            (page === 'inspector' && typeof window.getInspectorAssistantContext === 'function');
+    }
+
+    function requestRemoteContext(flags) {
+        if (!contextChannel) return Promise.resolve(null);
+        const requestId = `${contextWindowId}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+        return new Promise((resolve) => {
+            const timeout = window.setTimeout(() => {
+                contextChannel.removeEventListener('message', handleResponse);
+                resolve(null);
+            }, 800);
+
+            function handleResponse(event) {
+                const message = event.data || {};
+                if (message.type !== 'ai-context-response' || message.requestId !== requestId) return;
+                window.clearTimeout(timeout);
+                contextChannel.removeEventListener('message', handleResponse);
+                resolve(message.context || null);
+            }
+
+            contextChannel.addEventListener('message', handleResponse);
+            contextChannel.postMessage({
+                type: 'ai-context-request',
+                requestId,
+                requesterId: contextWindowId,
+                flags,
+            });
+        });
+    }
+
+    contextChannel?.addEventListener('message', (event) => {
+        const message = event.data || {};
+        if (message.type !== 'ai-context-request') return;
+        if (message.requesterId === contextWindowId) return;
+        if (window.OGDEVDESK_DESKTOP_TOOL) return;
+        if (document.visibilityState === 'hidden') return;
+        if (!hasLocalContextCollector()) return;
+
+        const context = collectLocalContext(message.flags || activeFlags());
+        contextChannel.postMessage({
+            type: 'ai-context-response',
+            requestId: message.requestId,
+            responderId: contextWindowId,
+            context,
+        });
+    });
 
     function scheduleSettingsSave({ immediate = false } = {}) {
         if (isApplyingProfile) return;
@@ -494,7 +572,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const pending = appendMessage('assistant', 'Thinking...');
         sendBtn.disabled = true;
 
-        const { page, context, summary } = collectContext();
+        const { page, context, summary } = await collectContext();
         try {
             const response = await fetch('/ai/chat', {
                 method: 'POST',
@@ -576,7 +654,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (focusInput) setTimeout(() => input?.focus(), 0);
     }
 
-    window.toggleAiAssistant = function () {
+    function toggleAiAssistantInPage() {
         const isOpen = assistantWindow.style.display === 'flex';
         if (isOpen) {
             assistantWindow.style.display = 'none';
@@ -587,6 +665,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         openAssistantWindow();
+    }
+
+    window.toggleAiAssistant = function () {
+        if (window.openDesktopToolWindow?.('ai', toggleAiAssistantInPage)) return;
+        toggleAiAssistantInPage();
     };
 
     window.toggleAiSettingsWindow = function () {

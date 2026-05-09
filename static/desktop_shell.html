@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>OGdevDesk</title>
+    <style>
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: #111;
+      }
+
+      iframe {
+        display: block;
+        width: 100%;
+        height: 100%;
+        border: 0;
+        background: transparent;
+      }
+
+      .desktop-shell-error {
+        box-sizing: border-box;
+        min-height: 100%;
+        padding: 24px;
+        color: #eee;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #1f1f1f;
+      }
+    </style>
+  </head>
+  <body>
+    <script>
+      const rawParams = window.location.hash.slice(1) || window.location.search.slice(1);
+      const params = new URLSearchParams(rawParams);
+      const port = params.get('port');
+      const path = params.get('path') || '/requests';
+      const localOrigin = port ? `http://127.0.0.1:${port}` : '';
+
+      function invokeTauri(command, payload = {}) {
+        const invoke = window.__TAURI__?.core?.invoke;
+        if (!invoke) return Promise.reject(new Error('Tauri invoke API is unavailable.'));
+        return invoke(command, payload);
+      }
+
+      if (!port) {
+        document.body.innerHTML = '<div class="desktop-shell-error">Missing desktop app target.</div>';
+      } else {
+        const iframe = document.createElement('iframe');
+        iframe.src = `${localOrigin}${path.startsWith('/') ? path : `/${path}`}`;
+        iframe.title = 'OGdevDesk';
+        document.body.appendChild(iframe);
+      }
+
+      window.addEventListener('message', (event) => {
+        if (!localOrigin || event.origin !== localOrigin) return;
+        const data = event.data || {};
+        if (data.type !== 'ogdevdesk-open-tool' || typeof data.tool !== 'string') return;
+
+        invokeTauri('open_tool_window', { tool: data.tool }).catch((error) => {
+          console.error(`Failed to open desktop ${data.tool} window`, error);
+        });
+      });
+    </script>
+  </body>
+</html>

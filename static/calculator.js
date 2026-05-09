@@ -168,15 +168,55 @@
         // Drag logic for floating calculator
         const calcWindow = document.getElementById('floating-calculator');
         const calcHandle = document.getElementById('calc-drag-handle');
+        let isDragging = false;
+        let currentX = 0;
+        let currentY = 0;
+        let initialX = 0;
+        let initialY = 0;
+        let xOffset = 0;
+        let yOffset = 0;
+
+        function setTranslate(xPos, yPos, el) {
+            if (el) el.style.transform = `translate3d(${xPos}px, ${yPos}px, 0)`;
+        }
+
+        function resetCalculatorPosition() {
+            xOffset = 0;
+            yOffset = 0;
+            currentX = 0;
+            currentY = 0;
+            setTranslate(0, 0, calcWindow);
+            localStorage.setItem('calc-pos', JSON.stringify({x: 0, y: 0}));
+        }
+
+        function ensureCalculatorInViewport() {
+            if (!calcWindow) return;
+            requestAnimationFrame(() => {
+                const rect = calcWindow.getBoundingClientRect();
+                const edge = 24;
+                const isUsable = rect.right > edge
+                    && rect.bottom > edge
+                    && rect.left < window.innerWidth - edge
+                    && rect.top < window.innerHeight - edge;
+
+                if (!isUsable) {
+                    resetCalculatorPosition();
+                }
+            });
+        }
+
         if (calcWindow && calcHandle) {
-            let isDragging = false, currentX, currentY, initialX, initialY, xOffset = 0, yOffset = 0;
-            
             // Restore position from localStorage
             const savedPos = localStorage.getItem('calc-pos');
             if (savedPos) {
-                const {x, y} = JSON.parse(savedPos);
-                xOffset = x; yOffset = y;
-                setTranslate(x, y, calcWindow);
+                try {
+                    const {x, y} = JSON.parse(savedPos);
+                    xOffset = Number(x) || 0;
+                    yOffset = Number(y) || 0;
+                    setTranslate(xOffset, yOffset, calcWindow);
+                } catch (_) {
+                    localStorage.removeItem('calc-pos');
+                }
             }
 
             calcHandle.addEventListener('mousedown', dragStart);
@@ -228,19 +268,32 @@
                 isDragging = false;
                 localStorage.setItem('calc-pos', JSON.stringify({x: xOffset, y: yOffset}));
             }
-            function setTranslate(xPos, yPos, el) { el.style.transform = `translate3d(${xPos}px, ${yPos}px, 0)`; }
         }
 
-        window.toggleCalculator = function() {
+        function toggleCalculatorInPage() {
             const calc = document.getElementById('floating-calculator');
             if (!calc) return;
             const isVisible = calc.style.display === 'flex';
             calc.style.display = isVisible ? 'none' : 'flex';
+            if (!isVisible && window.bringFloatingWindowToFront) {
+                window.bringFloatingWindowToFront(calc);
+            }
+            if (!isVisible) {
+                ensureCalculatorInViewport();
+            }
             localStorage.setItem('calc-visible', !isVisible);
+        }
+
+        window.toggleCalculator = function() {
+            if (window.openDesktopToolWindow?.('calculator', toggleCalculatorInPage)) return;
+            toggleCalculatorInPage();
         };
 
         // Restore visibility
         if (localStorage.getItem('calc-visible') === 'true') {
             const calc = document.getElementById('floating-calculator');
-            if (calc) calc.style.display = 'flex';
+            if (calc) {
+                calc.style.display = 'flex';
+                ensureCalculatorInViewport();
+            }
         }

@@ -1,6 +1,7 @@
 use actix_files::Files;
 use actix_web::{
-    App, HttpResponse, HttpServer, Responder, get, middleware::DefaultHeaders, web::Data,
+    App, HttpResponse, HttpServer, Responder, get, middleware::DefaultHeaders, post, web::Data,
+    web::Path as WebPath,
 };
 use std::{
     collections::HashMap,
@@ -33,12 +34,17 @@ static SHORTCUTS_FILE: &str = "shortcuts.json";
 static HIDDEN_SHORTCUTS_FILE: &str = "hidden-shortcuts.json";
 static WORK_SHORTCUTS_FILE: &str = "work-shortcuts.json";
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ServerConfig {
     pub bind_host: String,
     pub port: u16,
     pub static_dir: String,
+    pub desktop_tool_opener: Option<DesktopToolOpener>,
+    pub desktop_tool_closer: Option<DesktopToolCloser>,
 }
+
+pub type DesktopToolOpener = Arc<dyn Fn(String) -> Result<(), String> + Send + Sync + 'static>;
+pub type DesktopToolCloser = Arc<dyn Fn(String) -> Result<(), String> + Send + Sync + 'static>;
 
 impl Default for ServerConfig {
     fn default() -> Self {
@@ -46,6 +52,8 @@ impl Default for ServerConfig {
             bind_host: "0.0.0.0".to_string(),
             port: 80,
             static_dir: "./static".to_string(),
+            desktop_tool_opener: None,
+            desktop_tool_closer: None,
         }
     }
 }
@@ -66,7 +74,19 @@ impl ServerConfig {
             bind_host: "127.0.0.1".to_string(),
             port,
             static_dir: static_dir.into(),
+            desktop_tool_opener: None,
+            desktop_tool_closer: None,
         }
+    }
+
+    pub fn with_desktop_tool_handlers(
+        mut self,
+        opener: DesktopToolOpener,
+        closer: DesktopToolCloser,
+    ) -> Self {
+        self.desktop_tool_opener = Some(opener);
+        self.desktop_tool_closer = Some(closer);
+        self
     }
 }
 
@@ -131,6 +151,90 @@ async fn index(state: Data<Arc<AppState>>) -> impl Responder {
     HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")
         .body(final_html)
+}
+
+#[get("/desktop-tool/{tool}")]
+async fn desktop_tool(tool: WebPath<String>, state: Data<Arc<AppState>>) -> impl Responder {
+    let tool = tool.into_inner();
+    let title = match tool.as_str() {
+        "appearance" => "Appearance",
+        "calculator" => "Calculator",
+        "jwt" => "JWT Decoder",
+        "scratchpad" => "Scratch Pad",
+        "ai" => "AI Assistant",
+        "documentation" => "Documentation",
+        _ => {
+            return HttpResponse::NotFound()
+                .content_type("text/plain; charset=utf-8")
+                .body("Unknown desktop tool");
+        }
+    };
+
+    let current_theme = state
+        .current_theme
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone();
+    let saved_themes = state
+        .saved_themes
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone();
+    let body = format!(
+        r#"<script>window.OGDEVDESK_DESKTOP_TOOL = "{}";</script>"#,
+        htmlescape::encode_attribute(&tool)
+    );
+
+    HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .body(render_base_page_with_options(
+            title,
+            &body,
+            &current_theme,
+            &saved_themes,
+            false,
+        ))
+}
+
+#[post("/desktop-open-tool/{tool}")]
+async fn desktop_open_tool(
+    tool: WebPath<String>,
+    opener: Data<Option<DesktopToolOpener>>,
+) -> impl Responder {
+    let Some(open_tool) = opener.get_ref().as_ref() else {
+        return HttpResponse::NotFound()
+            .content_type("application/json")
+            .body(r#"{"ok":false,"error":"Desktop tool windows are only available in desktop mode."}"#);
+    };
+
+    match open_tool(tool.into_inner()) {
+        Ok(()) => HttpResponse::Ok().json(serde_json::json!({ "ok": true })),
+        Err(err) => HttpResponse::BadRequest().json(serde_json::json!({
+            "ok": false,
+            "error": err
+        })),
+    }
+}
+
+#[post("/desktop-close-tool/{tool}")]
+async fn desktop_close_tool(
+    tool: WebPath<String>,
+    closer: Data<Option<DesktopToolCloser>>,
+) -> impl Responder {
+    let Some(close_tool) = closer.get_ref().as_ref() else {
+        return HttpResponse::NotFound().json(serde_json::json!({
+            "ok": false,
+            "error": "Desktop tool windows are only available in desktop mode."
+        }));
+    };
+
+    match close_tool(tool.into_inner()) {
+        Ok(()) => HttpResponse::Ok().json(serde_json::json!({ "ok": true })),
+        Err(err) => HttpResponse::BadRequest().json(serde_json::json!({
+            "ok": false,
+            "error": err
+        })),
+    }
 }
 
 async fn prepare_state() -> Arc<AppState> {
@@ -199,12 +303,19 @@ pub async fn run_server(config: ServerConfig) -> std::io::Result<()> {
     let bind_host = config.bind_host.clone();
     let port = config.port;
     let static_dir = config.static_dir.clone();
+    let desktop_tool_opener = config.desktop_tool_opener.clone();
+    let desktop_tool_closer = config.desktop_tool_closer.clone();
 
     HttpServer::new(move || {
         App::new()
             .wrap(DefaultHeaders::new().add(("Cache-Control", "no-store")))
             .app_data(Data::new(state.clone()))
+            .app_data(Data::new(desktop_tool_opener.clone()))
+            .app_data(Data::new(desktop_tool_closer.clone()))
             .service(index)
+            .service(desktop_tool)
+            .service(desktop_open_tool)
+            .service(desktop_close_tool)
             .service(request_get)
             .service(request_save)
             .service(request_delete)

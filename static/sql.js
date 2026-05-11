@@ -70,7 +70,7 @@ const mainContent = document.getElementById('main');
           const functionNames = Array.isArray(dbFunctions)
               ? dbFunctions.map((fn) => fn.name || fn.signature || '').filter(Boolean)
               : [];
-          const outputTable = output?.querySelector('table');
+          const outputTable = getActiveOutputTable();
           const outputHeaders = outputTable
               ? Array.from(outputTable.querySelectorAll('thead th')).map((th) => th.innerText.trim()).filter(Boolean)
               : [];
@@ -1220,6 +1220,19 @@ const mainContent = document.getElementById('main');
       let activeSqlJobId = '';
       let sqlJobPollTimer = null;
 
+      function getTableBodyRows(table) {
+          if (!table) return [];
+          const tbodyRows = Array.from(table.querySelectorAll('tbody tr'));
+          if (tbodyRows.length > 0) return tbodyRows;
+          return Array.from(table.querySelectorAll('tr')).filter((row) => !row.closest('thead'));
+      }
+
+      function getActiveOutputTable() {
+          const tables = Array.from(output?.querySelectorAll('table') || [])
+              .filter((table) => !table.closest('.sql-sticky-header-clone'));
+          return tables.find((table) => getTableBodyRows(table).length > 0) || tables[0] || null;
+      }
+
       function currentRowCountText() {
           return document.getElementById('row-count')?.innerText || '';
       }
@@ -1338,10 +1351,10 @@ const mainContent = document.getElementById('main');
       }
 
       function getOutputRowCount() {
-          const table = output.querySelector('table');
+          const table = getActiveOutputTable();
           if (!table) return '';
 
-          const rows = table.querySelectorAll('tbody tr');
+          const rows = getTableBodyRows(table);
           return rows.length + " rows";
       }
 
@@ -1351,7 +1364,7 @@ const mainContent = document.getElementById('main');
               outputFilterInput.value = '';
           }
 
-          const table = output.querySelector('table');
+          const table = getActiveOutputTable();
           if (table) {
               makeTableInteractable(table);
           }
@@ -1716,8 +1729,8 @@ const mainContent = document.getElementById('main');
       }
 
       function getExportRows(table, rowsMode) {
-          const visibleBodyRows = Array.from(table.querySelectorAll('tbody tr'))
-              .filter((row) => row.style.display !== 'none');
+          const visibleBodyRows = getTableBodyRows(table)
+              .filter((row) => !row.hidden && row.style.display !== 'none');
           if (rowsMode === 'selected') {
               return visibleBodyRows.filter((row) => row.classList.contains('selected-row'));
           }
@@ -1725,7 +1738,7 @@ const mainContent = document.getElementById('main');
       }
 
       function exportCurrentResults(mode) {
-          const table = output.querySelector('table');
+          const table = getActiveOutputTable();
           if (!table) return alert('No results to export');
 
           const includeHeaders = mode.endsWith('-headers');
@@ -1778,9 +1791,9 @@ const mainContent = document.getElementById('main');
       // Filtering Logic
       outputFilterInput.addEventListener('input', (e) => {
           const term = e.target.value.toLowerCase();
-          const table = output.querySelector('table');
+          const table = getActiveOutputTable();
           if(!table) return;
-          const rows = table.querySelectorAll('tbody tr');
+          const rows = getTableBodyRows(table);
           
           let visibleCount = 0;
           rows.forEach(row => {
@@ -2251,6 +2264,42 @@ const mainContent = document.getElementById('main');
           saveSqlWorkspaceState();
       };
 
+      function toggleSqlLineComment() {
+          const value = editor.value;
+          const selectionStart = editor.selectionStart;
+          const selectionEnd = editor.selectionEnd;
+          const hasSelection = selectionEnd > selectionStart;
+          const blockStart = value.lastIndexOf('\n', selectionStart - 1) + 1;
+          const adjustedEnd = hasSelection && value[selectionEnd - 1] === '\n'
+              ? selectionEnd - 1
+              : selectionEnd;
+          const nextLineBreak = value.indexOf('\n', adjustedEnd);
+          const blockEnd = nextLineBreak === -1 ? value.length : nextLineBreak;
+          const block = value.slice(blockStart, blockEnd);
+          const lines = block.split('\n');
+          const meaningfulLines = lines.filter((line) => line.trim().length > 0);
+          const shouldUncomment = meaningfulLines.length > 0
+              ? meaningfulLines.every((line) => /^\s*-- ?/.test(line))
+              : /^\s*-- ?/.test(lines[0] || '');
+          const nextLines = lines.map((line) => {
+              if (shouldUncomment) return line.replace(/^(\s*)-- ?/, '$1');
+              return line.replace(/^(\s*)/, '$1-- ');
+          });
+          const nextBlock = nextLines.join('\n');
+          const nextValue = value.slice(0, blockStart) + nextBlock + value.slice(blockEnd);
+          const delta = nextBlock.length - block.length;
+
+          editor.value = nextValue;
+          if (hasSelection) {
+              editor.setSelectionRange(blockStart, blockEnd + delta);
+          } else {
+              const nextCaret = Math.max(blockStart, selectionStart + delta);
+              editor.setSelectionRange(nextCaret, nextCaret);
+          }
+          handleInput();
+          syncScroll();
+      }
+
       const syncScroll = () => {
           backdrop.scrollTop = editor.scrollTop;
           backdrop.scrollLeft = editor.scrollLeft;
@@ -2258,6 +2307,12 @@ const mainContent = document.getElementById('main');
 
       editor.addEventListener('input', handleInput);
       editor.addEventListener('scroll', syncScroll);
+      editor.addEventListener('keydown', (event) => {
+          const isCommentShortcut = (event.ctrlKey || event.metaKey) && !event.altKey && event.code === 'Slash';
+          if (!isCommentShortcut) return;
+          event.preventDefault();
+          toggleSqlLineComment();
+      });
       queryNameInput.addEventListener('input', saveSqlWorkspaceState);
       if (queryFolderInput) {
           queryFolderInput.addEventListener('change', saveSqlWorkspaceState);

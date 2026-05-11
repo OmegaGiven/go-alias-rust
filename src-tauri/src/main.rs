@@ -257,6 +257,15 @@ fn resolve_static_dir(app: &tauri::App) -> String {
         }
     }
 
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            let beside_exe = exe_dir.join("static");
+            if beside_exe.exists() {
+                return beside_exe.to_string_lossy().to_string();
+            }
+        }
+    }
+
     let from_manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("static");

@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const SQL_CONNECTION_GROUP_ORDER_KEY = 'ogdevdesk_sql_connection_group_order';
     const REQUEST_WORKSPACE_TABS_KEY = 'ogdevdesk_request_workspace_tabs';
     const TOP_NAV_ORDER_KEY = 'ogdevdesk_top_nav_order';
+    const TOOL_WINDOW_MODE_KEY = 'ogdevdesk_tool_window_mode';
     let draggedSqlConnectionGroupName = '';
     let draggedTopNavItemName = '';
     const sqlConnectionColors = [
@@ -38,11 +39,53 @@ document.addEventListener('DOMContentLoaded', () => {
         ai: 'floating-ai-assistant',
         documentation: 'floating-documentation',
     };
+    let tauriBridgeRequestId = 0;
+    const tauriBridgeRequests = new Map();
+
+    function getToolWindowMode() {
+        return localStorage.getItem(TOOL_WINDOW_MODE_KEY) === 'detached' ? 'detached' : 'floating';
+    }
+
+    function setToolWindowMode(mode) {
+        const nextMode = mode === 'detached' ? 'detached' : 'floating';
+        localStorage.setItem(TOOL_WINDOW_MODE_KEY, nextMode);
+        document.querySelectorAll('[data-tool-window-mode-control]').forEach((control) => {
+            control.value = nextMode;
+        });
+    }
+
+    function setupToolWindowModeControls() {
+        document.querySelectorAll('[data-tool-window-mode-control]').forEach((control) => {
+            control.value = getToolWindowMode();
+            if (control.dataset.toolWindowModeReady === 'true') return;
+            control.dataset.toolWindowModeReady = 'true';
+            control.addEventListener('change', () => setToolWindowMode(control.value));
+        });
+    }
 
     function tauriInvoke(command, payload = {}) {
-        return window.__TAURI__?.core?.invoke
-            ? window.__TAURI__.core.invoke(command, payload)
-            : null;
+        if (window.__TAURI__?.core?.invoke) {
+            return window.__TAURI__.core.invoke(command, payload);
+        }
+        if (window.OGDEVDESK_DESKTOP_MODE === true && window.parent !== window) {
+            const id = `app-tauri-${Date.now()}-${tauriBridgeRequestId++}`;
+            return new Promise((resolve, reject) => {
+                tauriBridgeRequests.set(id, { resolve, reject });
+                window.parent.postMessage({
+                    type: 'ogdevdesk-tauri-invoke',
+                    id,
+                    command,
+                    payload,
+                }, '*');
+                window.setTimeout(() => {
+                    const pending = tauriBridgeRequests.get(id);
+                    if (!pending) return;
+                    tauriBridgeRequests.delete(id);
+                    pending.reject(new Error('Timed out waiting for the desktop app.'));
+                }, 30000);
+            });
+        }
+        return null;
     }
 
     window.isOgdevdeskDesktop = function () {
@@ -62,8 +105,22 @@ document.addEventListener('DOMContentLoaded', () => {
         return true;
     }
 
+    window.addEventListener('message', (event) => {
+        const data = event.data || {};
+        if (data.type !== 'ogdevdesk-tauri-result' || typeof data.id !== 'string') return;
+        const pending = tauriBridgeRequests.get(data.id);
+        if (!pending) return;
+        tauriBridgeRequests.delete(data.id);
+        if (data.ok) {
+            pending.resolve(data.result);
+        } else {
+            pending.reject(new Error(data.error || 'Desktop command failed.'));
+        }
+    });
+
     window.openDesktopToolWindow = function (tool, fallback) {
         if (!window.isOgdevdeskDesktop() || window.OGDEVDESK_DESKTOP_TOOL) return false;
+        if (getToolWindowMode() !== 'detached') return false;
         const openPromise = tauriInvoke('open_tool_window', { tool });
         if (!openPromise && postDesktopShellMessage({ type: 'ogdevdesk-open-tool', tool })) {
             return true;
@@ -118,6 +175,72 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         return true;
     };
+
+    function setupDesktopUpdater() {
+        const updateButton = document.getElementById('desktop-update-check-btn');
+        if (!updateButton) return;
+        updateButton.hidden = !window.isOgdevdeskDesktop();
+        if (!window.isOgdevdeskDesktop() || updateButton.dataset.updateReady === 'true') return;
+        updateButton.dataset.updateReady = 'true';
+
+        updateButton.addEventListener('click', async () => {
+            const originalText = updateButton.textContent;
+            updateButton.disabled = true;
+            updateButton.textContent = 'Checking...';
+            try {
+                const info = await tauriInvoke('check_for_update');
+                if (!info?.available) {
+                    window.alert(`OGdevDesk is up to date${info?.current_version ? ` (${info.current_version})` : ''}.`);
+                    return;
+                }
+
+                const lines = [
+                    `Version ${info.version} is available.`,
+                    info.body ? `\n${info.body}` : '',
+                    '\nInstall it now? OGdevDesk will restart after installation.',
+                ];
+                if (!window.confirm(lines.join('\n'))) return;
+
+                updateButton.textContent = 'Installing...';
+                await tauriInvoke('install_update');
+            } catch (error) {
+                window.alert(error?.message || String(error));
+            } finally {
+                updateButton.disabled = false;
+                updateButton.textContent = originalText;
+            }
+        });
+    }
+
+    function openUrlInSystemBrowser(url) {
+        if (!window.isOgdevdeskDesktop()) return false;
+        const openPromise = tauriInvoke('open_url_in_browser', { url });
+        if (!openPromise) return false;
+        openPromise.catch((error) => {
+            window.alert(error?.message || String(error));
+        });
+        return true;
+    }
+
+    function setupDesktopAliasLinks() {
+        if (!window.isOgdevdeskDesktop()) return;
+        document.addEventListener('click', (event) => {
+            const link = event.target.closest('a');
+            if (!link || !link.closest('.shortcut-sections')) return;
+            const href = link.getAttribute('href');
+            if (!href || href.startsWith('#') || href.startsWith('javascript:')) return;
+
+            let targetUrl = href;
+            if (href.startsWith('/')) {
+                targetUrl = new URL(href, window.location.origin).toString();
+            }
+
+            if (!/^https?:\/\//i.test(targetUrl)) return;
+
+            event.preventDefault();
+            openUrlInSystemBrowser(targetUrl);
+        });
+    }
 
     function bringFloatingWindowToFront(windowEl) {
         if (!windowEl) return;
@@ -1096,5 +1219,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     setupFloatingWindowLayering();
+    setupToolWindowModeControls();
+    setupDesktopUpdater();
+    setupDesktopAliasLinks();
+    window.addEventListener('storage', (event) => {
+        if (event.key === TOOL_WINDOW_MODE_KEY) setupToolWindowModeControls();
+    });
     activateDesktopToolPage();
 });

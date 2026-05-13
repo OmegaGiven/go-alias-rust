@@ -39,6 +39,7 @@
       const port = params.get('port');
       const path = params.get('path') || '/requests';
       const localOrigin = port ? `http://127.0.0.1:${port}` : '';
+      let appFrame = null;
 
       function invokeTauri(command, payload = {}) {
         const invoke = window.__TAURI__?.core?.invoke;
@@ -49,20 +50,41 @@
       if (!port) {
         document.body.innerHTML = '<div class="desktop-shell-error">Missing desktop app target.</div>';
       } else {
-        const iframe = document.createElement('iframe');
-        iframe.src = `${localOrigin}${path.startsWith('/') ? path : `/${path}`}`;
-        iframe.title = 'OGdevDesk';
-        document.body.appendChild(iframe);
+        appFrame = document.createElement('iframe');
+        appFrame.src = `${localOrigin}${path.startsWith('/') ? path : `/${path}`}`;
+        appFrame.title = 'OGdevDesk';
+        document.body.appendChild(appFrame);
       }
 
       window.addEventListener('message', (event) => {
         if (!localOrigin || event.origin !== localOrigin) return;
         const data = event.data || {};
-        if (data.type !== 'ogdevdesk-open-tool' || typeof data.tool !== 'string') return;
+        if (data.type === 'ogdevdesk-open-tool' && typeof data.tool === 'string') {
+          invokeTauri('open_tool_window', { tool: data.tool }).catch((error) => {
+            console.error(`Failed to open desktop ${data.tool} window`, error);
+          });
+          return;
+        }
 
-        invokeTauri('open_tool_window', { tool: data.tool }).catch((error) => {
-          console.error(`Failed to open desktop ${data.tool} window`, error);
-        });
+        if (data.type !== 'ogdevdesk-tauri-invoke' || typeof data.command !== 'string') return;
+
+        invokeTauri(data.command, data.payload || {})
+          .then((result) => {
+            appFrame?.contentWindow?.postMessage({
+              type: 'ogdevdesk-tauri-result',
+              id: data.id,
+              ok: true,
+              result,
+            }, localOrigin);
+          })
+          .catch((error) => {
+            appFrame?.contentWindow?.postMessage({
+              type: 'ogdevdesk-tauri-result',
+              id: data.id,
+              ok: false,
+              error: error?.message || String(error),
+            }, localOrigin);
+          });
       });
     </script>
   </body>

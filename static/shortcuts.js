@@ -32,6 +32,44 @@
                     localStorage.setItem(LOCAL_SHORTCUT_GROUP_NAMES_KEY, JSON.stringify(cleanNames));
                 }
 
+                function mergeShortcutBucket(storageKey, incoming) {
+                    if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) return;
+                    const bucket = readShortcutBucket(storageKey);
+                    Object.entries(incoming).forEach(([key, value]) => {
+                        const cleanKey = String(key || '').trim();
+                        const cleanValue = String(value || '').trim();
+                        if (!cleanKey || !cleanValue) return;
+                        bucket[cleanKey] = cleanValue;
+                    });
+                    writeShortcutBucket(storageKey, bucket);
+                }
+
+                function mergeLocalShortcutGroups(incomingGroups, incomingGroupNames) {
+                    const shortcutGroups = readShortcutBucket(LOCAL_SHORTCUT_GROUPS_KEY);
+                    if (incomingGroups && typeof incomingGroups === 'object' && !Array.isArray(incomingGroups)) {
+                        Object.entries(incomingGroups).forEach(([key, group]) => {
+                            const cleanKey = String(key || '').trim();
+                            const cleanGroup = String(group || '').trim();
+                            if (!cleanKey) return;
+                            if (cleanGroup) {
+                                shortcutGroups[cleanKey] = cleanGroup;
+                            } else {
+                                delete shortcutGroups[cleanKey];
+                            }
+                        });
+                    }
+                    writeShortcutBucket(LOCAL_SHORTCUT_GROUPS_KEY, shortcutGroups);
+
+                    if (Array.isArray(incomingGroupNames)) {
+                        const names = readShortcutGroupNames();
+                        incomingGroupNames.forEach((name) => {
+                            const cleanName = String(name || '').trim();
+                            if (cleanName) names.push(cleanName);
+                        });
+                        writeShortcutGroupNames(names);
+                    }
+                }
+
                 function buildShortcutPath(key) {
                     return '/' + encodeURIComponent(key).replace(/%2F/g, '/');
                 }
@@ -231,6 +269,93 @@
                     });
                 }
 
+                function downloadAliasExport(exportData) {
+                    const contents = JSON.stringify(exportData, null, 2);
+                    const blob = new Blob([contents], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    const stamp = new Date().toISOString().slice(0, 19).replaceAll(':', '-');
+                    link.href = url;
+                    link.download = `ogdevdesk-aliases-${stamp}.json`;
+                    document.body.appendChild(link);
+                    link.click();
+                    link.remove();
+                    URL.revokeObjectURL(url);
+                }
+
+                async function exportAliases() {
+                    const response = await fetch('/shortcuts/export');
+                    if (!response.ok) throw new Error(await response.text());
+                    const serverExport = await response.json();
+                    downloadAliasExport({
+                        version: 1,
+                        exportedAt: new Date().toISOString(),
+                        server: serverExport.server || {},
+                        local: {
+                            shortcuts: readShortcutBucket(LOCAL_SHORTCUTS_KEY),
+                            hiddenShortcuts: readShortcutBucket(LOCAL_HIDDEN_SHORTCUTS_KEY),
+                            groups: readShortcutBucket(LOCAL_SHORTCUT_GROUPS_KEY),
+                            groupNames: readShortcutGroupNames(),
+                        },
+                    });
+                }
+
+                async function importAliases(file) {
+                    const raw = await file.text();
+                    const parsed = JSON.parse(raw);
+                    const serverPayload = parsed.server || {};
+                    const localPayload = parsed.local || {};
+
+                    const response = await fetch('/shortcuts/import', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(serverPayload),
+                    });
+                    if (!response.ok) throw new Error(await response.text());
+
+                    mergeShortcutBucket(LOCAL_SHORTCUTS_KEY, localPayload.shortcuts);
+                    mergeShortcutBucket(LOCAL_HIDDEN_SHORTCUTS_KEY, localPayload.hiddenShortcuts);
+                    mergeLocalShortcutGroups(localPayload.groups, localPayload.groupNames);
+                    window.location.reload();
+                }
+
+                function bindAliasImportExport() {
+                    const exportButton = document.getElementById('shortcut-export-btn');
+                    const importButton = document.getElementById('shortcut-import-btn');
+                    const importFile = document.getElementById('shortcut-import-file');
+
+                    if (exportButton) {
+                        exportButton.addEventListener('click', async () => {
+                            exportButton.disabled = true;
+                            try {
+                                await exportAliases();
+                            } catch (error) {
+                                window.alert(`Could not export aliases: ${error.message}`);
+                            } finally {
+                                exportButton.disabled = false;
+                            }
+                        });
+                    }
+
+                    if (importButton && importFile) {
+                        importButton.addEventListener('click', () => importFile.click());
+                        importFile.addEventListener('change', async () => {
+                            const file = importFile.files && importFile.files[0];
+                            importFile.value = '';
+                            if (!file) return;
+                            if (!window.confirm('Import aliases from this file? Existing aliases with the same key will be updated.')) return;
+                            importButton.disabled = true;
+                            try {
+                                await importAliases(file);
+                            } catch (error) {
+                                window.alert(`Could not import aliases: ${error.message}`);
+                            } finally {
+                                importButton.disabled = false;
+                            }
+                        });
+                    }
+                }
+
                 window.resolveLocalShortcutPath = function(reqPath) {
                     const localShortcuts = readShortcutBucket(LOCAL_SHORTCUTS_KEY);
                     const hiddenLocalShortcuts = readShortcutBucket(LOCAL_HIDDEN_SHORTCUTS_KEY);
@@ -256,6 +381,7 @@
 
                 document.addEventListener('DOMContentLoaded', () => {
                     bindLocalGroupForm();
+                    bindAliasImportExport();
                     renderLocalShortcutSections();
                 });
             })();

@@ -64,7 +64,7 @@ or from `src-tauri/`:
 cargo tauri dev
 ```
 
-Desktop mode starts the shared server on `127.0.0.1` using an available local port, then opens a native Tauri window pointed at that server. The desktop database defaults to the operating system app-data directory and can still be overridden with `OGDEVDESK_DB_PATH`.
+Desktop mode starts the shared server on `127.0.0.1`, first trying port `80` so hosts-file aliases such as `http://go/alias` can work from other local browsers. If port `80` is already in use or the OS denies permission, it falls back to an available local port and opens the native Tauri window pointed at that server. The desktop database defaults to the operating system app-data directory and can still be overridden with `OGDEVDESK_DB_PATH`.
 
 In desktop mode, the hamburger-menu tools open as separate native windows:
 
@@ -78,6 +78,32 @@ Documentation
 ```
 
 The browser/server version keeps those tools as in-page floating windows.
+
+### Desktop Self Updates
+
+The desktop build includes a `Check for Updates` action in the hamburger menu. It is only shown inside the Tauri desktop app. The browser/server build does not self-update because it is normally deployed as a service, container, or manually managed binary.
+
+Tauri requires signed updater artifacts before an installed app can apply updates. To finish release setup:
+
+```sh
+cargo tauri signer generate -w ~/.tauri/ogdevdesk.key
+```
+
+Copy the generated public key into `src-tauri/tauri.conf.json` under `plugins.updater.pubkey`. Keep the private key out of the repo and use it only in the release build environment:
+
+```sh
+export TAURI_SIGNING_PRIVATE_KEY="$HOME/.tauri/ogdevdesk.key"
+export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
+npm run tauri:build
+```
+
+The release must publish the generated updater bundles, their `.sig` files, and a `latest.json` file at:
+
+```text
+https://github.com/OmegaGiven/OGdevDesk/releases/latest/download/latest.json
+```
+
+Until the real public key and signed artifacts are published, `Check for Updates` will report that desktop updates are not fully configured.
 
 ## Appearance Themes
 
@@ -137,6 +163,8 @@ Then run the app on port 80:
 ```sh
 PORT=80 cargo run
 ```
+
+The desktop app also tries to use `127.0.0.1:80` on startup. If port 80 is available and the OS allows the bind, `http://go/` and `http://go/<alias>` will work from other browsers on the same machine. If port 80 is blocked, occupied, or requires elevated permissions, desktop mode falls back to an internal available port; the desktop app still works, but other browsers must use that explicit port.
 
 or run on another port and include it in the URL:
 

@@ -1,5 +1,5 @@
 use actix_web::{
-    HttpResponse, Responder, get,
+    HttpRequest, HttpResponse, Responder, get,
     web::{self, Data},
 };
 use htmlescape::encode_minimal;
@@ -12,6 +12,86 @@ use crate::app_state::Theme;
 use crate::base_page::{
     render_base_page_with_options, render_inline_add_shortcut_button, static_asset,
 };
+
+pub struct AliasAccessInfo {
+    pub port: String,
+    pub current_url: String,
+    pub custom_host_url: String,
+}
+
+pub fn alias_access_info_from_request(req: &HttpRequest) -> AliasAccessInfo {
+    let connection_info = req.connection_info();
+    let scheme = connection_info.scheme().to_string();
+    let host = connection_info.host().to_string();
+    let port = host_port(&host).unwrap_or_else(|| {
+        if scheme == "https" {
+            "443".to_string()
+        } else {
+            "80".to_string()
+        }
+    });
+    let custom_host = if (scheme == "http" && port == "80") || (scheme == "https" && port == "443") {
+        "<custom-host>".to_string()
+    } else {
+        format!("<custom-host>:{port}")
+    };
+
+    AliasAccessInfo {
+        port,
+        current_url: format!("{scheme}://{host}/<alias>"),
+        custom_host_url: format!("{scheme}://{custom_host}/<alias>"),
+    }
+}
+
+fn host_port(host: &str) -> Option<String> {
+    if let Some(without_opening) = host.strip_prefix('[') {
+        if let Some(port_start) = without_opening.find("]:") {
+            return Some(without_opening[port_start + 2..].to_string());
+        }
+        return None;
+    }
+
+    let (_, port) = host.rsplit_once(':')?;
+    if port.chars().all(|ch| ch.is_ascii_digit()) {
+        Some(port.to_string())
+    } else {
+        None
+    }
+}
+
+fn alias_access_panel(access_info: Option<&AliasAccessInfo>) -> String {
+    let Some(info) = access_info else {
+        return String::new();
+    };
+
+    format!(
+        r#"
+        <section class="shortcut-access-info">
+            <div>
+                <h2>Alias Server</h2>
+                <p>Replace <code>&lt;alias&gt;</code> with an alias key such as <code>gh</code>. Custom hostnames require a hosts-file or DNS entry.</p>
+            </div>
+            <div class="shortcut-access-grid">
+                <div class="shortcut-access-item">
+                    <span>Hosted Port</span>
+                    <code>{}</code>
+                </div>
+                <div class="shortcut-access-item">
+                    <span>Direct Browser URL</span>
+                    <code>{}</code>
+                </div>
+                <div class="shortcut-access-item">
+                    <span>Custom Hostname URL</span>
+                    <code>{}</code>
+                </div>
+            </div>
+        </section>
+        "#,
+        encode_minimal(&info.port),
+        encode_minimal(&info.current_url),
+        encode_minimal(&info.custom_host_url)
+    )
+}
 
 fn normalize_group_name(group: Option<&String>) -> String {
     group
@@ -171,19 +251,27 @@ pub fn render_home_shortcuts_content(
     global_shortcuts: &HashMap<String, String>,
     shortcut_groups: &HashMap<String, String>,
     group_names: &[String],
+    access_info: Option<&AliasAccessInfo>,
 ) -> String {
     format!(
         r#"
         <link rel="stylesheet" href="{}">
         <section class="shortcut-home-intro">
             <p>Type a shortcut key into the URL bar (e.g., <code>/gh</code>) to go directly to the destination.</p>
-            {}
+            <div class="shortcut-home-actions">
+                {}
+                <button type="button" class="form-submit-btn shortcut-export-btn" id="shortcut-export-btn">Export Aliases</button>
+                <button type="button" class="form-submit-btn shortcut-import-btn" id="shortcut-import-btn">Import Aliases</button>
+                <input type="file" id="shortcut-import-file" accept="application/json,.json,.ogdevdesk-aliases" hidden>
+            </div>
         </section>
+        {}
         {}
         <script src="{}" defer></script>
         "#,
         static_asset("shortcuts.css"),
         render_inline_add_shortcut_button(),
+        alias_access_panel(access_info),
         render_shortcuts_table(global_shortcuts, shortcut_groups, group_names),
         static_asset("shortcuts.js")
     )
@@ -193,13 +281,18 @@ pub fn not_found_page(
     global_shortcuts: &HashMap<String, String>,
     shortcut_groups: &HashMap<String, String>,
     group_names: &[String],
+    access_info: Option<&AliasAccessInfo>,
     requested_path: &str,
     current_theme: &Theme,
     saved_themes: &HashMap<String, Theme>,
 ) -> String {
     let requested_path_display = encode_minimal(requested_path);
-    let home_content =
-        render_home_shortcuts_content(global_shortcuts, shortcut_groups, group_names);
+    let home_content = render_home_shortcuts_content(
+        global_shortcuts,
+        shortcut_groups,
+        group_names,
+        access_info,
+    );
 
     let content = format!(
         r#"
@@ -230,7 +323,11 @@ pub async fn load_visible_shortcut_groups() -> (HashMap<String, String>, Vec<Str
 }
 
 #[get("/{tail:.*}")]
-pub async fn go(path: web::Path<String>, state: Data<Arc<AppState>>) -> impl Responder {
+pub async fn go(
+    req: HttpRequest,
+    path: web::Path<String>,
+    state: Data<Arc<AppState>>,
+) -> impl Responder {
     let req_path = path.into_inner();
 
     let shortcuts = state.shortcuts.lock().unwrap().clone();
@@ -270,6 +367,7 @@ pub async fn go(path: web::Path<String>, state: Data<Arc<AppState>>) -> impl Res
     let mut combined_shortcuts = shortcuts;
     combined_shortcuts.extend(work_shortcuts);
     let (shortcut_groups, group_names) = load_visible_shortcut_groups().await;
+    let access_info = alias_access_info_from_request(&req);
 
     HttpResponse::NotFound()
         .content_type("text/html; charset=utf-8")
@@ -277,6 +375,7 @@ pub async fn go(path: web::Path<String>, state: Data<Arc<AppState>>) -> impl Res
             &combined_shortcuts,
             &shortcut_groups,
             &group_names,
+            Some(&access_info),
             &req_path,
             &current_theme,
             &saved_themes,

@@ -5,7 +5,8 @@
 }
 
 .shortcut-section,
-.shortcut-home-intro {
+.shortcut-home-intro,
+.shortcut-access-info {
     background: var(--secondary-bg);
     border: 1px solid var(--border-color);
     border-radius: 8px;
@@ -15,7 +16,9 @@
 
 .shortcut-section h2,
 .shortcut-section p,
-.shortcut-home-intro p {
+.shortcut-home-intro p,
+.shortcut-access-info h2,
+.shortcut-access-info p {
     margin: 0 0 8px 0;
 }
 
@@ -77,8 +80,69 @@
     line-height: 1.5;
 }
 
+.shortcut-home-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.shortcut-home-actions .form-submit-btn {
+    margin: 0;
+    white-space: nowrap;
+}
+
 .shortcut-home-intro .inline-add-shortcut {
     flex: 0 0 auto;
+}
+
+.shortcut-access-info {
+    display: grid;
+    grid-template-columns: minmax(180px, 0.75fr) minmax(260px, 1.5fr);
+    align-items: start;
+    gap: 16px;
+}
+
+.shortcut-access-info h2 {
+    font-size: var(--font-size-medium);
+}
+
+.shortcut-access-info p {
+    color: var(--muted-text);
+    font-size: var(--font-size-small);
+    line-height: 1.4;
+}
+
+.shortcut-access-grid {
+    display: grid;
+    gap: 6px;
+}
+
+.shortcut-access-item {
+    display: grid;
+    grid-template-columns: 130px minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    font-size: var(--font-size-small);
+}
+
+.shortcut-access-item span {
+    color: var(--muted-text);
+}
+
+.shortcut-access-item code {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-color);
+    background: var(--primary-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 3px 6px;
 }
 
 .shortcut-grid {
@@ -219,6 +283,10 @@
         flex-direction: column;
     }
 
+    .shortcut-home-actions {
+        justify-content: flex-start;
+    }
+
     .shortcut-create-group-form {
         align-items: stretch;
         flex-direction: column;
@@ -227,5 +295,10 @@
     .shortcut-create-group-form input,
     .shortcut-create-group-form .form-submit-btn {
         width: 100%;
+    }
+
+    .shortcut-access-info,
+    .shortcut-access-item {
+        grid-template-columns: 1fr;
     }
 }

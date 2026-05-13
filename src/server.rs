@@ -1,11 +1,12 @@
 use actix_files::Files;
 use actix_web::{
-    App, HttpResponse, HttpServer, Responder, get, middleware::DefaultHeaders, post, web::Data,
-    web::Path as WebPath,
+    App, HttpRequest, HttpResponse, HttpServer, Responder, get, middleware::DefaultHeaders, post,
+    web::Data, web::Path as WebPath,
 };
 use std::{
     collections::HashMap,
     fs,
+    net::TcpListener,
     sync::{Arc, Mutex},
 };
 
@@ -16,11 +17,14 @@ use crate::app_state::AppState;
 use crate::base_page::render_base_page_with_options;
 use crate::elements::calculator::calculator_get;
 use crate::elements::shortcut::{
-    add_shortcut, create_shortcut_group, delete_shortcut, move_shortcut_to_group,
+    add_shortcut, create_shortcut_group, delete_shortcut, export_shortcuts, import_shortcuts,
+    move_shortcut_to_group,
 };
 use crate::elements::theme::save_theme;
 use crate::pages::inspector::inspector_get;
-use crate::pages::not_found::{go, load_visible_shortcut_groups, render_home_shortcuts_content};
+use crate::pages::not_found::{
+    alias_access_info_from_request, go, load_visible_shortcut_groups, render_home_shortcuts_content,
+};
 use crate::pages::request::{
     request_cancel, request_create_folder, request_delete, request_delete_folder, request_get,
     request_history_get, request_history_save, request_import_postman, request_move,
@@ -34,13 +38,29 @@ static SHORTCUTS_FILE: &str = "shortcuts.json";
 static HIDDEN_SHORTCUTS_FILE: &str = "hidden-shortcuts.json";
 static WORK_SHORTCUTS_FILE: &str = "work-shortcuts.json";
 
-#[derive(Clone)]
 pub struct ServerConfig {
     pub bind_host: String,
     pub port: u16,
+    pub listener: Option<TcpListener>,
     pub static_dir: String,
     pub desktop_tool_opener: Option<DesktopToolOpener>,
     pub desktop_tool_closer: Option<DesktopToolCloser>,
+}
+
+impl Clone for ServerConfig {
+    fn clone(&self) -> Self {
+        Self {
+            bind_host: self.bind_host.clone(),
+            port: self.port,
+            listener: self
+                .listener
+                .as_ref()
+                .and_then(|listener| listener.try_clone().ok()),
+            static_dir: self.static_dir.clone(),
+            desktop_tool_opener: self.desktop_tool_opener.clone(),
+            desktop_tool_closer: self.desktop_tool_closer.clone(),
+        }
+    }
 }
 
 pub type DesktopToolOpener = Arc<dyn Fn(String) -> Result<(), String> + Send + Sync + 'static>;
@@ -51,6 +71,7 @@ impl Default for ServerConfig {
         Self {
             bind_host: "0.0.0.0".to_string(),
             port: 80,
+            listener: None,
             static_dir: "./static".to_string(),
             desktop_tool_opener: None,
             desktop_tool_closer: None,
@@ -73,10 +94,16 @@ impl ServerConfig {
         Self {
             bind_host: "127.0.0.1".to_string(),
             port,
+            listener: None,
             static_dir: static_dir.into(),
             desktop_tool_opener: None,
             desktop_tool_closer: None,
         }
+    }
+
+    pub fn with_listener(mut self, listener: TcpListener) -> Self {
+        self.listener = Some(listener);
+        self
     }
 
     pub fn with_desktop_tool_handlers(
@@ -112,7 +139,7 @@ async fn load_shortcuts_doc(key: &str, path: &str) -> HashMap<String, String> {
 }
 
 #[get("/")]
-async fn index(state: Data<Arc<AppState>>) -> impl Responder {
+async fn index(req: HttpRequest, state: Data<Arc<AppState>>) -> impl Responder {
     let shortcuts = state
         .shortcuts
         .lock()
@@ -138,8 +165,13 @@ async fn index(state: Data<Arc<AppState>>) -> impl Responder {
     combined_shortcuts.extend(work_shortcuts);
 
     let (shortcut_groups, group_names) = load_visible_shortcut_groups().await;
-    let full_page_content =
-        render_home_shortcuts_content(&combined_shortcuts, &shortcut_groups, &group_names);
+    let access_info = alias_access_info_from_request(&req);
+    let full_page_content = render_home_shortcuts_content(
+        &combined_shortcuts,
+        &shortcut_groups,
+        &group_names,
+        Some(&access_info),
+    );
     let final_html = render_base_page_with_options(
         "Aliases",
         &full_page_content,
@@ -306,7 +338,7 @@ pub async fn run_server(config: ServerConfig) -> std::io::Result<()> {
     let desktop_tool_opener = config.desktop_tool_opener.clone();
     let desktop_tool_closer = config.desktop_tool_closer.clone();
 
-    HttpServer::new(move || {
+    let server = HttpServer::new(move || {
         App::new()
             .wrap(DefaultHeaders::new().add(("Cache-Control", "no-store")))
             .app_data(Data::new(state.clone()))
@@ -373,14 +405,21 @@ pub async fn run_server(config: ServerConfig) -> std::io::Result<()> {
             .service(Files::new("/static", static_dir.clone()).prefer_utf8(true))
             .service(add_shortcut)
             .service(delete_shortcut)
+            .service(export_shortcuts)
+            .service(import_shortcuts)
             .service(create_shortcut_group)
             .service(move_shortcut_to_group)
             .service(save_theme)
             .service(go)
-    })
-    .bind((bind_host, port))?
-    .run()
-    .await
+    });
+
+    let server = if let Some(listener) = config.listener {
+        server.listen(listener)?
+    } else {
+        server.bind((bind_host, port))?
+    };
+
+    server.run().await
 }
 
 pub fn run_server_blocking(config: ServerConfig) -> std::io::Result<()> {

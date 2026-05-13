@@ -1,8 +1,8 @@
 use actix_web::{
-    HttpResponse, Responder, post,
-    web::{Data, Form},
+    HttpResponse, Responder, get, post,
+    web::{Data, Form, Json},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fs, io, sync::Arc};
 
 use crate::app_db;
@@ -41,11 +41,179 @@ pub struct MoveShortcutGroupForm {
     pub group_name: Option<String>,
 }
 
+#[derive(Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ShortcutServerExport {
+    pub global: HashMap<String, String>,
+    pub hidden_global: HashMap<String, String>,
+    pub work_global: HashMap<String, String>,
+    pub visible_groups: HashMap<String, String>,
+    pub work_groups: HashMap<String, String>,
+    pub visible_group_names: Vec<String>,
+    pub work_group_names: Vec<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShortcutExportResponse {
+    pub version: u32,
+    pub server: ShortcutServerExport,
+}
+
 // Helper function to save shortcuts back to JSON file
 fn save_shortcuts(path: &str, shortcuts: &HashMap<String, String>) -> io::Result<()> {
     // Use serde_json::to_string_pretty for readable JSON
     let data = serde_json::to_string_pretty(shortcuts)?;
     fs::write(path, data)
+}
+
+fn merge_shortcut_map(target: &mut HashMap<String, String>, incoming: &HashMap<String, String>) {
+    for (key, url) in incoming {
+        let key = key.trim();
+        let url = url.trim();
+        if key.is_empty() || url.is_empty() {
+            continue;
+        }
+        target.insert(key.to_string(), url.to_string());
+    }
+}
+
+async fn persist_shortcut_scope(
+    collection_key: &str,
+    file_path: &str,
+    shortcuts: &HashMap<String, String>,
+) -> Result<(), String> {
+    app_db::put_json("shortcuts", collection_key, shortcuts)
+        .await
+        .map_err(|err| format!("Failed to save aliases to app database: {err}"))?;
+    save_shortcuts(file_path, shortcuts)
+        .map_err(|err| format!("Failed to save aliases file {file_path}: {err}"))?;
+    Ok(())
+}
+
+async fn import_shortcut_groups(
+    scope: &str,
+    group_map: &HashMap<String, String>,
+    group_names: &[String],
+) -> Result<(), String> {
+    for group_name in group_names {
+        let group_name = group_name.trim();
+        if group_name.is_empty() {
+            continue;
+        }
+        app_db::create_shortcut_group(scope, group_name)
+            .await
+            .map_err(|err| format!("Failed to create alias group {group_name}: {err}"))?;
+    }
+
+    for (key, group_name) in group_map {
+        let key = key.trim();
+        let group_name = group_name.trim();
+        if key.is_empty() {
+            continue;
+        }
+        app_db::set_shortcut_group(scope, key, group_name)
+            .await
+            .map_err(|err| format!("Failed to move alias {key} into group: {err}"))?;
+    }
+
+    Ok(())
+}
+
+#[get("/shortcuts/export")]
+pub async fn export_shortcuts(state: Data<Arc<AppState>>) -> impl Responder {
+    let global = state
+        .shortcuts
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone();
+    let hidden_global = state
+        .hidden_shortcuts
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone();
+    let work_global = state
+        .work_shortcuts
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone();
+
+    HttpResponse::Ok().json(ShortcutExportResponse {
+        version: 1,
+        server: ShortcutServerExport {
+            global,
+            hidden_global,
+            work_global,
+            visible_groups: app_db::get_shortcut_group_map("visible").await,
+            work_groups: app_db::get_shortcut_group_map("work").await,
+            visible_group_names: app_db::get_shortcut_groups("visible").await,
+            work_group_names: app_db::get_shortcut_groups("work").await,
+        },
+    })
+}
+
+#[post("/shortcuts/import")]
+pub async fn import_shortcuts(
+    payload: Json<ShortcutServerExport>,
+    state: Data<Arc<AppState>>,
+) -> impl Responder {
+    let incoming = payload.into_inner();
+
+    let global = {
+        let mut shortcuts = state
+            .shortcuts
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        merge_shortcut_map(&mut shortcuts, &incoming.global);
+        shortcuts.clone()
+    };
+    if let Err(err) = persist_shortcut_scope("visible", SHORTCUTS_FILE, &global).await {
+        return HttpResponse::InternalServerError().body(err);
+    }
+
+    let hidden_global = {
+        let mut hidden_shortcuts = state
+            .hidden_shortcuts
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        merge_shortcut_map(&mut hidden_shortcuts, &incoming.hidden_global);
+        hidden_shortcuts.clone()
+    };
+    if let Err(err) =
+        persist_shortcut_scope("hidden", HIDDEN_SHORTCUTS_FILE, &hidden_global).await
+    {
+        return HttpResponse::InternalServerError().body(err);
+    }
+
+    let work_global = {
+        let mut work_shortcuts = state
+            .work_shortcuts
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        merge_shortcut_map(&mut work_shortcuts, &incoming.work_global);
+        work_shortcuts.clone()
+    };
+    if let Err(err) = persist_shortcut_scope("work", WORK_SHORTCUTS_FILE, &work_global).await {
+        return HttpResponse::InternalServerError().body(err);
+    }
+
+    if let Err(err) = import_shortcut_groups(
+        "visible",
+        &incoming.visible_groups,
+        &incoming.visible_group_names,
+    )
+    .await
+    {
+        return HttpResponse::InternalServerError().body(err);
+    }
+
+    if let Err(err) =
+        import_shortcut_groups("work", &incoming.work_groups, &incoming.work_group_names).await
+    {
+        return HttpResponse::InternalServerError().body(err);
+    }
+
+    HttpResponse::Ok().body("ok")
 }
 
 // Handler for the new shortcut form

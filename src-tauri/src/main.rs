@@ -7,21 +7,52 @@ use std::{
     fs,
     net::TcpListener,
     path::{Path, PathBuf},
+    process::Command,
 };
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri_plugin_updater::UpdaterExt;
+
+const UPDATER_PUBKEY_PLACEHOLDER: &str = "OGDEVDESK_UPDATER_PUBLIC_KEY_NOT_CONFIGURED";
 
 struct DesktopServer {
     base_url: String,
+}
+
+#[derive(serde::Serialize)]
+struct DesktopUpdateInfo {
+    available: bool,
+    current_version: String,
+    version: Option<String>,
+    date: Option<String>,
+    body: Option<String>,
+    target: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct DesktopUpdateInstallResult {
+    installed: bool,
+    message: String,
 }
 
 fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             open_tool_window,
-            close_current_window
+            close_current_window,
+            save_text_file,
+            check_for_update,
+            install_update,
+            open_url_in_browser
         ])
         .setup(|app| {
-            let port = pick_local_port().unwrap_or(17654);
+            app.handle()
+                .plugin(tauri_plugin_updater::Builder::new().build())?;
+
+            let server_listener = reserve_desktop_server_listener().or_else(|err| {
+                eprintln!("Failed to reserve a desktop server port: {err}");
+                TcpListener::bind("127.0.0.1:17654")
+            })?;
+            let port = server_listener.local_addr()?.port();
             configure_desktop_environment();
             let base_url = format!("http://127.0.0.1:{port}");
             app.manage(DesktopServer {
@@ -40,6 +71,7 @@ fn main() {
             std::thread::spawn(move || {
                 if let Err(err) = run_server_blocking(
                     ServerConfig::local(port, static_dir)
+                        .with_listener(server_listener)
                         .with_desktop_tool_handlers(desktop_tool_opener, desktop_tool_closer),
                 ) {
                     eprintln!("OGdevDesk desktop server failed: {err}");
@@ -114,6 +146,139 @@ fn open_desktop_tool_window(
 #[tauri::command]
 fn close_current_window(window: tauri::WebviewWindow) -> Result<(), String> {
     window.close().map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn save_text_file(suggested_filename: String, contents: String) -> Result<Option<String>, String> {
+    let filename = safe_export_filename(&suggested_filename);
+    let mut dialog = rfd::FileDialog::new()
+        .set_title("Save Export")
+        .set_file_name(&filename);
+
+    if let Some(downloads_dir) = download_dir() {
+        dialog = dialog.set_directory(downloads_dir);
+    }
+
+    let Some(path) = dialog.save_file() else {
+        return Ok(None);
+    };
+
+    fs::write(&path, contents).map_err(|err| err.to_string())?;
+    Ok(Some(path.to_string_lossy().to_string()))
+}
+
+#[tauri::command]
+fn open_url_in_browser(url: String) -> Result<(), String> {
+    let trimmed_url = url.trim();
+    if !(trimmed_url.starts_with("http://") || trimmed_url.starts_with("https://")) {
+        return Err("Only http and https URLs can be opened from OGdevDesk.".to_string());
+    }
+
+    open_with_system_browser(trimmed_url)
+}
+
+#[cfg(target_os = "macos")]
+fn open_with_system_browser(url: &str) -> Result<(), String> {
+    Command::new("open")
+        .arg(url)
+        .spawn()
+        .map_err(|err| err.to_string())?;
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn open_with_system_browser(url: &str) -> Result<(), String> {
+    Command::new("cmd")
+        .args(["/C", "start", "", url])
+        .spawn()
+        .map_err(|err| err.to_string())?;
+    Ok(())
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn open_with_system_browser(url: &str) -> Result<(), String> {
+    Command::new("xdg-open")
+        .arg(url)
+        .spawn()
+        .map_err(|err| err.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn check_for_update(app: tauri::AppHandle) -> Result<DesktopUpdateInfo, String> {
+    ensure_desktop_updater_configured(&app)?;
+
+    let update = app
+        .updater()
+        .map_err(updater_error_message)?
+        .check()
+        .await
+        .map_err(updater_error_message)?;
+    let current_version = app.package_info().version.to_string();
+
+    Ok(match update {
+        Some(update) => DesktopUpdateInfo {
+            available: true,
+            current_version: update.current_version,
+            version: Some(update.version),
+            date: update.date.map(|date| date.to_string()),
+            body: update.body,
+            target: Some(update.target),
+        },
+        None => DesktopUpdateInfo {
+            available: false,
+            current_version,
+            version: None,
+            date: None,
+            body: None,
+            target: None,
+        },
+    })
+}
+
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle) -> Result<DesktopUpdateInstallResult, String> {
+    ensure_desktop_updater_configured(&app)?;
+
+    let update = app
+        .updater()
+        .map_err(updater_error_message)?
+        .check()
+        .await
+        .map_err(updater_error_message)?;
+
+    let Some(update) = update else {
+        return Ok(DesktopUpdateInstallResult {
+            installed: false,
+            message: "OGdevDesk is already up to date.".to_string(),
+        });
+    };
+
+    update
+        .download_and_install(|_, _| {}, || {})
+        .await
+        .map_err(updater_error_message)?;
+
+    app.restart();
+}
+
+fn updater_error_message(error: impl std::fmt::Display) -> String {
+    let message = error.to_string();
+    message
+}
+
+fn ensure_desktop_updater_configured(app: &tauri::AppHandle) -> Result<(), String> {
+    let updater_config = app.config().plugins.0.get("updater");
+    let pubkey = updater_config
+        .and_then(|config| config.get("pubkey"))
+        .and_then(|value| value.as_str())
+        .unwrap_or_default();
+
+    if pubkey == UPDATER_PUBKEY_PLACEHOLDER || pubkey.trim().is_empty() {
+        return Err("Desktop updates are not fully configured yet. Generate a Tauri updater signing key, put the public key in src-tauri/tauri.conf.json, and publish signed updater artifacts.".to_string());
+    }
+
+    Ok(())
 }
 
 fn close_desktop_tool_window(app: &tauri::AppHandle, tool: &str) -> Result<(), String> {
@@ -194,11 +359,30 @@ fn desktop_tool_spec(tool: &str) -> Option<DesktopToolSpec> {
     }
 }
 
-fn pick_local_port() -> Option<u16> {
-    TcpListener::bind("127.0.0.1:0")
-        .ok()
-        .and_then(|listener| listener.local_addr().ok())
-        .map(|addr| addr.port())
+fn reserve_desktop_server_listener() -> std::io::Result<TcpListener> {
+    TcpListener::bind("127.0.0.1:80").or_else(|err| {
+        eprintln!("Desktop server could not bind 127.0.0.1:80; falling back to an available local port: {err}");
+        TcpListener::bind("127.0.0.1:0")
+    })
+}
+
+fn safe_export_filename(filename: &str) -> String {
+    let cleaned = filename
+        .chars()
+        .map(|ch| match ch {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+            _ => ch,
+        })
+        .collect::<String>()
+        .trim()
+        .trim_start_matches('.')
+        .to_string();
+
+    if cleaned.is_empty() {
+        "ogdevdesk-export.csv".to_string()
+    } else {
+        cleaned
+    }
 }
 
 fn configure_desktop_environment() {
@@ -241,8 +425,14 @@ fn default_desktop_db_path() -> PathBuf {
 
 fn home_dir() -> PathBuf {
     std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."))
+}
+
+fn download_dir() -> Option<PathBuf> {
+    let path = home_dir().join("Downloads");
+    path.exists().then_some(path)
 }
 
 fn resolve_static_dir(app: &tauri::App) -> String {

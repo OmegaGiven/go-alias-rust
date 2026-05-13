@@ -1,6 +1,6 @@
 [package]
 name = "ogdevdesk_desktop"
-version = "0.1.7"
+version = "0.1.8"
 description = "Desktop wrapper for OGdevDesk"
 authors = ["OmegaGiven"]
 license = "Apache-2.0"
@@ -13,3 +13,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 ogdevdesk_service = { path = ".." }
 tauri = { version = "2", features = [] }
+tauri-plugin-updater = "2"
+rfd = "0.15"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

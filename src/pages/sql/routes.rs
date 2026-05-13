@@ -19,7 +19,9 @@ use std::{
 };
 // Added ValueRef to fix .is_null() error
 use sqlx::{
-    Column, Row, TypeInfo, ValueRef, postgres::PgPoolOptions, sqlite::SqlitePoolOptions,
+    Column, Row, TypeInfo, ValueRef,
+    postgres::{PgConnectOptions, PgPoolOptions},
+    sqlite::SqlitePoolOptions,
     types::JsonValue,
 };
 
@@ -354,12 +356,71 @@ fn app_db_connection() -> DbConnection {
 }
 
 fn include_app_db_connection(conns: &mut Vec<DbConnection>) {
-    if !conns
+    conns.retain(|conn| conn.nickname != APP_DB_CONNECTION_NICKNAME);
+    conns.insert(0, app_db_connection());
+}
+
+fn user_saved_connections(conns: &[DbConnection]) -> Vec<DbConnection> {
+    conns
         .iter()
-        .any(|conn| conn.nickname == APP_DB_CONNECTION_NICKNAME)
-    {
-        conns.insert(0, app_db_connection());
+        .filter(|conn| conn.nickname != APP_DB_CONNECTION_NICKNAME)
+        .cloned()
+        .collect()
+}
+
+fn save_user_connections(conns: &[DbConnection]) {
+    let user_conns = user_saved_connections(conns);
+    if let Err(e) = encrypt_and_save(&user_conns) {
+        eprintln!("Failed to save encrypted connections: {e}");
     }
+}
+
+fn parse_pg_host_port(host: &str) -> (String, Option<u16>) {
+    let trimmed = host.trim();
+    if trimmed.starts_with('[') {
+        if let Some((host_part, port_part)) = trimmed.rsplit_once("]:") {
+            if let Ok(port) = port_part.parse::<u16>() {
+                return (host_part.trim_start_matches('[').to_string(), Some(port));
+            }
+        }
+        return (
+            trimmed
+                .trim_start_matches('[')
+                .trim_end_matches(']')
+                .to_string(),
+            None,
+        );
+    }
+
+    if let Some((host_part, port_part)) = trimmed.rsplit_once(':') {
+        if !host_part.contains(':') {
+            if let Ok(port) = port_part.parse::<u16>() {
+                return (host_part.to_string(), Some(port));
+            }
+        }
+    }
+
+    (trimmed.to_string(), None)
+}
+
+fn pg_pool_key(conn: &DbConnection) -> String {
+    format!(
+        "postgres|{}|{}|{}|{}",
+        conn.host, conn.db_name, conn.user, conn.password
+    )
+}
+
+fn pg_connect_options(conn: &DbConnection) -> PgConnectOptions {
+    let (host, port) = parse_pg_host_port(&conn.host);
+    let mut options = PgConnectOptions::new()
+        .host(&host)
+        .username(&conn.user)
+        .password(&conn.password)
+        .database(&conn.db_name);
+    if let Some(port) = port {
+        options = options.port(port);
+    }
+    options
 }
 
 fn render_connection_list(
@@ -585,16 +646,13 @@ pub async fn sql_disconnect_connection(
                 pool.close().await;
             }
         } else {
-            let dsn = format!(
-                "postgres://{}:{}@{}/{}",
-                conn.user, conn.password, conn.host, conn.db_name
-            );
+            let pool_key = pg_pool_key(&conn);
             let pool = {
                 let mut pools = state
                     .pg_pools
                     .lock()
                     .unwrap_or_else(|poisoned| poisoned.into_inner());
-                pools.remove(&dsn)
+                pools.remove(&pool_key)
             };
             if let Some(pool) = pool {
                 pool.close().await;
@@ -638,9 +696,7 @@ pub async fn sql_add(
         } else {
             conns.push(new_conn);
         }
-        if let Err(e) = encrypt_and_save(conns) {
-            eprintln!("Failed to save encrypted connections: {e}");
-        }
+        save_user_connections(conns);
     }
     HttpResponse::Found()
         .append_header(("Location", "/sql"))
@@ -1059,9 +1115,7 @@ pub async fn sql_delete_connection(
         let conns = conns_opt.as_mut().unwrap();
         if let Some(idx) = conns.iter().position(|c| c.nickname == form.nickname) {
             conns.remove(idx);
-            if let Err(e) = encrypt_and_save(conns) {
-                eprintln!("Failed to save encrypted connections after delete: {e}");
-            }
+            save_user_connections(conns);
         }
     }
 
@@ -1108,9 +1162,7 @@ pub async fn sql_update_connection(
             nickname: form.nickname.clone(),
         };
 
-        if let Err(e) = encrypt_and_save(conns) {
-            eprintln!("Failed to save encrypted connections after edit: {e}");
-        }
+        save_user_connections(conns);
     }
 
     HttpResponse::Found()
@@ -1420,21 +1472,23 @@ async fn execute_sql(form: SqlForm, state: Arc<AppState>) -> SqlExecution {
             results_vec_for_export.push(map_for_export);
         }
     } else {
-        let dsn = format!(
-            "postgres://{}:{}@{}/{}",
-            conn.user, conn.password, conn.host, conn.db_name
-        );
+        let pool_key = pg_pool_key(&conn);
+        let connect_options = pg_connect_options(&conn);
         let existing_pool = {
             let pools = state
                 .pg_pools
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-            pools.get(&dsn).cloned()
+            pools.get(&pool_key).cloned()
         };
         let pool = if let Some(pool) = existing_pool {
             pool
         } else {
-            let p = match PgPoolOptions::new().max_connections(5).connect(&dsn).await {
+            let p = match PgPoolOptions::new()
+                .max_connections(5)
+                .connect_with(connect_options)
+                .await
+            {
                 Ok(p) => p,
                 Err(e) => {
                     return SqlExecution {
@@ -1451,7 +1505,7 @@ async fn execute_sql(form: SqlForm, state: Arc<AppState>) -> SqlExecution {
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
             pools
-                .entry(dsn.clone())
+                .entry(pool_key.clone())
                 .or_insert_with(|| p.clone())
                 .clone()
         };
@@ -2104,6 +2158,7 @@ pub async fn sql_export(
 
 fn render_query_view(
     nickname: &str,
+    db_type: &str,
     table_schema_json: &str,
     function_schema_json: &str,
     current_theme: &crate::app_state::Theme,
@@ -2298,7 +2353,7 @@ fn render_query_view(
 
     let body_content = format!(
         r###"
-    <div id="sql-active-connection" data-connection="{nickname}"></div>
+    <div id="sql-active-connection" data-connection="{nickname}" data-db-type="{db_type}"></div>
     <div class="sql-view-container">
       {sidebar_html}
       
@@ -2370,6 +2425,7 @@ fn render_query_view(
     <script src="{sql_js}" defer></script>
     "###,
         nickname = nickname_attr,
+        db_type = htmlescape::encode_attribute(db_type),
         table_schema_json = table_schema_json_safe,
         function_schema_json = function_schema_json_safe,
         sidebar_html = sidebar_html,
@@ -2450,6 +2506,7 @@ pub async fn sql_view(path: web::Path<String>, state: web::Data<Arc<AppState>>) 
         .content_type("text/html; charset=utf-8")
         .body(render_query_view(
             &nickname,
+            &conn.db_type,
             &schema_json,
             &function_json,
             &current_theme,
@@ -2515,7 +2572,7 @@ async fn fetch_schema_map(
     conn: &DbConnection,
     state: &AppState,
 ) -> Result<HashMap<String, Vec<String>>, String> {
-    use sqlx::{Row, postgres::PgPoolOptions, sqlite::SqlitePoolOptions};
+    use sqlx::{Row, sqlite::SqlitePoolOptions};
     let mut schema_map: HashMap<String, Vec<String>> = HashMap::new();
 
     if conn.db_type == "sqlite" {
@@ -2563,22 +2620,34 @@ async fn fetch_schema_map(
         }
     } else {
         // Postgres Schema Fetching
-        let dsn = format!(
-            "postgres://{}:{}@{}/{}",
-            conn.user, conn.password, conn.host, conn.db_name
-        );
-        let pool = {
-            let mut pools = state.pg_pools.lock().unwrap();
-            if let Some(p) = pools.get(&dsn) {
-                p.clone()
-            } else {
-                let p = match PgPoolOptions::new().max_connections(5).connect(&dsn).await {
-                    Ok(p) => p,
-                    Err(e) => return Err(format!("Postgres Connect Error: {}", e)),
-                };
-                pools.insert(dsn.clone(), p.clone());
-                p
-            }
+        let pool_key = pg_pool_key(conn);
+        let connect_options = pg_connect_options(conn);
+        let existing_pool = {
+            let pools = state
+                .pg_pools
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            pools.get(&pool_key).cloned()
+        };
+        let pool = if let Some(pool) = existing_pool {
+            pool
+        } else {
+            let p = match PgPoolOptions::new()
+                .max_connections(5)
+                .connect_with(connect_options)
+                .await
+            {
+                Ok(p) => p,
+                Err(e) => return Err(format!("Postgres Connect Error: {}", e)),
+            };
+            let mut pools = state
+                .pg_pools
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            pools
+                .entry(pool_key.clone())
+                .or_insert_with(|| p.clone())
+                .clone()
         };
 
         let schema_query = r#"
@@ -2607,28 +2676,40 @@ async fn fetch_function_list(
     conn: &DbConnection,
     state: &AppState,
 ) -> Result<Vec<DbFunctionInfo>, String> {
-    use sqlx::{Row, postgres::PgPoolOptions};
+    use sqlx::Row;
 
     if conn.db_type == "sqlite" {
         return Ok(Vec::new());
     }
 
-    let dsn = format!(
-        "postgres://{}:{}@{}/{}",
-        conn.user, conn.password, conn.host, conn.db_name
-    );
-    let pool = {
-        let mut pools = state.pg_pools.lock().unwrap();
-        if let Some(p) = pools.get(&dsn) {
-            p.clone()
-        } else {
-            let p = match PgPoolOptions::new().max_connections(5).connect(&dsn).await {
-                Ok(p) => p,
-                Err(e) => return Err(format!("Postgres Connect Error: {}", e)),
-            };
-            pools.insert(dsn.clone(), p.clone());
-            p
-        }
+    let pool_key = pg_pool_key(conn);
+    let connect_options = pg_connect_options(conn);
+    let existing_pool = {
+        let pools = state
+            .pg_pools
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        pools.get(&pool_key).cloned()
+    };
+    let pool = if let Some(pool) = existing_pool {
+        pool
+    } else {
+        let p = match PgPoolOptions::new()
+            .max_connections(5)
+            .connect_with(connect_options)
+            .await
+        {
+            Ok(p) => p,
+            Err(e) => return Err(format!("Postgres Connect Error: {}", e)),
+        };
+        let mut pools = state
+            .pg_pools
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        pools
+            .entry(pool_key.clone())
+            .or_insert_with(|| p.clone())
+            .clone()
     };
 
     let function_query = r#"

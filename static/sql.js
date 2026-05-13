@@ -34,12 +34,93 @@ const mainContent = document.getElementById('main');
       const backdrop = document.getElementById('sql-backdrop');
       const highlights = backdrop.querySelector('.highlights');
       const connectionNickname = document.querySelector("input[name=connection]")?.value || "";
+      const connectionDbType = document.getElementById('sql-active-connection')?.dataset.dbType || '';
       const activeSqlTabId = new URLSearchParams(window.location.search).get('tab') || 'default';
       const sqlWorkspaceStorageKey = `sql_workspace_${connectionNickname}_${activeSqlTabId}`;
       const varsStorageKey = "sql_vars_" + connectionNickname;
       const savedQueryFoldersCollapsedKey = "sql_saved_query_folders_collapsed_" + connectionNickname;
       let collapsedSqlFolders = readCollapsedSqlFolders();
       let isRestoringWorkspace = false;
+
+      function tauriInvoke(command, payload = {}) {
+          if (window.__TAURI__?.core?.invoke) {
+              return window.__TAURI__.core.invoke(command, payload);
+          }
+
+          if (window.OGDEVDESK_DESKTOP_MODE === true && window.parent !== window) {
+              return new Promise((resolve, reject) => {
+                  const id = `sql-save-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+                  const timeout = window.setTimeout(() => {
+                      window.removeEventListener('message', onMessage);
+                      reject(new Error('Desktop save dialog did not respond.'));
+                  }, 120000);
+
+                  function onMessage(event) {
+                      if (event.source !== window.parent) return;
+                      const data = event.data || {};
+                      if (data.type !== 'ogdevdesk-tauri-result' || data.id !== id) return;
+                      window.clearTimeout(timeout);
+                      window.removeEventListener('message', onMessage);
+                      if (data.ok) {
+                          resolve(data.result);
+                      } else {
+                          reject(new Error(data.error || 'Desktop command failed.'));
+                      }
+                  }
+
+                  window.addEventListener('message', onMessage);
+                  window.parent.postMessage({
+                      type: 'ogdevdesk-tauri-invoke',
+                      id,
+                      command,
+                      payload,
+                  }, '*');
+              });
+          }
+
+          return null;
+      }
+
+      function browserDownloadFile(filename, content, type) {
+          const blob = new Blob([content], { type });
+          const link = document.createElement('a');
+          const url = URL.createObjectURL(blob);
+          link.href = url;
+          link.download = filename;
+          link.style.visibility = 'hidden';
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+      }
+
+      async function saveGeneratedFile(filename, content, type) {
+          const savePromise = tauriInvoke('save_text_file', {
+              suggestedFilename: filename,
+              contents: content,
+          });
+          if (savePromise) {
+              await savePromise;
+              return;
+          }
+
+          if (window.showSaveFilePicker) {
+              const extension = filename.split('.').pop() || '';
+              const handle = await window.showSaveFilePicker({
+                  suggestedName: filename,
+                  types: extension ? [{
+                      description: `${extension.toUpperCase()} file`,
+                      accept: { [type]: [`.${extension}`] },
+                  }] : undefined,
+              });
+              const writable = await handle.createWritable();
+              await writable.write(new Blob([content], { type }));
+              await writable.close();
+              return;
+          }
+
+          browserDownloadFile(filename, content, type);
+      }
 
       function currentSqlEditorText() {
           const candidates = [
@@ -176,20 +257,19 @@ const mainContent = document.getElementById('main');
           });
       }
 
-      saveSqlFileBtn.addEventListener('click', () => {
+      saveSqlFileBtn.addEventListener('click', async () => {
           const content = editor.value;
           if (!content) return;
-          
-          const blob = new Blob([content], { type: 'text/plain' });
-          const link = document.createElement('a');
-          link.href = URL.createObjectURL(blob);
-          
+
           let filename = queryNameInput.value.trim() || 'query';
           if (!filename.toLowerCase().endsWith('.sql')) filename += '.sql';
-          
-          link.download = filename;
-          link.click();
-          URL.revokeObjectURL(link.href);
+
+          try {
+              await saveGeneratedFile(filename, content, 'text/plain');
+          } catch (error) {
+              if (error?.name === 'AbortError') return;
+              alert(`Failed to save SQL file: ${error.message || error}`);
+          }
       });
 
       if (saveQueryBtn && saveQueryForm) {
@@ -573,7 +653,10 @@ const mainContent = document.getElementById('main');
       }
 
       function tableReferenceForDisplay(tableName) {
-          return `"public".${quoteSqlIdentifierForDisplay(tableName)}`;
+          if (connectionDbType === 'postgres') {
+              return `"public".${quoteSqlIdentifierForDisplay(tableName)}`;
+          }
+          return quoteSqlIdentifierForDisplay(tableName);
       }
 
       function tableFilterSqlForDisplay(columnExpression, op, value) {
@@ -1737,7 +1820,7 @@ const mainContent = document.getElementById('main');
           return visibleBodyRows;
       }
 
-      function exportCurrentResults(mode) {
+      async function exportCurrentResults(mode) {
           const table = getActiveOutputTable();
           if (!table) return alert('No results to export');
 
@@ -1767,24 +1850,21 @@ const mainContent = document.getElementById('main');
                   .join(",") + "\n";
           });
 
-          const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-          const link = document.createElement("a");
-          const url = URL.createObjectURL(blob);
-          link.setAttribute("href", url);
-          link.setAttribute("download", `${connectionNickname || 'sql'}-${rowsMode}-results.csv`);
-          link.style.visibility = 'hidden';
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          URL.revokeObjectURL(url);
+          const filename = `${connectionNickname || 'sql'}-${rowsMode}-results.csv`;
+          try {
+              await saveGeneratedFile(filename, csvContent, 'text/csv');
+          } catch (error) {
+              if (error?.name === 'AbortError') return;
+              alert(`Failed to export CSV: ${error.message || error}`);
+          }
       }
 
       if (exportMenuPanel) {
-          exportMenuPanel.addEventListener('click', (event) => {
+          exportMenuPanel.addEventListener('click', async (event) => {
               const button = event.target.closest('[data-export-mode]');
               if (!button) return;
-              exportCurrentResults(button.dataset.exportMode || 'all-headers');
               setMenuOpen(exportMenuBtn, exportMenuPanel, false);
+              await exportCurrentResults(button.dataset.exportMode || 'all-headers');
           });
       }
       

@@ -363,7 +363,7 @@
         color: #fff;
     }
     /* Result Tools (Filter/Export) */
-    .result-tools { padding: 4px 5px; background: var(--secondary-bg); border-bottom: none; display: flex; gap: 6px; align-items: center; justify-content: space-between; flex-shrink: 0; }
+    .result-tools { padding: 4px 5px; background: var(--secondary-bg); border-bottom: none; display: flex; gap: 6px; align-items: center; justify-content: space-between; flex-shrink: 0; position: relative; z-index: 90; }
     .result-tools-left,
     .result-tools-right { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; min-width: 0; }
     .result-tools-left { flex: 1 1 auto; justify-content: flex-start; }
@@ -386,7 +386,7 @@
         position: absolute;
         right: 0;
         top: calc(100% + 3px);
-        z-index: 20;
+        z-index: 100;
         display: flex;
         flex-direction: column;
         min-width: 180px;

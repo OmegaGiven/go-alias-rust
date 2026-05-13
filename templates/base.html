@@ -26,6 +26,7 @@
             <button class="tools-dropdown-item" onclick="toggleJwtDecoder()">JWT Decoder</button>
             <button class="tools-dropdown-item" onclick="toggleAiAssistant()">AI Assistant</button>
             <button class="tools-dropdown-item" onclick="toggleScratchPad()">Scratch Pad</button>
+            <button class="tools-dropdown-item" id="desktop-update-check-btn" hidden>Check for Updates</button>
           </div>
         </div>
       </div>
@@ -79,7 +80,7 @@ WHERE customer_id = &#123;&#123;customer_id&#125;&#125;
           <section class="documentation-entry" data-doc-section="tools">
             <h3>Floating Tools</h3>
             <p>The hamburger menu opens Appearance, AI Assistant, Calculator, JWT Decoder, and Scratch Pad.</p>
-            <p>In the browser, tools open as floating windows inside the page. In the desktop app, tools open as separate native windows you can move around your desktop.</p>
+            <p>Tools open as floating windows inside the page by default. In the desktop app, Appearance can switch them to detached desktop windows.</p>
           </section>
           <section class="documentation-entry" data-doc-section="ai">
             <h3>AI Assistant</h3>
@@ -360,6 +361,13 @@ WHERE customer_id = &#123;&#123;customer_id&#125;&#125;
               <div class="appearance-control-row">
                 <label for="nav_height">Nav Height:</label>
                 <input type="number" id="nav_height" name="nav_height" min="22" max="80" value="{{ current_theme.nav_height }}" style="width: 70px;">
+              </div>
+              <div class="appearance-control-row">
+                <label for="tool_window_mode">Tool Windows:</label>
+                <select id="tool_window_mode" data-tool-window-mode-control>
+                  <option value="floating">Floating in app</option>
+                  <option value="detached">Detached desktop windows</option>
+                </select>
               </div>
             </div>
             <div id="custom-color-controls" class="settings-section custom-color-controls" style="display: flex; flex-direction: column; gap: 15px;">

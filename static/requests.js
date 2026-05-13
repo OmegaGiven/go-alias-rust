@@ -67,7 +67,7 @@
         const REQUEST_WORKSPACE_TABS_KEY = 'ogdevdesk_request_workspace_tabs';
         const REQUEST_WORKSPACE_PENDING_KEY = 'ogdevdesk_pending_request_workspace';
         const MAX_REQUEST_HISTORY_ENTRIES = 12;
-        const activeRequestTabId = new URLSearchParams(window.location.search).get('tab') || '';
+        let activeRequestTabId = new URLSearchParams(window.location.search).get('tab') || '';
         let pendingPostmanCollection = null;
         let collapsedRequestFolders = readCollapsedRequestFolders();
         let latestCurlCommand = '';
@@ -77,6 +77,7 @@
         let variableSetDialogMode = 'create';
         let requestHistoryCache = [];
         let requestHistorySavePromise = Promise.resolve();
+        let isRestoringRequestWorkspace = false;
 
         function redactAssistantPairs(pairs) {
             return pairs.map(([key, value]) => {
@@ -222,6 +223,46 @@
                 .map((part) => part.trim())
                 .filter(Boolean)
                 .join('/');
+        }
+
+        function showTextPromptDialog(title, label, currentValue = '') {
+            return new Promise((resolve) => {
+                const backdrop = document.createElement('dialog');
+                backdrop.className = 'themed-modal rename-prompt-dialog';
+                backdrop.innerHTML = `
+                    <form method="dialog" class="themed-modal-content rename-prompt-content">
+                        <h3>${title}</h3>
+                        <label>${label}</label>
+                        <input type="text" class="rename-prompt-input">
+                        <div class="modal-actions">
+                            <button type="button" class="cancel-btn">Cancel</button>
+                            <button type="submit" class="save-btn">Save</button>
+                        </div>
+                    </form>
+                `;
+                document.body.appendChild(backdrop);
+                const input = backdrop.querySelector('.rename-prompt-input');
+                input.value = currentValue;
+                input.select();
+
+                const cleanup = (value) => {
+                    backdrop.close();
+                    backdrop.remove();
+                    resolve(value);
+                };
+
+                backdrop.querySelector('.cancel-btn').addEventListener('click', () => cleanup(null));
+                backdrop.addEventListener('cancel', (event) => {
+                    event.preventDefault();
+                    cleanup(null);
+                });
+                backdrop.querySelector('form').addEventListener('submit', (event) => {
+                    event.preventDefault();
+                    cleanup(input.value.trim());
+                });
+                backdrop.showModal();
+                input.focus();
+            });
         }
 
         function isSameOrChildFolder(folder, parent) {
@@ -385,6 +426,16 @@
                 if (k) pairs.push([k, v]);
             });
             return pairs;
+        }
+
+        function setKvPairs(containerId, pairs = [], includeEmptyRow = true) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            container.innerHTML = '';
+            pairs.forEach(([key, value]) => addKvRow(containerId, key, value));
+            if (includeEmptyRow) {
+                addKvRow(containerId);
+            }
         }
 
         function substituteRequestVariables(value) {
@@ -639,6 +690,7 @@
                      addKvRow('form-body-rows');
                 }
             }
+            saveActiveRequestWorkspace();
         }
         
         // --- Sync URL <-> Params ---
@@ -1155,6 +1207,8 @@
         }
 
         function collectCurrentRequestWorkspace() {
+            const bodyType = document.querySelector('input[name="body-type"]:checked')?.value || 'raw';
+            const activeDetailTab = document.querySelector('.request-details-panel .tab-content.active')?.id || 'tab-params';
             return {
                 title: reqNameInput.value.trim() || 'New Request',
                 name: reqNameInput.value.trim(),
@@ -1162,53 +1216,133 @@
                 method: methodSelect.value || 'GET',
                 url: urlInput.value || '',
                 headers: getKvPairs('headers-container').map(([key, value]) => `${key}: ${value}`).join('\n'),
+                headerPairs: getKvPairs('headers-container'),
+                params: getKvPairs('params-container'),
+                pathValues: getPathValuesSnapshot(),
                 body: bodyInput.value || '',
+                bodyType,
+                formBodyPairs: getKvPairs('form-body-rows'),
+                activeDetailTab,
                 authType: authTypeSelect.value || 'none',
+                authSnapshot: getAuthSnapshot(),
                 oauthTokenUrl: document.getElementById('oauth-token-url')?.value || '',
                 oauthClientId: document.getElementById('oauth-client-id')?.value || '',
                 oauthClientSecret: document.getElementById('oauth-client-secret')?.value || '',
                 oauthScope: document.getElementById('oauth-scope')?.value || '',
+                responseBody: responseBody.innerText || '',
+                responseHeaders: responseHeaders.innerText || '',
+                responseStatus: resStatus.innerText || 'Status: -',
+                responseStatusClass: resStatus.className || 'status-badge',
+                responseTime: resTime.innerText || 'Time: - ms',
+                responseSize: resSize.innerText || 'Size: -',
+                latestCurlCommand,
+                latestResponseBody,
+                latestResponseHeaders,
+                latestResponseMeta,
             };
         }
 
         function saveActiveRequestWorkspace() {
-            if (!activeRequestTabId) return;
+            if (!activeRequestTabId || isRestoringRequestWorkspace) return;
             updateRequestWorkspaceTab(activeRequestTabId, collectCurrentRequestWorkspace());
         }
 
-        function loadRequestWorkspace(workspace = {}, selectSavedRow = true) {
-            methodSelect.value = workspace.method || 'GET';
-            urlInput.value = workspace.url || '';
-            stringToHeadersTable(workspace.headers || '');
-            bodyInput.value = workspace.body || '';
-            reqNameInput.value = workspace.name || '';
-            if (reqFolderInput) {
-                reqFolderInput.value = workspace.folder || '';
+        function loadRequestWorkspace(workspace = {}, selectSavedRow = true, persistAfterLoad = true) {
+            isRestoringRequestWorkspace = true;
+            try {
+                methodSelect.value = workspace.method || 'GET';
+                urlInput.value = workspace.url || '';
+                if (Array.isArray(workspace.headerPairs)) {
+                    setKvPairs('headers-container', workspace.headerPairs);
+                } else {
+                    stringToHeadersTable(workspace.headers || '');
+                }
+                bodyInput.value = workspace.body || '';
+                reqNameInput.value = workspace.name || '';
+                if (reqFolderInput) {
+                    reqFolderInput.value = workspace.folder || '';
+                }
+
+                if (selectSavedRow) {
+                    document.querySelectorAll('.saved-req-item').forEach(el => el.classList.remove('selected'));
+                    const selectedLink = findSavedRequestLink(workspace.name || '', workspace.folder || '');
+                    selectedLink?.closest('.saved-req-item')?.classList.add('selected');
+                }
+
+                const bodyType = workspace.bodyType || 'raw';
+                const bodyTypeInput = document.querySelector(`input[name="body-type"][value="${bodyType}"]`);
+                if (bodyTypeInput) bodyTypeInput.checked = true;
+                setKvPairs('form-body-rows', Array.isArray(workspace.formBodyPairs) ? workspace.formBodyPairs : [], bodyType === 'form');
+                toggleBodyType();
+
+                if (workspace.authSnapshot) {
+                    applyAuthSnapshot(workspace.authSnapshot);
+                } else {
+                    let savedAuthType = workspace.authType || 'none';
+                    if (savedAuthType === 'none') {
+                        const inferred = inferAuthTypeFromHeaders();
+                        if (inferred !== 'none') savedAuthType = inferred;
+                    }
+                    authTypeSelect.value = savedAuthType;
+                    renderAuthInputs({
+                        oauth_token_url: workspace.oauthTokenUrl,
+                        oauth_client_id: workspace.oauthClientId,
+                        oauth_client_secret: workspace.oauthClientSecret,
+                        oauth_scope: workspace.oauthScope,
+                    });
+                    applyAuthDefaultsFromHeaders(savedAuthType);
+                }
+
+                parseUrlToParams();
+                if (Array.isArray(workspace.params)) {
+                    setKvPairs('params-container', workspace.params);
+                    updateUrlFromParams();
+                }
+                applyPathValuesSnapshot(workspace.pathValues || {});
+                openTab(workspace.activeDetailTab || 'tab-params');
+
+                responseBody.innerText = workspace.responseBody || 'Response body will appear here...';
+                responseHeaders.innerText = workspace.responseHeaders || 'Response headers will appear here...';
+                resStatus.innerText = workspace.responseStatus || 'Status: -';
+                resStatus.className = workspace.responseStatusClass || 'status-badge';
+                resTime.innerText = workspace.responseTime || 'Time: - ms';
+                resSize.innerText = workspace.responseSize || 'Size: -';
+                latestCurlCommand = workspace.latestCurlCommand || '';
+                latestResponseBody = workspace.latestResponseBody || '';
+                latestResponseHeaders = workspace.latestResponseHeaders || '';
+                latestResponseMeta = workspace.latestResponseMeta || null;
+                if (viewCurlBtn) viewCurlBtn.disabled = !latestCurlCommand;
+                if (openInspectorBtn) openInspectorBtn.disabled = !latestResponseBody;
+            } finally {
+                isRestoringRequestWorkspace = false;
             }
 
-            if (selectSavedRow) {
-                document.querySelectorAll('.saved-req-item').forEach(el => el.classList.remove('selected'));
-                const selectedLink = findSavedRequestLink(workspace.name || '', workspace.folder || '');
-                selectedLink?.closest('.saved-req-item')?.classList.add('selected');
+            if (persistAfterLoad) {
+                saveActiveRequestWorkspace();
             }
-
-            let savedAuthType = workspace.authType || 'none';
-            if (savedAuthType === 'none') {
-                const inferred = inferAuthTypeFromHeaders();
-                if (inferred !== 'none') savedAuthType = inferred;
-            }
-            authTypeSelect.value = savedAuthType;
-            renderAuthInputs({
-                oauth_token_url: workspace.oauthTokenUrl,
-                oauth_client_id: workspace.oauthClientId,
-                oauth_client_secret: workspace.oauthClientSecret,
-                oauth_scope: workspace.oauthScope,
-            });
-            applyAuthDefaultsFromHeaders(savedAuthType);
-            parseUrlToParams();
-            detectPathVariables();
-            saveActiveRequestWorkspace();
         }
+
+        function switchRequestWorkspaceTab(nextTabId) {
+            const cleanTabId = String(nextTabId || '').trim();
+            if (!cleanTabId || cleanTabId === activeRequestTabId) return;
+
+            saveActiveRequestWorkspace();
+            activeRequestTabId = cleanTabId;
+            history.pushState({}, '', `/requests?tab=${encodeURIComponent(activeRequestTabId)}`);
+
+            const workspace = readRequestWorkspace(activeRequestTabId);
+            if (workspace && Object.keys(workspace).length > 0) {
+                loadRequestWorkspace(workspace, true, false);
+            } else {
+                resetRequestBuilder();
+            }
+
+            if (typeof window.renderRequestWorkspaceTabs === 'function') {
+                window.renderRequestWorkspaceTabs();
+            }
+        }
+
+        window.switchRequestWorkspaceTab = switchRequestWorkspaceTab;
 
         function openSavedRequestInNewTab(link) {
             if (!link) return;
@@ -1222,7 +1356,11 @@
                 if (typeof window.renderRequestWorkspaceTabs === 'function') {
                     window.renderRequestWorkspaceTabs();
                 }
-                window.location.href = `/requests?tab=${encodeURIComponent(tab.id)}`;
+                if (typeof window.switchRequestWorkspaceTab === 'function') {
+                    window.switchRequestWorkspaceTab(tab.id);
+                } else {
+                    window.location.href = `/requests?tab=${encodeURIComponent(tab.id)}`;
+                }
             }
         }
         
@@ -1614,7 +1752,11 @@
                     if (typeof window.renderRequestWorkspaceTabs === 'function') {
                         window.renderRequestWorkspaceTabs();
                     }
-                    window.location.href = `/requests?tab=${encodeURIComponent(tab.id)}`;
+                    if (typeof window.switchRequestWorkspaceTab === 'function') {
+                        window.switchRequestWorkspaceTab(tab.id);
+                    } else {
+                        window.location.href = `/requests?tab=${encodeURIComponent(tab.id)}`;
+                    }
                     return;
                 }
                 resetRequestBuilder();
@@ -2124,7 +2266,7 @@
             });
         }
 
-        savedList.addEventListener('click', (e) => {
+        savedList.addEventListener('click', async (e) => {
             const openTabButton = e.target.closest('.saved-req-open-tab');
             if (openTabButton) {
                 e.preventDefault();
@@ -2137,13 +2279,24 @@
             const renameButton = e.target.closest('.rename-saved-request-btn');
             if (renameButton) {
                 e.preventDefault();
+                e.stopPropagation();
                 const form = renameButton.closest('form');
                 const currentName = form?.querySelector('input[name="name"]')?.value || '';
-                const nextName = window.prompt('Rename saved request', currentName);
+                const nextName = await showTextPromptDialog('Rename Saved Request', 'Request name', currentName);
                 if (!nextName || nextName.trim() === '' || nextName.trim() === currentName) return;
 
                 form.querySelector('input[name="new_name"]').value = nextName.trim();
-                form.submit();
+                try {
+                    const response = await fetch(form.action, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+                        body: new URLSearchParams(new FormData(form)),
+                    });
+                    if (!response.ok) throw new Error(await response.text());
+                    await refreshSavedRequestsList(nextName.trim(), form.querySelector('input[name="folder"]')?.value || '');
+                } catch (error) {
+                    window.alert(`Rename failed: ${error.message}`);
+                }
                 return;
             }
 

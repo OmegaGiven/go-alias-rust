@@ -651,6 +651,16 @@ document.addEventListener('DOMContentLoaded', () => {
             tabEl.href = `/requests?tab=${encodeURIComponent(tab.id)}`;
             tabEl.className = 'nav-link-item request-workspace-tab';
             tabEl.title = `Request tab: ${labelText}`;
+            tabEl.addEventListener('click', (event) => {
+                if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+                    return;
+                }
+                if (!path.startsWith('/requests') || typeof window.switchRequestWorkspaceTab !== 'function') {
+                    return;
+                }
+                event.preventDefault();
+                window.switchRequestWorkspaceTab(tab.id);
+            });
             tabEl.classList.toggle('active', path.startsWith('/requests') && activeTabId === tab.id);
 
             const label = document.createElement('span');
@@ -689,6 +699,12 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (_) {
             return {};
         }
+    }
+
+    function writeSqlTabWorkspace(nickname, tabId, workspace) {
+        const cleanNickname = String(nickname || '').trim();
+        if (!cleanNickname || !tabId) return;
+        localStorage.setItem(sqlWorkspaceStorageKey(cleanNickname, tabId), JSON.stringify(workspace || {}));
     }
 
     function makeSqlConnectionTabId(nickname) {
@@ -934,6 +950,16 @@ document.addEventListener('DOMContentLoaded', () => {
             tabEl.className = 'nav-link-item sql-connection-tab';
             tabEl.style.setProperty('--sql-tab-accent', tab.color || 'var(--accent-color)');
             tabEl.title = `SQL connection: ${tab.nickname}`;
+            tabEl.addEventListener('click', (event) => {
+                if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+                    return;
+                }
+                const activeConnectionName = decodeURIComponent(window.location.pathname.replace(/^\/sql\/?/, ''));
+                const sameConnection = path.startsWith('/sql/') && activeConnectionName === tab.nickname;
+                if (!sameConnection || typeof window.switchSqlWorkspaceTab !== 'function') return;
+                event.preventDefault();
+                window.switchSqlWorkspaceTab(tab.id);
+            });
             if (tab.id === activeTabId || (!activeTabId && tab.nickname === activeConnection && !activatedFallbackTab)) {
                 tabEl.classList.add('active');
                 activatedFallbackTab = true;
@@ -959,7 +985,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const newTab = createSqlConnectionTab(tab.nickname);
                 if (newTab) {
                     renderSqlConnectionTabs();
-                    window.location.href = `/sql/${encodeURIComponent(newTab.nickname)}?tab=${encodeURIComponent(newTab.id)}`;
+                    if (tab.nickname === activeConnection && typeof window.switchSqlWorkspaceTab === 'function') {
+                        window.switchSqlWorkspaceTab(newTab.id);
+                    } else {
+                        window.location.href = `/sql/${encodeURIComponent(newTab.nickname)}?tab=${encodeURIComponent(newTab.id)}`;
+                    }
                 }
             });
 
@@ -1006,6 +1036,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.closeSqlConnectionTab = closeSqlConnectionTab;
     window.renderSqlConnectionTabs = renderSqlConnectionTabs;
+    window.createSqlConnectionTab = createSqlConnectionTab;
+    window.writeSqlTabWorkspace = writeSqlTabWorkspace;
     window.createRequestWorkspaceTab = createRequestWorkspaceTab;
     window.updateRequestWorkspaceTab = updateRequestWorkspaceTab;
     window.readRequestWorkspace = readRequestWorkspace;

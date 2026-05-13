@@ -2507,3 +2507,56 @@ ul li a:hover {
         top: 70px;
     }
 }
+
+.rename-prompt-dialog {
+    width: min(380px, calc(100vw - 32px));
+    padding: 0;
+    border: 1px solid var(--hover-window-accent, var(--accent-color));
+    border-radius: 6px;
+    background: var(--secondary-bg);
+    color: var(--text-color);
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+}
+
+.rename-prompt-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.55);
+}
+
+.rename-prompt-content {
+    display: grid;
+    grid-template-columns: 82px minmax(0, 1fr);
+    gap: 8px;
+    align-items: center;
+    margin: 0;
+    padding: 12px;
+}
+
+.rename-prompt-content h3 {
+    grid-column: 1 / -1;
+    margin: 0 0 4px;
+    font-size: var(--font-size-medium);
+}
+
+.rename-prompt-content label {
+    font-size: var(--font-size-small);
+    font-weight: bold;
+}
+
+.rename-prompt-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 5px 6px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--primary-bg);
+    color: var(--text-color);
+    font-size: var(--font-size-small);
+}
+
+.rename-prompt-content .modal-actions {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    padding-top: 4px;
+}

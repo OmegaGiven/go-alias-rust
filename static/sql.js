@@ -35,8 +35,8 @@ const mainContent = document.getElementById('main');
       const highlights = backdrop.querySelector('.highlights');
       const connectionNickname = document.querySelector("input[name=connection]")?.value || "";
       const connectionDbType = document.getElementById('sql-active-connection')?.dataset.dbType || '';
-      const activeSqlTabId = new URLSearchParams(window.location.search).get('tab') || 'default';
-      const sqlWorkspaceStorageKey = `sql_workspace_${connectionNickname}_${activeSqlTabId}`;
+      let activeSqlTabId = new URLSearchParams(window.location.search).get('tab') || 'default';
+      let sqlWorkspaceStorageKey = `sql_workspace_${connectionNickname}_${activeSqlTabId}`;
       const varsStorageKey = "sql_vars_" + connectionNickname;
       const savedQueryFoldersCollapsedKey = "sql_saved_query_folders_collapsed_" + connectionNickname;
       let collapsedSqlFolders = readCollapsedSqlFolders();
@@ -247,6 +247,47 @@ const mainContent = document.getElementById('main');
 
       function saveCollapsedSqlFolders() {
           localStorage.setItem(savedQueryFoldersCollapsedKey, JSON.stringify(Array.from(collapsedSqlFolders)));
+      }
+
+      function showTextPromptDialog(title, label, currentValue = '') {
+          return new Promise((resolve) => {
+              const dialog = document.createElement('dialog');
+              dialog.className = 'themed-modal rename-prompt-dialog';
+              dialog.innerHTML = `
+                  <form method="dialog" class="themed-modal-content rename-prompt-content">
+                      <h3>${title}</h3>
+                      <label>${label}</label>
+                      <input type="text" class="rename-prompt-input">
+                      <div class="modal-actions">
+                          <button type="button" class="cancel-btn">Cancel</button>
+                          <button type="submit" class="save-btn">Save</button>
+                      </div>
+                  </form>
+              `;
+              document.body.appendChild(dialog);
+              const input = dialog.querySelector('.rename-prompt-input');
+              input.value = currentValue;
+
+              const cleanup = (value) => {
+                  dialog.close();
+                  dialog.remove();
+                  resolve(value);
+              };
+
+              dialog.querySelector('.cancel-btn').addEventListener('click', () => cleanup(null));
+              dialog.addEventListener('cancel', (event) => {
+                  event.preventDefault();
+                  cleanup(null);
+              });
+              dialog.querySelector('form').addEventListener('submit', (event) => {
+                  event.preventDefault();
+                  cleanup(input.value.trim());
+              });
+
+              dialog.showModal();
+              input.focus();
+              input.select();
+          });
       }
 
       // --- Clear Button Logic ---
@@ -1352,6 +1393,36 @@ const mainContent = document.getElementById('main');
           }
       }
 
+      async function switchSqlWorkspaceTab(nextTabId) {
+          const cleanTabId = String(nextTabId || '').trim() || 'default';
+          if (cleanTabId === activeSqlTabId) return;
+
+          saveSqlWorkspaceState();
+          activeSqlTabId = cleanTabId;
+          sqlWorkspaceStorageKey = `sql_workspace_${connectionNickname}_${activeSqlTabId}`;
+          history.pushState({}, '', `/sql/${encodeURIComponent(connectionNickname)}?tab=${encodeURIComponent(activeSqlTabId)}`);
+
+          const restored = restoreSqlWorkspaceState();
+          if (!restored) {
+              isRestoringWorkspace = true;
+              editor.value = '';
+              queryNameInput.value = '';
+              if (queryFolderInput) queryFolderInput.value = '';
+              resetSqlOutputPane();
+              isRestoringWorkspace = false;
+          }
+
+          handleInput();
+          scanForVariables();
+          await refreshOutputHistoryOptions(outputHistorySelect ? outputHistorySelect.value : '');
+          if (typeof window.renderSqlConnectionTabs === 'function') {
+              window.renderSqlConnectionTabs();
+          }
+          editor.focus();
+      }
+
+      window.switchSqlWorkspaceTab = switchSqlWorkspaceTab;
+
       function restoreSqlWorkspaceState() {
           try {
               const raw = localStorage.getItem(sqlWorkspaceStorageKey);
@@ -2189,17 +2260,87 @@ const mainContent = document.getElementById('main');
           });
       }
 
-      savedQueriesList.addEventListener('click', (e) => {
+      function savedQueryWorkspaceFromLink(link) {
+          return {
+              sql: link?.getAttribute('data-sql') || '',
+              queryName: link?.getAttribute('data-name') || '',
+              queryFolder: link?.getAttribute('data-folder') || '',
+              outputHtml: '',
+              rowCountText: '',
+              outputHistoryId: '',
+              updatedAt: new Date().toISOString(),
+          };
+      }
+
+      function openSavedQueryInNewTab(link) {
+          if (!link || !connectionNickname) return;
+
+          const workspace = savedQueryWorkspaceFromLink(link);
+          const tab = typeof window.createSqlConnectionTab === 'function'
+              ? window.createSqlConnectionTab(connectionNickname)
+              : null;
+
+          if (!tab) {
+              editor.value = workspace.sql;
+              queryNameInput.value = workspace.queryName;
+              if (queryFolderInput) {
+                  queryFolderInput.value = workspace.queryFolder;
+              }
+              resetSqlOutputPane();
+              scanForVariables();
+              handleInput();
+              editor.focus();
+              return;
+          }
+
+          if (typeof window.writeSqlTabWorkspace === 'function') {
+              window.writeSqlTabWorkspace(connectionNickname, tab.id, workspace);
+          } else {
+              localStorage.setItem(`sql_workspace_${connectionNickname}_${tab.id}`, JSON.stringify(workspace));
+          }
+
+          if (typeof window.renderSqlConnectionTabs === 'function') {
+              window.renderSqlConnectionTabs();
+          }
+
+          if (typeof window.switchSqlWorkspaceTab === 'function') {
+              window.switchSqlWorkspaceTab(tab.id);
+          } else {
+              window.location.href = `/sql/${encodeURIComponent(connectionNickname)}?tab=${encodeURIComponent(tab.id)}`;
+          }
+      }
+
+      savedQueriesList.addEventListener('click', async (e) => {
+          const openTabButton = e.target.closest('.saved-query-open-tab');
+          if (openTabButton) {
+              e.preventDefault();
+              e.stopPropagation();
+              const link = openTabButton.closest('.saved-query-item')?.querySelector('.query-link');
+              openSavedQueryInNewTab(link);
+              return;
+          }
+
           const renameButton = e.target.closest('.rename-saved-query-btn');
           if (renameButton) {
               e.preventDefault();
+              e.stopPropagation();
               const form = renameButton.closest('form');
               const currentName = form?.querySelector('input[name="query_name"]')?.value || '';
-              const nextName = window.prompt('Rename saved query', currentName);
+              const nextName = await showTextPromptDialog('Rename Saved Query', 'Query name', currentName);
               if (!nextName || nextName.trim() === '' || nextName.trim() === currentName) return;
 
               form.querySelector('input[name="new_query_name"]').value = nextName.trim();
-              form.submit();
+              try {
+                  const response = await fetch(form.action, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+                      body: new URLSearchParams(new FormData(form)),
+                  });
+                  if (!response.ok) throw new Error(await response.text());
+                  window.location.reload();
+              } catch (error) {
+                  window.alert(`Rename failed: ${error.message}`);
+              }
               return;
           }
 

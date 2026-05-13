@@ -189,12 +189,54 @@
     }
     .delete-query-form,
     .rename-query-form { display: inline-flex; flex: 0 0 auto; margin: 0 2px 0 0; }
-    .rename-query-form { margin-left: auto; }
     .query-link { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0; padding: 1px 5px; text-align: left; text-decoration: none; color: var(--text-color); font-size: var(--sql-workspace-font-size); opacity: 0.9; }
     .query-link:hover { opacity: 1; text-decoration: underline; color: var(--link-hover); }
+    .saved-query-open-tab {
+        width: 18px;
+        height: 18px;
+        min-width: 18px;
+        margin: 0 2px 0 0 !important;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid transparent;
+        border-radius: 3px;
+        background: transparent;
+        color: var(--muted-text, var(--text-color));
+        opacity: 0.68;
+        cursor: pointer;
+        flex: 0 0 auto;
+    }
+    .saved-query-open-tab svg {
+        width: 12px;
+        height: 12px;
+        display: block;
+        pointer-events: none;
+    }
+    .saved-query-open-tab:hover {
+        opacity: 1;
+        color: var(--link-color);
+        background-color: var(--secondary-bg);
+        border-color: var(--border-color);
+    }
     
     .delete-btn { background: none; border: none; color: #666; font-weight: bold; padding: 0 5px; margin: calc(var(--element-margin) / 2) var(--element-margin); cursor: pointer; width: 20px; text-align: center; font-size: 1em;}
     .delete-btn:hover { color: #ff3b3b; background: rgba(255,0,0,0.1); border-radius: 3px; }
+    .saved-query-open-tab.delete-btn {
+        width: 18px;
+        height: 18px;
+        min-width: 18px;
+        margin: 0 2px 0 0 !important;
+        padding: 0;
+        color: var(--muted-text, var(--text-color));
+        font-size: var(--font-size-small);
+    }
+    .saved-query-open-tab.delete-btn:hover {
+        color: var(--link-color);
+        background-color: var(--secondary-bg);
+        border-color: var(--border-color);
+    }
     
     
     #table-list .table-list-item,

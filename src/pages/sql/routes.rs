@@ -2202,6 +2202,13 @@ fn render_query_view(
         format!(
             "<li class=\"saved-query-item\" draggable=\"true\" data-query-name=\"{}\" data-folder=\"{}\">\
                 <a href=\"#\" data-sql=\"{}\" data-name=\"{}\" data-folder=\"{}\" class=\"query-link\">{}</a>\
+                <button type=\"button\" class=\"delete-btn saved-query-open-tab\" title=\"Open in new SQL tab\" aria-label=\"Open {} in new SQL tab\">\
+                    <svg viewBox=\"0 0 16 16\" aria-hidden=\"true\" focusable=\"false\">\
+                        <path d=\"M5 3.5h7.5V11\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\
+                        <path d=\"M12.5 3.5L5 11\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\"/>\
+                        <path d=\"M3.5 5.5v7h7\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\
+                    </svg>\
+                </button>\
                 <form method=\"POST\" action=\"/sql/rename\" class=\"rename-query-form\">\
                     <input type=\"hidden\" name=\"query_name\" value=\"{}\">\
                     <input type=\"hidden\" name=\"new_query_name\" value=\"\">\
@@ -2220,6 +2227,7 @@ fn render_query_view(
             name_attr,
             folder_attr,
             name_safe,
+            name_attr,
             name_attr,
             nickname_attr,
             name_attr,

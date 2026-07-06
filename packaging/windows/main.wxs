@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+    <Product
+        Id="*"
+        Name="go-alias-rust"
+        UpgradeCode="8C6F1A2E-4B3D-4E7A-9C1B-2D3E4F5A6B7C"
+        Manufacturer="OmegaGiven"
+        Language="1033"
+        Codepage="1252"
+        Version="$(var.Version)">
+
+        <Package
+            Id="*"
+            Keywords="Installer"
+            Description="go-alias-rust installer"
+            Manufacturer="OmegaGiven"
+            InstallerVersion="450"
+            Languages="1033"
+            Compressed="yes"
+            InstallScope="perMachine"
+            SummaryCodepage="1252" />
+
+        <MajorUpgrade
+            Schedule="afterInstallInitialize"
+            DowngradeErrorMessage="A newer version of go-alias-rust is already installed." />
+
+        <Media Id="1" Cabinet="media1.cab" EmbedCab="yes" />
+
+        <Directory Id="TARGETDIR" Name="SourceDir">
+            <Directory Id="ProgramFiles64Folder">
+                <Directory Id="APPLICATIONFOLDER" Name="go-alias-rust">
+                    <Component Id="MainExecutable" Guid="1B2C3D4E-5F60-4718-9A2B-3C4D5E6F7A8B">
+                        <File Id="go_serviceEXE" Source="target\release\go_service.exe" KeyPath="yes" />
+                    </Component>
+                    <Component Id="InstallScript" Guid="2C3D4E5F-6071-4829-8A3C-4D5E6F7A8B9C">
+                        <File Id="InstallPS1" Source="packaging\windows\install.ps1" KeyPath="yes" />
+                    </Component>
+                    <Component Id="UninstallScript" Guid="3D4E5F60-7182-493A-8B4D-5E6F7A8B9C0D">
+                        <File Id="UninstallPS1" Source="packaging\windows\uninstall.ps1" KeyPath="yes" />
+                    </Component>
+
+                    <Directory Id="StaticDir" Name="static">
+                        <Component Id="StaticFavicon" Guid="4E5F6071-8293-4A4B-9C5E-6F7A8B9C0D1E">
+                            <File Id="FaviconICO" Source="static\favicon.ico" KeyPath="yes" />
+                        </Component>
+                        <Component Id="StaticStyle" Guid="5F607182-93A4-4B5C-AD6F-7A8B9C0D1E2F">
+                            <File Id="StyleCSS" Source="static\style.css" KeyPath="yes" />
+                        </Component>
+                    </Directory>
+
+                    <Directory Id="DefaultsDir" Name="defaults">
+                        <Component Id="DefaultShortcuts" Guid="60718293-A4B5-4C6D-BE70-8B9C0D1E2F30">
+                            <File Id="DefShortcutsJSON" Source="packaging\linux\defaults\shortcuts.json" KeyPath="yes" />
+                        </Component>
+                        <Component Id="DefaultHidden" Guid="718293A4-B5C6-4D7E-CF81-9C0D1E2F3041">
+                            <File Id="DefHiddenJSON" Source="packaging\linux\defaults\hidden-shortcuts.json" KeyPath="yes" />
+                        </Component>
+                        <Component Id="DefaultWork" Guid="8293A4B5-C6D7-4E8F-D092-AD1E2F304152">
+                            <File Id="DefWorkJSON" Source="packaging\linux\defaults\work-shortcuts.json" KeyPath="yes" />
+                        </Component>
+                        <Component Id="DefaultThemes" Guid="93A4B5C6-D7E8-4F90-E1A3-BE2F30415263">
+                            <File Id="DefThemesJSON" Source="packaging\linux\defaults\themes.json" KeyPath="yes" />
+                        </Component>
+                        <Component Id="DefaultCurrentTheme" Guid="A4B5C6D7-E8F9-4001-F2B4-CF3041526374">
+                            <File Id="DefCurrentThemeJSON" Source="packaging\linux\defaults\current_theme.json" KeyPath="yes" />
+                        </Component>
+                    </Directory>
+                </Directory>
+            </Directory>
+        </Directory>
+
+        <Feature Id="MainFeature" Title="go-alias-rust" Level="1">
+            <ComponentRef Id="MainExecutable" />
+            <ComponentRef Id="InstallScript" />
+            <ComponentRef Id="UninstallScript" />
+            <ComponentRef Id="StaticFavicon" />
+            <ComponentRef Id="StaticStyle" />
+            <ComponentRef Id="DefaultShortcuts" />
+            <ComponentRef Id="DefaultHidden" />
+            <ComponentRef Id="DefaultWork" />
+            <ComponentRef Id="DefaultThemes" />
+            <ComponentRef Id="DefaultCurrentTheme" />
+        </Feature>
+
+        <CustomAction
+            Id="RunInstallScript"
+            Directory="APPLICATIONFOLDER"
+            ExeCommand="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;[APPLICATIONFOLDER]install.ps1&quot;"
+            Execute="deferred"
+            Impersonate="no"
+            Return="check" />
+
+        <CustomAction
+            Id="RunUninstallScript"
+            Directory="APPLICATIONFOLDER"
+            ExeCommand="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;[APPLICATIONFOLDER]uninstall.ps1&quot;"
+            Execute="deferred"
+            Impersonate="no"
+            Return="ignore" />
+
+        <InstallExecuteSequence>
+            <Custom Action="RunInstallScript" After="InstallFiles">NOT Installed</Custom>
+            <Custom Action="RunUninstallScript" Before="RemoveFiles">Installed AND (REMOVE="ALL")</Custom>
+        </InstallExecuteSequence>
+    </Product>
+</Wix>

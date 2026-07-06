@@ -1,0 +1,13 @@
+#!/bin/sh
+set -e
+
+#DEBHELPER#
+
+case "$1" in
+    purge)
+        deluser go-alias-rust 2>/dev/null || true
+        rm -rf /var/lib/go-alias-rust
+        ;;
+esac
+
+exit 0

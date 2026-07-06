@@ -1,7 +1,9 @@
 [package]
-name = "go_alias_rust"
+name = "go_service"
 version = "0.1.0"
 edition = "2024"
+description = "Type go/<alias> in a browser to redirect to a saved shortcut"
+license = "MIT"
 
 [dependencies]
 actix-web = "4"
@@ -9,3 +11,18 @@ actix-files = "0.6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 htmlescape = "0.3"
+
+[package.metadata.deb]
+maintainer = "OmegaGiven"
+copyright = "2026, OmegaGiven"
+extended-description = "Lightweight redirect service: type go/<alias> in a browser URL bar to jump to a saved shortcut."
+depends = "$auto"
+section = "net"
+priority = "optional"
+assets = [
+    ["target/release/go_service", "usr/bin/", "755"],
+    ["static/*", "usr/share/go-alias-rust/static/", "644"],
+    ["packaging/linux/defaults/*", "usr/share/go-alias-rust/defaults/", "644"],
+]
+maintainer-scripts = "packaging/linux/"
+systemd-units = { unit-name = "go-alias-rust", enable = true, start = true }

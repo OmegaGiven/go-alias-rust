@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.omegagiven.go-alias-rust</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/libexec/go-alias-rust/go_service</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/usr/local/var/go-alias-rust</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>UserName</key>
+    <string>root</string>
+    <key>StandardOutPath</key>
+    <string>/usr/local/var/log/go-alias-rust.log</string>
+    <key>StandardErrorPath</key>
+    <string>/usr/local/var/log/go-alias-rust.log</string>
+</dict>
+</plist>

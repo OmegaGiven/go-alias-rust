@@ -1,0 +1,25 @@
+#!/bin/sh
+set -e
+
+if ! getent passwd go-alias-rust >/dev/null; then
+    adduser --system --group --no-create-home --home /var/lib/go-alias-rust go-alias-rust
+fi
+
+mkdir -p /var/lib/go-alias-rust
+cd /var/lib/go-alias-rust
+
+for f in shortcuts.json hidden-shortcuts.json work-shortcuts.json themes.json current_theme.json; do
+    if [ ! -f "$f" ]; then
+        cp "/usr/share/go-alias-rust/defaults/$f" "$f"
+    fi
+done
+
+if [ ! -d static ]; then
+    cp -r /usr/share/go-alias-rust/static .
+fi
+
+chown -R go-alias-rust:go-alias-rust /var/lib/go-alias-rust
+
+#DEBHELPER#
+
+exit 0

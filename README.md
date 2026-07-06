@@ -20,32 +20,30 @@ shortcut.
 - A basic theme system (colors/fonts) is included, editable from the
   Settings button in the nav bar.
 
-## Requirements
+## Install (pick your OS)
 
-- Rust (edition 2024) + Cargo
-- Linux/macOS to bind port 80 without extra config (see below); Windows
-  works too but the "run on port 80 as non-root" step differs.
+Every [release](https://github.com/OmegaGiven/go-alias-rust/releases) ships a
+one-step installer for each platform. Download the file for your OS, run it,
+and the service is installed, registered to start at boot, and running —
+no Rust toolchain, no manual setup.
 
-## Install & Run
+- **Linux**: download the `.deb`, then `sudo apt install ./go-alias-rust_*.deb`
+  (or `sudo dpkg -i ./go-alias-rust_*.deb`). Installs to `/usr/bin`, sets up
+  a `go-alias-rust` systemd service, enabled and started automatically.
+- **macOS**: download the `.pkg`, double-click it, follow the installer.
+  Installs a LaunchDaemon that starts at boot and runs as root (needed for
+  port 80).
+- **Windows**: download the `.msi`, run it. Installs to
+  `Program Files\go-alias-rust` and registers a Scheduled Task that starts
+  the service at boot running as `SYSTEM` (needed for port 80).
 
-```bash
-git clone https://github.com/OmegaGiven/go-alias-rust.git
-cd go-alias-rust
-cargo build --release
-```
+Shortcut data lives outside the install location so upgrades don't touch it:
+`/var/lib/go-alias-rust` (Linux), `/usr/local/var/go-alias-rust` (macOS),
+`%ProgramData%\go-alias-rust` (Windows).
 
-### Running on port 80 without root
-
-Port 80 needs elevated privileges on Linux. Rather than running the whole
-service as root, grant just the one binary permission to bind low ports:
-
-```bash
-sudo setcap 'cap_net_bind_service=+ep' target/release/go_service
-./target/release/go_service
-```
-
-(macOS: just run it with `sudo` directly, or use a reverse proxy/launchd
-socket activation instead.)
+To uninstall: use your OS's normal package manager / "Add or Remove
+Programs" — each installer registers a proper uninstaller that stops the
+service and (optionally, on Linux via `purge`) removes the data directory.
 
 ### Aliasing "go" to localhost
 
@@ -62,32 +60,33 @@ to your hosts file pointing `go` at wherever the service runs:
 If you're running the service on a different machine on your network, use
 its IP instead of `127.0.0.1`.
 
-### Running as a systemd service (Linux, recommended for a home server)
+### Building from source instead
 
-Create `/etc/systemd/system/go.service`:
-
-```ini
-[Unit]
-Description=Go Alias Redirect Service
-After=network.target
-
-[Service]
-Type=simple
-User=<your-username>
-WorkingDirectory=/path/to/go-alias-rust
-ExecStart=/path/to/go-alias-rust/target/release/go_service
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Then:
+If you'd rather not use the installer (e.g. you're modifying the code):
 
 ```bash
-sudo setcap 'cap_net_bind_service=+ep' /path/to/go-alias-rust/target/release/go_service
+git clone https://github.com/OmegaGiven/go-alias-rust.git
+cd go-alias-rust
+cargo build --release
+```
+
+Port 80 needs elevated privileges. Rather than running the whole process as
+root, grant just the binary permission to bind low ports:
+
+```bash
+sudo setcap 'cap_net_bind_service=+ep' target/release/go_service
+./target/release/go_service
+```
+
+To run it persistently at boot yourself (this is what the Linux installer's
+`.deb` already sets up automatically), use the systemd unit at
+`packaging/linux/go-alias-rust.service` as a template — update its
+`WorkingDirectory` and `ExecStart` paths to wherever you built the binary,
+place it in `/etc/systemd/system/`, then:
+
+```bash
 sudo systemctl daemon-reload
-sudo systemctl enable --now go.service
+sudo systemctl enable --now go-alias-rust.service
 ```
 
 ## Configuring shortcuts

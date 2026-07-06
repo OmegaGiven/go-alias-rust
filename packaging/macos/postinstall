@@ -1,0 +1,21 @@
+#!/bin/sh
+set -e
+
+mkdir -p /usr/local/var/go-alias-rust
+mkdir -p /usr/local/var/log
+cd /usr/local/var/go-alias-rust
+
+for f in shortcuts.json hidden-shortcuts.json work-shortcuts.json themes.json current_theme.json; do
+    if [ ! -f "$f" ]; then
+        cp "/usr/local/share/go-alias-rust/defaults/$f" "$f"
+    fi
+done
+
+if [ ! -d static ]; then
+    cp -r /usr/local/share/go-alias-rust/static .
+fi
+
+launchctl unload /Library/LaunchDaemons/com.omegagiven.go-alias-rust.plist 2>/dev/null || true
+launchctl load -w /Library/LaunchDaemons/com.omegagiven.go-alias-rust.plist
+
+exit 0

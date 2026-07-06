@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  linux-deb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-deb
+        run: cargo install cargo-deb
+      - name: Build release binary
+        run: cargo build --release
+      - name: Build .deb
+        run: cargo deb
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-deb
+          path: target/debian/*.deb
+
+  macos-pkg:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build release binary
+        run: cargo build --release
+      - name: Build .pkg
+        run: |
+          chmod +x packaging/macos/build-pkg.sh packaging/macos/postinstall
+          ./packaging/macos/build-pkg.sh
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-pkg
+          path: "*.pkg"
+
+  windows-msi:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-wix
+        run: cargo install cargo-wix
+      - name: Build release binary
+        run: cargo build --release
+      - name: Build .msi
+        run: cargo wix --no-build --nocapture
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-msi
+          path: target/wix/*.msi
+
+  publish-release:
+    needs: [linux-deb, macos-pkg, windows-msi]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - name: Create release with all installers
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/linux-deb/*.deb
+            dist/macos-pkg/*.pkg
+            dist/windows-msi/*.msi

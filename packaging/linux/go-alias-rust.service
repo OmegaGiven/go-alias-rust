@@ -1,0 +1,14 @@
+[Unit]
+Description=Go Alias Redirect Service
+After=network.target
+
+[Service]
+Type=simple
+User=go-alias-rust
+WorkingDirectory=/var/lib/go-alias-rust
+ExecStart=/usr/bin/go_service
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

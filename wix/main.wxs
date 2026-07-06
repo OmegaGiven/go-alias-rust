@@ -7,7 +7,7 @@
         Manufacturer="OmegaGiven"
         Language="1033"
         Codepage="1252"
-        Version="$(var.Version)">
+        Version="0.1.0">
 
         <Package
             Id="*"
